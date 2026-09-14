@@ -1027,7 +1027,7 @@ void App::draw_key_settings() {
     field("Usages");
     const float number = px(62);
     ImGui::SetNextItemWidth(number);
-    if (ImGui::InputScalar("##min", ImGuiDataType_S32, &key_min_, nullptr, nullptr, "%02X",
+    if (ImGui::InputScalar("##min", ImGuiDataType_S32, &key_min_, nullptr, nullptr, "0x%02X",
                            ImGuiInputTextFlags_CharsHexadecimal))
         key_min_ = std::clamp(key_min_, 0x04, 0xDF);
     ImGui::SameLine(0, px(6));
@@ -1035,7 +1035,7 @@ void App::draw_key_settings() {
     ImGui::TextDisabled("to");
     ImGui::SameLine(0, px(6));
     ImGui::SetNextItemWidth(number);
-    if (ImGui::InputScalar("##max", ImGuiDataType_S32, &key_max_, nullptr, nullptr, "%02X",
+    if (ImGui::InputScalar("##max", ImGuiDataType_S32, &key_max_, nullptr, nullptr, "0x%02X",
                            ImGuiInputTextFlags_CharsHexadecimal))
         key_max_ = std::clamp(key_max_, 0x04, 0xDF);
     ImGui::SetItemTooltip("HID keyboard usages in hex. 04 (A) to 65 (Menu) covers the usual "
