@@ -205,8 +205,8 @@ std::optional<Options> parse(const int argc, char** argv) {
             }
             unsigned long low = std::strtoul(pieces[0].c_str(), nullptr, 0);
             unsigned long high = std::strtoul(pieces[1].c_str(), nullptr, 0);
-            // The Array rollover this profile uses reserves 0xE0..0xE7 for
-            // modifiers, which aoahid_kbd routes separately.
+            // The NKRO keyboard profile reserves 0xE0..0xE7 for modifiers,
+            // which aoahid_kbd routes separately.
             if (low < 0x04 || high < low || high >= 0xE0) {
                 std::fprintf(stderr, "[ERROR] --key-usage-range must be ordered, start at 0x04 "
                                      "or above, and end below 0xe0\n");

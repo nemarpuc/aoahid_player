@@ -332,11 +332,11 @@ class SpecSet {
     bool build_key(const KeySetup& setup, std::string& error) {
         aoahid_keyboard_options options{};
         options.struct_size = static_cast<uint32_t>(sizeof(options));
-        options.rollover = AOAHID_KEYBOARD_ARRAY;
-        options.array_length = 6U;
+        // The keyboard profile is exclusively full-NKRO as of libaoahid 0.2.0:
+        // every usage is a one-bit Variable field, so there is no Array slot
+        // count or ErrorRollOver encoding left to configure.
         options.usage_minimum = setup.usage_minimum;
         options.usage_maximum = setup.usage_maximum;
-        options.usage_bit_width = 8U;
         aoahid_spec* spec = nullptr;
         const aoahid_result result = aoahid_spec_create_keyboard(&options, &spec);
         return store(Profile::key, result, spec, "keyboard", error);

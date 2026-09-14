@@ -269,7 +269,9 @@ onto the connected surfaces. `wait_ms` is the delay after the row; rows with `0`
 in the same report as the next row. Every row runs at an absolute time
 measured from the start of its segment, so a slow USB transfer never makes the
 script drift. Keyboard modifiers (usages `0xE0`–`0xE7`) are always available,
-whatever the usage range. See `csv/example.csv`.
+whatever the usage range. The keyboard profile is full N-Key Rollover (as of
+libaoahid 0.2.0), so every usage in the configured range can be held down at
+the same time with no limit on simultaneous keys. See `csv/example.csv`.
 
 ## Linux permissions (udev)
 
