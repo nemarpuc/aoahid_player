@@ -124,6 +124,7 @@ Settings App::current_settings() const {
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
     settings.live_release_key = live_release_key_;
+    settings.live_fullscreen_key = live_fullscreen_key_;
     return settings;
 }
 
@@ -145,6 +146,7 @@ void App::apply_settings(const Settings& settings) {
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
     live_release_key_ = settings.live_release_key;
+    live_fullscreen_key_ = settings.live_fullscreen_key;
 }
 
 void App::persist_settings() {
@@ -563,6 +565,30 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         }
         return;
     }
+    if (live_fullscreen_key_picking_) {
+        // Same idea as the release-key picker above.
+        if (pressed) {
+            live_fullscreen_key_picking_ = false;
+            live_fullscreen_key_ = glfw_key == GLFW_KEY_ESCAPE ? 0 : glfw_key;
+        }
+        return;
+    }
+    // Escape always exits full screen first, even while Keyboard forwarding
+    // is on, so full screen can never trap input on the phone with no
+    // visible way out. It is consumed here rather than also forwarded, so
+    // the phone never sees the same press full screen just reacted to.
+    if (pressed && live_fullscreen_ && glfw_key == GLFW_KEY_ESCAPE) {
+        live_fullscreen_ = false;
+        return;
+    }
+    // The configurable full screen key toggles it from anywhere; entering
+    // requires the same readiness as the on-screen button, but exiting
+    // always works so a stale readiness check can never strand the window.
+    if (pressed && is_fullscreen_key(glfw_key, live_fullscreen_key_) &&
+        (live_fullscreen_ || live_ready())) {
+        live_fullscreen_ = !live_fullscreen_;
+        return;
+    }
     // The release key lets go of the captured pointer no matter which
     // profiles are forwarding, so it works in mouse-only mode too. Like Esc
     // used to, it is still forwarded to the phone afterwards if Keyboard is
@@ -650,13 +676,10 @@ void App::frame() {
         ImGui::IsKeyPressed(ImGuiKey_Space, false))
         toggle_playback();
     const bool forwarding_keys = engine_.phase() == Phase::live && live_.key;
-    // The pointer capture's own release key is handled in on_key(), straight
-    // from the window system, so it works whichever key is configured and
-    // whether or not Keyboard forwarding is on. Full screen still uses plain
-    // Esc regardless of the configured release key — it is a window chrome
-    // shortcut, not part of live control.
-    if (live_fullscreen_ && !forwarding_keys && ui::escape_pressed())
-        live_fullscreen_ = false;
+    // The pointer capture's own release key, and full screen's own Escape
+    // and configurable toggle key, are all handled in on_key(), straight
+    // from the window system, so they work whichever key is configured and
+    // whether or not Keyboard forwarding is on.
     // Live control owns the keyboard while it is forwarding keys.
     if (forwarding_keys)
         io.ClearInputKeys();

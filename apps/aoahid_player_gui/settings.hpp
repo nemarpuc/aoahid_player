@@ -32,6 +32,10 @@ struct Settings {
     // The GLFW key that releases the captured pointer in Live control's
     // mouse mode. 0 means "not set", which live control treats as Escape.
     int live_release_key{};
+    // The GLFW key that toggles the Live tab's real full screen mode. 0
+    // means "not set", which is treated as F11. Escape always exits full
+    // screen too, regardless of this setting.
+    int live_fullscreen_key{};
 
     bool operator==(const Settings&) const = default;
 };

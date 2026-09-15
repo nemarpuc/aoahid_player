@@ -646,6 +646,27 @@ void App::draw_live_surface(const ImVec2 size) {
                       text);
         ImGui::PopFont();
     }
+
+    // The way out of full screen itself, always shown while it is active —
+    // full screen replaces the window chrome and the controls bar below can
+    // scroll out of view, so this is the one place guaranteed to be on
+    // screen no matter what else is happening.
+    if (live_fullscreen_) {
+        char text[64];
+        std::snprintf(text, sizeof text, "Esc or %s exits full screen",
+                     glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_
+                                                             : GLFW_KEY_F11));
+        ImGui::PushFont(nullptr, theme::font_small);
+        const ImVec2 text_size = ImGui::CalcTextSize(text);
+        const float pad_x = px(10);
+        const float pad_y = px(6);
+        const ImVec2 box1(p1.x - px(12), p0.y + px(12) + text_size.y + pad_y * 2);
+        const ImVec2 box0(box1.x - text_size.x - pad_x * 2, p0.y + px(12));
+        list->AddRectFilled(box0, box1, ImGui::GetColorU32(IM_COL32(0, 0, 0, 170)), px(8));
+        list->AddText(ImVec2(box0.x + pad_x, box0.y + pad_y), ImGui::GetColorU32(theme::text),
+                      text);
+        ImGui::PopFont();
+    }
     ImGui::EndChild();
 }
 
@@ -705,9 +726,9 @@ void App::draw_live_fullscreen() {
     if (ui::button("Exit full screen", ImVec2(exit_width, 0)))
         live_fullscreen_ = false;
     ImGui::SetItemTooltip(
-        "Esc also exits full screen, unless Keyboard is on (then Esc reaches the phone "
-        "instead). The mouse mode release key (set below, in the normal view) always works "
-        "here too.");
+        "Esc always exits full screen too, even while Keyboard is on. %s does as well "
+        "(set below, in the normal view).",
+        glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11));
     ui::end_card();
 }
 
@@ -835,6 +856,41 @@ void App::draw_live_release_key_setting() {
         small_dim("Escape releases the captured pointer by default. Set a different key if a "
                   "script or the app on the phone needs Escape itself.");
     }
+}
+
+void App::draw_live_fullscreen_key_setting() {
+    ui::caption("Full screen key");
+    const int effective_key = live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11;
+    const float set_width = px(120);
+
+    if (live_fullscreen_key_picking_) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::vec(theme::accent_text));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Press any key...");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, px(10));
+        if (ui::button("Cancel", ImVec2(set_width, 0)))
+            live_fullscreen_key_picking_ = false;
+        gap(1);
+        small_dim("Press the key that should toggle full screen, or Esc to cancel without "
+                  "changing it.");
+        return;
+    }
+
+    ImGui::AlignTextToFramePadding();
+    ImGui::Text("%s", glfw_key_name(effective_key));
+    ImGui::SameLine(0, px(10));
+    if (ui::button("Set...", ImVec2(set_width, 0)))
+        live_fullscreen_key_picking_ = true;
+    if (live_fullscreen_key_ != 0) {
+        ImGui::SameLine(0, px(6));
+        if (ui::button("Reset to F11", ImVec2(px(96), 0)))
+            live_fullscreen_key_ = 0;
+    }
+    gap(1);
+    small_dim("Toggles the Live preview's real full screen (fills the whole screen, not "
+              "just this window). Escape always exits full screen too, no matter what "
+              "this is set to.");
 }
 
 void App::draw_live_controls() {
@@ -986,6 +1042,9 @@ void App::draw_live_controls() {
     // so it never collides with a key the script or the target app needs.
     gap(2);
     draw_live_release_key_setting();
+
+    gap(2);
+    draw_live_fullscreen_key_setting();
 
     gap(2);
     if (running) {

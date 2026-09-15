@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 0.2.0 LANGUAGES C CXX)
+project(aoahid-player VERSION 0.3.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,7 +18,11 @@ option(AOAHID_PLAYER_BUILD_GUI "Build the Dear ImGui front end (aoahid_player_gu
 option(AOAHID_PLAYER_BUNDLE_RUNTIME
   "Install libaoahid, libusb and, with MSVC, the C++ runtime next to the executables" ON)
 
-find_package(aoahid CONFIG REQUIRED)
+# 0.3.0 removed aoahid_gamepad_options.application (see spec_builder.hpp's
+# build_gamepad()); an older libaoahid still compiles against this source but
+# would reject every Gamepad Spec at runtime, so the minimum is pinned here to
+# fail at configure time instead.
+find_package(aoahid 0.3.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree

@@ -23,6 +23,11 @@ uint16_t hid_usage_from_scancode(int scancode) noexcept;
 // forwarded. Configurable — see Settings::live_release_key.
 bool is_release_key(int key, int configured_key) noexcept;
 
+// The key that toggles the Live tab's real (OS-level) full screen mode.
+// Configurable — see Settings::live_fullscreen_key. Escape always exits full
+// screen as well, regardless of this setting; see App::on_key().
+bool is_fullscreen_key(int key, int configured_key) noexcept;
+
 // Short label for a usage, such as "A", "Enter", or "Shift"; "0x87" style
 // for anything without a name.
 const char* hid_usage_name(uint16_t usage) noexcept;

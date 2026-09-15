@@ -63,6 +63,11 @@ class App {
     // True while something on screen moves on its own (progress, spinners,
     // a recording clock), so the main loop keeps redrawing without input.
     [[nodiscard]] bool animating() const;
+    // True while the Live tab's full screen mode should be an actual
+    // OS-level exclusive full screen window, not just this layout's own
+    // preview-filling mode. The window owner (main()) polls this once per
+    // loop iteration and drives glfwSetWindowMonitor() accordingly.
+    [[nodiscard]] bool wants_os_fullscreen() const noexcept { return live_fullscreen_; }
 
   private:
     enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3 };
@@ -139,6 +144,9 @@ class App {
     // pick a new one, and a note that only that exact key releases the
     // captured pointer once changed.
     void draw_live_release_key_setting();
+    // The "Full screen key" row: shows the configured key, a button to pick
+    // a new one, and a note that Escape always exits full screen too.
+    void draw_live_fullscreen_key_setting();
     // The Live preview filling the window, with only the input switches and
     // a way out.
     void draw_live_fullscreen();
@@ -274,6 +282,13 @@ class App {
     // True while "Set release key" is armed: the next key press this frame
     // is captured as the new live_release_key_ instead of being forwarded.
     bool live_release_key_picking_{};
+    // The GLFW key that toggles real full screen; 0 means "not set", which
+    // is treated as F11. Escape always exits full screen as well, no matter
+    // what this is set to (see on_key()).
+    int live_fullscreen_key_{};
+    // True while "Set..." is armed for the full screen key, same idea as
+    // live_release_key_picking_.
+    bool live_fullscreen_key_picking_{};
     bool live_touching_{};    // a contact is down
     int32_t live_touch_x_{};  // last contact position, in device coordinates
     int32_t live_touch_y_{};

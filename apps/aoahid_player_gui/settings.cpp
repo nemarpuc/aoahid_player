@@ -39,6 +39,23 @@ void read_int(const std::string& text, const int minimum, const int maximum, int
     out = static_cast<int>(value);
 }
 
+// HID usage codes are always entered and saved as 0x-prefixed hex (see the
+// GUI's hex-only usage fields); a bare decimal number here is rejected
+// instead of being silently reinterpreted as hex, since save_settings()
+// never writes one.
+void read_hex(const std::string& text, const int minimum, const int maximum, int& out) {
+    if (text.size() < 3 || text[0] != '0' || (text[1] != 'x' && text[1] != 'X'))
+        return;
+    errno = 0;
+    char* end = nullptr;
+    const long value = std::strtol(text.c_str(), &end, 16);
+    if (errno != 0 || end == text.c_str() || *end != '\0')
+        return;
+    if (value < minimum || value > maximum)
+        return;
+    out = static_cast<int>(value);
+}
+
 void read_bool(const std::string& text, bool& out) {
     if (text == "1" || text == "true" || text == "on")
         out = true;
@@ -116,9 +133,9 @@ Settings load_settings(const std::filesystem::path& path) {
         else if (key == "keyboard")
             read_bool(value, settings.use_key);
         else if (key == "keyboard.usage_min")
-            read_int(value, 0x04, 0xDF, settings.key_min);
+            read_hex(value, 0x04, 0xDF, settings.key_min);
         else if (key == "keyboard.usage_max")
-            read_int(value, 0x04, 0xDF, settings.key_max);
+            read_hex(value, 0x04, 0xDF, settings.key_max);
         else if (key == "gamepad")
             read_bool(value, settings.use_gamepad);
         else if (key == "gamepad.buttons")
@@ -145,6 +162,8 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "live.release_key")
             read_int(value, 0, 348, settings.live_release_key);
+        else if (key == "live.fullscreen_key")
+            read_int(value, 0, 348, settings.live_fullscreen_key);
     }
     if (settings.key_max < settings.key_min)
         settings.key_max = settings.key_min;
@@ -176,6 +195,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
+    out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
 
     std::filesystem::path temporary = path;
     temporary += ".tmp";

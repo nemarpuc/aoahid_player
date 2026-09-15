@@ -147,6 +147,33 @@ float window_scale(GLFWwindow* window) {
     return std::clamp(x, 1.0f, 4.0f);
 }
 
+// The monitor the window is mostly over, so entering full screen lands on
+// the screen the window was already on rather than always the primary one.
+GLFWmonitor* monitor_for_window(GLFWwindow* window) {
+    int window_x = 0;
+    int window_y = 0;
+    int window_width = 0;
+    int window_height = 0;
+    glfwGetWindowPos(window, &window_x, &window_y);
+    glfwGetWindowSize(window, &window_width, &window_height);
+    const int centre_x = window_x + window_width / 2;
+    const int centre_y = window_y + window_height / 2;
+
+    int count = 0;
+    GLFWmonitor** monitors = glfwGetMonitors(&count);
+    for (int index = 0; index < count; ++index) {
+        int area_x = 0;
+        int area_y = 0;
+        int area_width = 0;
+        int area_height = 0;
+        glfwGetMonitorWorkarea(monitors[index], &area_x, &area_y, &area_width, &area_height);
+        if (centre_x >= area_x && centre_x < area_x + area_width && centre_y >= area_y &&
+            centre_y < area_y + area_height)
+            return monitors[index];
+    }
+    return glfwGetPrimaryMonitor();
+}
+
 int run() {
     glfwSetErrorCallback(on_glfw_error);
     if (glfwInit() != GLFW_TRUE) {
@@ -239,7 +266,35 @@ int run() {
     int64_t last_frame = 0;
     uint32_t seen_activity = g_activity.load(std::memory_order_relaxed);
 
+    // The Live tab's full screen mode is real OS-level exclusive full screen,
+    // not just this window's own layout filling its (still windowed) frame.
+    // The windowed geometry is remembered so leaving full screen restores
+    // the exact position and size the window had before entering it.
+    bool os_fullscreen = false;
+    int windowed_x = 0;
+    int windowed_y = 0;
+    int windowed_width = width;
+    int windowed_height = height;
+
     while (glfwWindowShouldClose(window) == GLFW_FALSE) {
+        const bool want_fullscreen = g_app != nullptr && g_app->wants_os_fullscreen();
+        if (want_fullscreen != os_fullscreen) {
+            if (want_fullscreen) {
+                glfwGetWindowPos(window, &windowed_x, &windowed_y);
+                glfwGetWindowSize(window, &windowed_width, &windowed_height);
+                GLFWmonitor* target = monitor_for_window(window);
+                const GLFWvidmode* mode = target != nullptr ? glfwGetVideoMode(target) : nullptr;
+                if (target != nullptr && mode != nullptr)
+                    glfwSetWindowMonitor(window, target, 0, 0, mode->width, mode->height,
+                                        mode->refreshRate);
+            } else {
+                glfwSetWindowMonitor(window, nullptr, windowed_x, windowed_y, windowed_width,
+                                    windowed_height, 0);
+            }
+            os_fullscreen = want_fullscreen;
+            bump();
+            pending_frames = std::max(pending_frames, 2);
+        }
         if (pending_frames > 0) {
             glfwPollEvents();
             --pending_frames;

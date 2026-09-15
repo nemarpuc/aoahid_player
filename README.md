@@ -110,10 +110,14 @@ beside it set its shape as width:height; both default to the connected
 touchscreen, and *Reset* returns to it. Neither changes where a touch
 lands: the pointer's position inside the preview is taken as a fraction,
 turned back into the phone's own orientation, and only then scaled to the
-connected resolution. The expand button fills the window with just the
-preview and the input switches; *Exit full screen* or **Esc** (when keys
-are not being forwarded) returns. The preview shows why Live control is
-unavailable right now (no device connected, or a script loaded and playing)
+connected resolution. The expand button switches the preview to a real,
+OS-level full screen window (not just this window's own layout filling its
+still-windowed frame) with just the preview and the input switches; *Exit
+full screen*, **Esc**, or the configurable *Full screen key* (**F11** by
+default, set below the preview in the normal view) always returns, even
+while Keyboard is being forwarded, and a label on the preview spells out
+which key to press for as long as full screen is on. The preview shows why
+Live control is unavailable right now (no device connected, or a script loaded and playing)
 under itself, in both the normal and the full-screen view, instead of just a
 disabled toggle. Live control stays off while a script is playing — playing
 a script and forwarding Live input are two uses of the same connection that
@@ -138,6 +142,12 @@ normal. While captured, the release key is also spelled out directly on the
 preview itself ("Press Esc to release the pointer", or whichever key was
 chosen), including in full screen, so it stays visible without looking away
 from the phone.
+
+*Full screen key*, also below the preview, is the same idea for full screen
+itself: **F11** by default, or any other key — useful if F11 needs to reach
+the target app instead. Unlike the mouse release key, Escape always exits
+full screen as well no matter what this is set to, so full screen can never
+end up with no way out.
 
 Keyboard forwarding recognises the extra keys a JIS (Japanese) keyboard has
 that a US layout does not — Henkan, Muhenkan, Kana, Zenkaku/Hankaku, and Ro —

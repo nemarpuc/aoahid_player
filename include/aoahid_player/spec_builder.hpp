@@ -374,7 +374,9 @@ class SpecSet {
 
         aoahid_gamepad_options options{};
         options.struct_size = static_cast<uint32_t>(sizeof(options));
-        options.application = AOAHID_CONTROLLER_GAMEPAD;
+        // libaoahid 0.3.0 removed the Joystick Application Collection and the
+        // options.application selector; aoahid_spec_create_gamepad now always
+        // emits the Generic Desktop / Game Pad form.
         options.axes = axes.data();
         options.axis_count = axes.size();
         options.button_count = setup.buttons;
