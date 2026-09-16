@@ -10,6 +10,8 @@
 #include <cmath>
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
+#include <string>
 
 namespace gui::ui {
 namespace {
@@ -281,6 +283,39 @@ void draw_check(ImDrawList* list, const ImVec2 p0, const float size, const bool 
     } else {
         list->AddRect(p0, p1, faded(theme::border_strong), rounding, px(1.5f));
     }
+}
+
+namespace {
+bool is_utf8_lead_or_ascii(const char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }
+} // namespace
+
+void draw_text_ellipsized(ImDrawList* const list, const ImVec2 pos, const ImU32 color,
+                          const char* const text, const float max_width) {
+    const size_t length = std::strlen(text);
+    if (max_width <= 0.0f || ImGui::CalcTextSize(text, text + length).x <= max_width) {
+        list->AddText(pos, color, text);
+        return;
+    }
+    constexpr char ellipsis[] = "...";
+    const float ellipsis_width = ImGui::CalcTextSize(ellipsis).x;
+    if (ellipsis_width >= max_width) {
+        list->AddText(pos, color, ".");
+        return;
+    }
+    const float budget = max_width - ellipsis_width;
+    // Longest byte-prefix whose rendered width still fits `budget`.
+    size_t lo = 0, hi = length;
+    while (lo < hi) {
+        const size_t mid = lo + (hi - lo + 1) / 2;
+        if (ImGui::CalcTextSize(text, text + mid).x <= budget)
+            lo = mid;
+        else
+            hi = mid - 1;
+    }
+    while (lo > 0 && !is_utf8_lead_or_ascii(text[lo]))
+        --lo;
+    const std::string truncated = std::string(text, lo) + ellipsis;
+    list->AddText(pos, color, truncated.c_str());
 }
 
 bool icon_button(const char* id, const Icon icon, const float diameter, const Tone tone,

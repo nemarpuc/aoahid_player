@@ -36,6 +36,8 @@ struct Settings {
     // means "not set", which is treated as F11. Escape always exits full
     // screen too, regardless of this setting.
     int live_fullscreen_key{};
+    // Unscaled width of the sidebar, dragged via the splitter next to it.
+    float sidebar_width{392.0f};
 
     bool operator==(const Settings&) const = default;
 };

@@ -74,6 +74,12 @@ void draw_icon(ImDrawList* list, Icon icon, ImVec2 center, float size, ImU32 col
 // A check box drawn at `p0`, for custom rows.
 void draw_check(ImDrawList* list, ImVec2 p0, float size, bool checked);
 
+// Draws `text` at `pos` in `color`, truncating with a trailing "..." if it
+// would exceed `max_width`. For raw ImDrawList text (device names, serials)
+// that shares a row with other content, so it can never draw under it.
+void draw_text_ellipsized(ImDrawList* list, ImVec2 pos, ImU32 color, const char* text,
+                          float max_width);
+
 // Status label with a coloured dot; `blink` fades the dot (recording).
 void pill(const char* text, ImU32 dot, bool blink = false);
 [[nodiscard]] float pill_width(const char* text);

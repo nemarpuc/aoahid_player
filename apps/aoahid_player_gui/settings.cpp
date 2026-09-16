@@ -56,6 +56,19 @@ void read_hex(const std::string& text, const int minimum, const int maximum, int
     out = static_cast<int>(value);
 }
 
+void read_float(const std::string& text, const float minimum, const float maximum, float& out) {
+    if (text.empty())
+        return;
+    errno = 0;
+    char* end = nullptr;
+    const float value = std::strtof(text.c_str(), &end);
+    if (errno != 0 || end == text.c_str() || *end != '\0')
+        return;
+    if (value < minimum || value > maximum)
+        return;
+    out = value;
+}
+
 void read_bool(const std::string& text, bool& out) {
     if (text == "1" || text == "true" || text == "on")
         out = true;
@@ -164,6 +177,8 @@ Settings load_settings(const std::filesystem::path& path) {
             read_int(value, 0, 348, settings.live_release_key);
         else if (key == "live.fullscreen_key")
             read_int(value, 0, 348, settings.live_fullscreen_key);
+        else if (key == "ui.sidebar_width")
+            read_float(value, 280.0f, 640.0f, settings.sidebar_width);
     }
     if (settings.key_max < settings.key_min)
         settings.key_max = settings.key_min;
@@ -196,6 +211,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
+    out << "ui.sidebar_width = " << settings.sidebar_width << '\n';
 
     std::filesystem::path temporary = path;
     temporary += ".tmp";

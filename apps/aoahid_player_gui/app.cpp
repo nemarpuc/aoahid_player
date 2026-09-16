@@ -125,6 +125,7 @@ Settings App::current_settings() const {
     settings.pen_mode = pen_mode_;
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
+    settings.sidebar_width = sidebar_width_;
     return settings;
 }
 
@@ -147,6 +148,7 @@ void App::apply_settings(const Settings& settings) {
     pen_mode_ = settings.pen_mode;
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
+    sidebar_width_ = settings.sidebar_width;
 }
 
 void App::persist_settings() {
@@ -712,10 +714,12 @@ void App::frame() {
                                 px(120));
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
-    ImGui::BeginChild("##sidebar", ImVec2(px(392), body), ImGuiChildFlags_None);
+    ImGui::BeginChild("##sidebar", ImVec2(px(sidebar_width_), body), ImGuiChildFlags_None);
     draw_sidebar();
     ImGui::EndChild();
-    ImGui::SameLine(0, px(16));
+    ImGui::SameLine(0, px(6));
+    draw_sidebar_splitter(body);
+    ImGui::SameLine(0, px(6));
     ImGui::BeginChild("##main", ImVec2(0, body), ImGuiChildFlags_None);
     ImGui::PopStyleColor();
     {
@@ -842,6 +846,33 @@ void App::draw_header() {
     ui::pill(playback, playback_dot);
 }
 
+// A thin drag handle between the sidebar and the main pane. Width is stored
+// unscaled (like the profile settings), so it reads the same at any DPI.
+void App::draw_sidebar_splitter(const float height) {
+    constexpr float handle_width = 6.0f;
+    constexpr float min_width = 280.0f;
+    constexpr float max_width = 640.0f;
+    ImGui::InvisibleButton("##sidebar_splitter", ImVec2(px(handle_width), height));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active = ImGui::IsItemActive();
+    if (hovered || active)
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
+    if (active) {
+        sidebar_width_ = std::clamp(
+            sidebar_width_ + ImGui::GetIO().MouseDelta.x / ImGui::GetStyle().FontScaleDpi,
+            min_width, max_width);
+    }
+    if (hovered || active) {
+        ImDrawList* list = ImGui::GetWindowDrawList();
+        const ImVec2 p0 = ImGui::GetItemRectMin();
+        const ImVec2 p1 = ImGui::GetItemRectMax();
+        const float cx = (p0.x + p1.x) * 0.5f;
+        list->AddRectFilled(ImVec2(cx - px(1), p0.y), ImVec2(cx + px(1), p1.y),
+                            ImGui::GetColorU32(active ? theme::accent : theme::border_strong),
+                            px(1));
+    }
+}
+
 // --- Sidebar ---------------------------------------------------------------
 
 void App::draw_sidebar() {
@@ -918,33 +949,53 @@ void App::draw_devices_card() {
 
         const float text_x = b1.x + px(12);
         const float line = ImGui::GetTextLineHeight();
-        list->AddText(ImVec2(text_x, p0.y + row * 0.5f - line - px(1)),
-                      ImGui::GetColorU32(theme::text), device.product.c_str());
+
+        // Found up front so the two text lines below can reserve room for
+        // the dot/count this draws on the right, instead of running under it.
+        const aoap::DeviceStatus* device_status = nullptr;
+        for (const aoap::DeviceStatus& entry : status) {
+            if (entry.label == device.label) {
+                device_status = &entry;
+                break;
+            }
+        }
+        std::string counts;
+        float counts_width = 0.0f;
+        if (device_status != nullptr) {
+            counts = device_status->active ? format_count(device_status->reports) + " reports"
+                                           : std::string("dropped");
+            ImGui::PushFont(nullptr, theme::font_small);
+            counts_width = ImGui::CalcTextSize(counts.c_str()).x;
+            ImGui::PopFont();
+        }
+        const float dot_reserve = device_status != nullptr ? px(24) : px(12);
+        const float count_reserve =
+            device_status != nullptr ? px(16) + counts_width + px(12) : px(12);
+        ui::draw_text_ellipsized(list, ImVec2(text_x, p0.y + row * 0.5f - line - px(1)),
+                                 ImGui::GetColorU32(theme::text), device.product.c_str(),
+                                 p1.x - dot_reserve - text_x);
         char detail[160];
         std::snprintf(detail, sizeof detail, "%04x:%04x%s%s", device.vendor_id, device.product_id,
                       device.serial.empty() ? "" : "  ·  ", device.serial.c_str());
-        list->AddText(ImVec2(text_x, p0.y + row * 0.5f + px(1)),
-                      ImGui::GetColorU32(theme::text_faint), detail);
+        ui::draw_text_ellipsized(list, ImVec2(text_x, p0.y + row * 0.5f + px(1)),
+                                 ImGui::GetColorU32(theme::text_faint), detail,
+                                 p1.x - count_reserve - text_x);
 
         // Live state of a connected device: a dot, the report count, and the
         // last failure as a tooltip.
-        for (const aoap::DeviceStatus& entry : status) {
-            if (entry.label != device.label)
-                continue;
-            const ImU32 dot = entry.active ? theme::success : theme::danger;
+        if (device_status != nullptr) {
+            const ImU32 dot = device_status->active ? theme::success : theme::danger;
             const ImVec2 c(p1.x - px(16), p0.y + row * 0.5f - line * 0.5f);
             list->AddCircleFilled(c, px(4), ImGui::GetColorU32(dot));
-            const std::string counts =
-                entry.active ? format_count(entry.reports) + " reports" : std::string("dropped");
             ImGui::PushFont(nullptr, theme::font_small);
-            const ImVec2 size = ImGui::CalcTextSize(counts.c_str());
-            list->AddText(ImVec2(p1.x - px(12) - size.x, p0.y + row * 0.5f + px(2)),
-                          ImGui::GetColorU32(entry.active ? theme::text_faint : theme::danger),
-                          counts.c_str());
+            list->AddText(
+                ImVec2(p1.x - px(12) - counts_width, p0.y + row * 0.5f + px(2)),
+                ImGui::GetColorU32(device_status->active ? theme::text_faint : theme::danger),
+                counts.c_str());
             ImGui::PopFont();
-            if (!entry.last_error.empty() &&
+            if (!device_status->last_error.empty() &&
                 ImGui::IsMouseHoveringRect(p0, p1) && ImGui::IsWindowHovered())
-                ImGui::SetTooltip("%s", entry.last_error.c_str());
+                ImGui::SetTooltip("%s", device_status->last_error.c_str());
         }
         ImGui::PopID();
     }

@@ -22,7 +22,11 @@ inline constexpr ImU32 border = rgb(0x26272E);
 inline constexpr ImU32 border_strong = rgb(0x34353D);
 inline constexpr ImU32 text = rgb(0xECECF1);
 inline constexpr ImU32 text_dim = rgb(0x9D9EA9);
-inline constexpr ImU32 text_faint = rgb(0x696A75);
+// text_faint on `background` is about 5.2:1 (WCAG AA for normal text needs
+// 4.5:1); it carries real information (device VID:PID/serial, subtitles),
+// not just decoration, so it stays above that line even though it is dimmer
+// than text_dim.
+inline constexpr ImU32 text_faint = rgb(0x83848F);
 
 // White text on `accent` is about 4.9:1.
 inline constexpr ImU32 accent = rgb(0x6E5FD1);

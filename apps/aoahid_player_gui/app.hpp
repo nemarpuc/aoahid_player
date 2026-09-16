@@ -124,6 +124,7 @@ class App {
     // Layout pieces.
     void draw_header();
     void draw_sidebar();
+    void draw_sidebar_splitter(float height);
     void draw_devices_card();
     void draw_profiles_card();
     void draw_touch_settings();
@@ -221,6 +222,7 @@ class App {
     std::set<std::string> selected_;
     std::string connect_error_;
     float connect_height_{120.0f};
+    float sidebar_width_{392.0f};
     Engine::Phase last_phase_{Engine::Phase::idle};
     AdbStatus adb_status_{AdbStatus::unknown};
 
