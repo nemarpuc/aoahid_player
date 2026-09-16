@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 0.4.0 LANGUAGES C CXX)
+project(aoahid-player VERSION 0.5.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -21,8 +21,10 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # 0.3.0 removed aoahid_gamepad_options.application (see spec_builder.hpp's
 # build_gamepad()); an older libaoahid still compiles against this source but
 # would reject every Gamepad Spec at runtime, so the minimum is pinned here to
-# fail at configure time instead.
-find_package(aoahid 0.3.0 CONFIG REQUIRED)
+# fail at configure time instead. 0.5.0 renamed aoahid_touch_options to
+# aoahid_touchscreen_options (build_touch() follows), which an older libaoahid
+# would fail to even compile against, so the pin moves with it.
+find_package(aoahid 0.5.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree

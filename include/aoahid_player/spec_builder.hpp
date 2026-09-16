@@ -292,7 +292,7 @@ class SpecSet {
 
     bool build_touch(const TouchSetup& setup, std::string& error) {
         using namespace spec_detail;
-        aoahid_touch_options options{};
+        aoahid_touchscreen_options options{};
         options.struct_size = static_cast<uint32_t>(sizeof(options));
         options.maximum_contacts = setup.max_contacts;
         // One report carries every declared slot, so a frame is never split
