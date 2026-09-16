@@ -2,12 +2,86 @@
 #include "theme.hpp"
 
 #include <cstdio>
+#include <fstream>
+#include <string>
+
+#if defined(_WIN32)
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#include <windows.h>
+#endif
 
 // Generated at build time from Dear ImGui's bundled Roboto-Medium.ttf.
 extern const unsigned char aoahid_player_font_data[];
 extern const unsigned int aoahid_player_font_size;
 
 namespace gui::theme {
+namespace {
+
+bool file_exists(const std::string& path) { return std::ifstream(path, std::ios::binary).good(); }
+
+// A CJK-capable font already on the system, so Japanese (and other CJK)
+// paths and filenames render instead of tofu boxes. Not embedded: even one
+// trimmed Noto Sans CJK weight runs several MB, working against this
+// project's low-resource-over-polish priority (see the priorities in
+// README.md); Roboto alone, embedded, stays a tiny build-time asset.
+// Returns an empty string if nothing suitable was found.
+std::string find_cjk_font_path() {
+#if defined(_WIN32)
+    char windir[MAX_PATH];
+    const UINT length = GetWindowsDirectoryA(windir, sizeof windir);
+    if (length == 0 || length >= sizeof windir)
+        return {};
+    static const char* const candidates[] = {"\\Fonts\\Meiryo.ttc", "\\Fonts\\YuGothM.ttc",
+                                             "\\Fonts\\msgothic.ttc"};
+    for (const char* suffix : candidates) {
+        std::string path = std::string(windir) + suffix;
+        if (file_exists(path))
+            return path;
+    }
+    return {};
+#elif defined(__APPLE__)
+    static const char* const candidates[] = {
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+    };
+    for (const char* path : candidates) {
+        if (file_exists(path))
+            return path;
+    }
+    return {};
+#else
+    // Asks fontconfig for whatever font it would already pick to render
+    // Japanese, the same lookup the rest of the desktop uses; a fixed
+    // command with no external input, so this is not a shell-injection
+    // concern.
+    std::string result;
+    FILE* pipe = popen("fc-match -f '%{file}' ':lang=ja' 2>/dev/null", "r");
+    if (pipe != nullptr) {
+        char buffer[512];
+        if (std::fgets(buffer, sizeof buffer, pipe) != nullptr)
+            result = buffer;
+        pclose(pipe);
+    }
+    while (!result.empty() && (result.back() == '\n' || result.back() == '\r'))
+        result.pop_back();
+    if (!result.empty() && file_exists(result))
+        return result;
+    static const char* const candidates[] = {
+        "/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/noto-cjk/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+    };
+    for (const char* path : candidates) {
+        if (file_exists(path))
+            return path;
+    }
+    return {};
+#endif
+}
+
+} // namespace
 
 void apply_style(const float dpi_scale) {
     ImGuiStyle style;
@@ -89,6 +163,24 @@ void setup(const float dpi_scale) {
     std::snprintf(config.Name, sizeof config.Name, "Roboto Medium");
     io.Fonts->AddFontFromMemoryTTF(const_cast<unsigned char*>(aoahid_player_font_data),
                                    static_cast<int>(aoahid_player_font_size), font_body, &config);
+
+    // Merged into the same logical font as Roboto (which has no CJK
+    // glyphs), so Japanese paths and filenames render instead of tofu
+    // boxes wherever a script or profile name happens to use them. No
+    // glyph range is specified: since 1.92, with a renderer backend that
+    // supports ImGuiBackendFlags_RendererHasTextures (true here, see
+    // imgui_impl_opengl3.cpp), glyphs rasterize on demand from whatever
+    // codepoints actually appear, so pre-declaring Japanese's ranges is
+    // unnecessary (and GetGlyphRangesJapanese() is gone under this
+    // project's IMGUI_DISABLE_OBSOLETE_FUNCTIONS).
+    const std::string cjk_path = find_cjk_font_path();
+    if (!cjk_path.empty()) {
+        ImFontConfig cjk_config;
+        cjk_config.MergeMode = true;
+        cjk_config.OversampleH = 2;
+        std::snprintf(cjk_config.Name, sizeof cjk_config.Name, "CJK fallback");
+        io.Fonts->AddFontFromFileTTF(cjk_path.c_str(), font_body, &cjk_config);
+    }
     apply_style(dpi_scale);
 }
 

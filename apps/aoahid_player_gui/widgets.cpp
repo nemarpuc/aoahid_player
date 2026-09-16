@@ -52,6 +52,63 @@ ImU32 state_fill(const Colors& colors, const bool hovered, const bool held) {
     return held ? colors.fill_active : hovered ? colors.fill_hover : colors.fill;
 }
 
+// Set while any smoothed() call this frame is still short of its target, so
+// the main loop knows to keep redrawing instead of going idle (see
+// animations_active()). Cleared at the start of each frame.
+bool g_animations_active = false;
+
+// Eases `target` in over a few frames instead of snapping, keyed by `id` so
+// many widgets can each animate independently with no state of their own.
+// The first call for a given id starts at `target` (no pop-in from zero).
+ImU32 smoothed_color(const ImGuiID id, const ImU32 target) {
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const ImU32 previous = static_cast<ImU32>(storage->GetInt(id, static_cast<int>(target)));
+    if (previous == target)
+        return target;
+    // Exponential ease: framerate-independent, and it only ever approaches
+    // target, so a snap-to-target close threshold below is what stops it.
+    constexpr float speed = 22.0f;
+    const float t = std::clamp(1.0f - std::exp(-speed * ImGui::GetIO().DeltaTime), 0.0f, 1.0f);
+    const auto lerp_channel = [&](const int shift) -> ImU32 {
+        const int from = static_cast<int>((previous >> shift) & 0xFF);
+        const int to = static_cast<int>((target >> shift) & 0xFF);
+        return static_cast<ImU32>(from + static_cast<int>(std::lround((to - from) * t))) << shift;
+    };
+    ImU32 next = lerp_channel(IM_COL32_R_SHIFT) | lerp_channel(IM_COL32_G_SHIFT) |
+                lerp_channel(IM_COL32_B_SHIFT) | lerp_channel(IM_COL32_A_SHIFT);
+    // Close enough: snap the last mile so this stops claiming to animate.
+    const int diff = std::abs(static_cast<int>((next >> IM_COL32_R_SHIFT) & 0xFF) -
+                              static_cast<int>((target >> IM_COL32_R_SHIFT) & 0xFF)) +
+                     std::abs(static_cast<int>((next >> IM_COL32_G_SHIFT) & 0xFF) -
+                              static_cast<int>((target >> IM_COL32_G_SHIFT) & 0xFF)) +
+                     std::abs(static_cast<int>((next >> IM_COL32_B_SHIFT) & 0xFF) -
+                              static_cast<int>((target >> IM_COL32_B_SHIFT) & 0xFF)) +
+                     std::abs(static_cast<int>((next >> IM_COL32_A_SHIFT) & 0xFF) -
+                              static_cast<int>((target >> IM_COL32_A_SHIFT) & 0xFF));
+    if (diff <= 2)
+        next = target;
+    else
+        g_animations_active = true;
+    storage->SetInt(id, static_cast<int>(next));
+    return next;
+}
+
+// Same idea as smoothed_color(), for a single scalar (a pill's x or width).
+float smoothed_float(const ImGuiID id, const float target) {
+    ImGuiStorage* storage = ImGui::GetStateStorage();
+    const float previous = storage->GetFloat(id, target);
+    if (std::fabs(previous - target) < 0.5f) {
+        storage->SetFloat(id, target);
+        return target;
+    }
+    constexpr float speed = 22.0f;
+    const float t = std::clamp(1.0f - std::exp(-speed * ImGui::GetIO().DeltaTime), 0.0f, 1.0f);
+    const float next = previous + (target - previous) * t;
+    storage->SetFloat(id, next);
+    g_animations_active = true;
+    return next;
+}
+
 ImVec2 resolve_size(const ImVec2 size, const ImVec2 content) {
     ImVec2 result = size;
     const float avail = ImGui::GetContentRegionAvail().x;
@@ -67,6 +124,9 @@ ImVec2 resolve_size(const ImVec2 size, const ImVec2 content) {
 } // namespace
 
 float px(const float value) { return value * ImGui::GetStyle().FontScaleDpi; }
+
+void begin_frame_animations() { g_animations_active = false; }
+bool animations_active() { return g_animations_active; }
 
 bool begin_card(const char* id, const char* title, const float height) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::surface);
@@ -131,7 +191,7 @@ bool button(const char* label, const ImVec2 requested, const Tone tone) {
     const Colors colors = colors_for(tone);
     ImDrawList* list = ImGui::GetWindowDrawList();
     const float rounding = ImGui::GetStyle().FrameRounding;
-    const ImU32 fill = state_fill(colors, hovered, held);
+    const ImU32 fill = smoothed_color(ImGui::GetID(label), state_fill(colors, hovered, held));
     if ((fill & IM_COL32_A_MASK) != 0U)
         list->AddRectFilled(p0, p1, faded(fill), rounding);
     if (tone == Tone::danger && hovered)
@@ -328,7 +388,7 @@ bool icon_button(const char* id, const Icon icon, const float diameter, const To
     ImDrawList* list = ImGui::GetWindowDrawList();
 
     const Colors colors = colors_for(tone);
-    const ImU32 fill = state_fill(colors, hovered, held);
+    const ImU32 fill = smoothed_color(ImGui::GetID(id), state_fill(colors, hovered, held));
     if ((fill & IM_COL32_A_MASK) != 0U)
         list->AddCircleFilled(c, diameter * 0.5f, faded(fill), 48);
     const ImU32 glyph = tone == Tone::quiet && hovered ? theme::text : colors.text;
@@ -461,49 +521,83 @@ void spinner(const float radius, const ImU32 color) {
     list->PathStroke(faded(color), px(2));
 }
 
+// A pill-shaped segmented control: one rounded track holding the labels,
+// with a smaller rounded pill behind whichever is selected (and a fainter
+// one under the pointer). Content-width, not stretched to the row, the way
+// a segmented control reads elsewhere.
 bool tabs(const char* id, const char* const* labels, const int count, int* current) {
     ImGui::PushID(id);
-    const float height = ImGui::GetFrameHeight() + px(8);
+    const float pad = px(4);
+    const float inner_height = ImGui::GetFrameHeight();
+    const float height = inner_height + pad * 2;
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const float full = ImGui::GetContentRegionAvail().x;
     ImDrawList* list = ImGui::GetWindowDrawList();
-    // A hairline under the whole strip; the current tab sits on it.
-    list->AddLine(ImVec2(origin.x, origin.y + height - 0.5f),
-                  ImVec2(origin.x + full, origin.y + height - 0.5f), faded(theme::border));
+
+    // Measure first: locates the selected tab's own x/width so its pill can
+    // slide to it below instead of jumping.
+    float total_width = pad;
+    float selected_x = origin.x + pad;
+    float selected_width = 0.0f;
+    for (int index = 0; index < count; ++index) {
+        const float width = ImGui::CalcTextSize(labels[index]).x + px(24);
+        if (index == *current) {
+            selected_x = origin.x + total_width;
+            selected_width = width;
+        }
+        total_width += width;
+    }
+    total_width += pad;
+    list->AddRectFilled(origin, ImVec2(origin.x + total_width, origin.y + height),
+                        faded(theme::field), height * 0.5f);
+
+    // The selected pill eases to the current tab instead of snapping, so
+    // switching tabs reads as motion rather than a cut.
+    const float pill_x = smoothed_float(ImGui::GetID("##pill_x"), selected_x);
+    const float pill_w = smoothed_float(ImGui::GetID("##pill_w"), selected_width);
+    if (pill_w > 0.0f) {
+        list->AddRectFilled(ImVec2(pill_x, origin.y + pad),
+                            ImVec2(pill_x + pill_w, origin.y + height - pad),
+                            faded(theme::field_active), inner_height * 0.5f);
+    }
+
     bool changed = false;
-    float x = origin.x;
+    float x = origin.x + pad;
     for (int index = 0; index < count; ++index) {
         const ImVec2 text_size = ImGui::CalcTextSize(labels[index]);
         const float width = text_size.x + px(24);
-        ImGui::SetCursorScreenPos(ImVec2(x, origin.y));
+        ImGui::SetCursorScreenPos(ImVec2(x, origin.y + pad));
         ImGui::PushID(index);
-        if (ImGui::InvisibleButton("##tab", ImVec2(width, height)) && *current != index) {
+        if (ImGui::InvisibleButton("##tab", ImVec2(width, inner_height)) && *current != index) {
             *current = index;
             changed = true;
         }
         const bool hovered = ImGui::IsItemHovered();
+        const ImGuiID hover_id = ImGui::GetID("##hover");
         ImGui::PopID();
         const bool selected = *current == index;
-        list->AddText(ImVec2(x + px(12), origin.y + (height - text_size.y) * 0.5f - px(1)),
-                      faded(selected  ? theme::text
-                            : hovered ? theme::text_dim
-                                      : theme::text_faint),
-                      labels[index]);
-        if (selected) {
-            list->AddRectFilled(ImVec2(x + px(8), origin.y + height - px(2)),
-                                ImVec2(x + width - px(8), origin.y + height), faded(theme::accent),
-                                px(1));
+        if (!selected) {
+            const ImU32 hover_fill = smoothed_color(
+                hover_id, hovered ? theme::field_hover : with_alpha(theme::field_hover, 0));
+            if ((hover_fill & IM_COL32_A_MASK) != 0U) {
+                list->AddRectFilled(ImVec2(x, origin.y + pad),
+                                    ImVec2(x + width, origin.y + height - pad),
+                                    faded(hover_fill), inner_height * 0.5f);
+            }
         }
-        x += width + px(4);
+        list->AddText(
+            ImVec2(x + (width - text_size.x) * 0.5f, origin.y + (height - text_size.y) * 0.5f),
+            faded(selected ? theme::text : theme::text_dim), labels[index]);
+        x += width;
     }
     ImGui::SetCursorScreenPos(origin);
-    ImGui::Dummy(ImVec2(full, height));
+    ImGui::Dummy(ImVec2(total_width, height));
     ImGui::PopID();
     return changed;
 }
 
 bool scrub_bar(const char* id, const float fraction, const float width, const float height,
-               float* preview, ScrubState* state) {
+               float* preview, ScrubState* state, const ImU32 fill) {
+    const ImU32 fill_color = fill != 0 ? fill : theme::accent;
     const float row = std::max(height + px(14), px(20));
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
     ImGui::InvisibleButton(id, ImVec2(width, row));
@@ -534,7 +628,7 @@ bool scrub_bar(const char* id, const float fraction, const float width, const fl
                       faded(theme::text_dim), px(1));
     }
     if (fill_x > t0.x + 0.5f)
-        list->AddRectFilled(t0, ImVec2(std::max(fill_x, t0.x + height), t1.y), faded(theme::accent),
+        list->AddRectFilled(t0, ImVec2(std::max(fill_x, t0.x + height), t1.y), faded(fill_color),
                             radius);
     const float knob = (hovered || active) ? height * 1.5f : height * 1.2f;
     list->AddCircleFilled(ImVec2(fill_x, cy), knob, faded(IM_COL32(245, 245, 248, 255)), 24);
@@ -569,7 +663,7 @@ bool slider(const char* id, float* value, const float minimum, const float maxim
     const float total = ImGui::GetContentRegionAvail().x;
     const float track_width = std::max(total - value_width - px(14), px(40));
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
-    const float knob = px(7);
+    const float knob = px(8);
     ImGui::InvisibleButton(id, ImVec2(track_width, row));
     const bool hovered = ImGui::IsItemHovered();
     const bool active = ImGui::IsItemActive();
@@ -589,7 +683,7 @@ bool slider(const char* id, float* value, const float minimum, const float maxim
 
     ImDrawList* list = ImGui::GetWindowDrawList();
     const float cy = std::round(p0.y + row * 0.5f);
-    const float track = px(4);
+    const float track = px(6);
     const float x0 = p0.x + knob;
     const float x1 = p0.x + track_width - knob;
     const float x = x0 + (x1 - x0) * std::clamp(to_fraction(*value), 0.0f, 1.0f);

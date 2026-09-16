@@ -39,6 +39,44 @@ struct Settings {
     // Unscaled width of the sidebar, dragged via the splitter next to it.
     float sidebar_width{392.0f};
 
+    // Window geometry in OS pixels. 0 width/height means "unset": main.cpp
+    // then falls back to its own centred, monitor-fitted default instead of
+    // trying to place a zero-sized window.
+    int window_x{};
+    int window_y{};
+    int window_width{};
+    int window_height{};
+
+    // 0 = Player, 1 = Live, 2 = Playlist, 3 = Recorder (App::Tab's order).
+    int tab{};
+    // A script reference (see script_reference()/resolve_script_reference()
+    // in playlist.hpp), or empty to fall back to the first script found.
+    std::string last_script;
+    float speed{1.0f};
+    int loop_limit{}; // 0 = repeats until stopped
+    bool log_open{true};
+
+    // The Live tab's forwarding toggles.
+    bool live_touch{true};
+    bool live_mouse{};
+    bool live_key{};
+    bool live_gamepad{};
+
+    // The Live preview's shape and orientation; 0/0 ratio follows the
+    // connected touchscreen. See App::live_ratio_w_/h_/live_rotation_.
+    int live_ratio_w{};
+    int live_ratio_h{};
+    int live_rotation{};
+
+    // The Live tab's optional reference image overlay; see
+    // LiveImageOverlay::State. Empty path means none was loaded.
+    std::string live_image_path;
+    float live_image_x{0.5f}; // centre, as a fraction of the preview
+    float live_image_y{0.5f};
+    float live_image_half_width{0.35f}; // fraction of the preview's width
+    float live_image_rotation{0.0f};    // radians
+    float live_image_opacity{1.0f};
+
     bool operator==(const Settings&) const = default;
 };
 

@@ -39,6 +39,14 @@ enum class Tone {
 // Unscaled pixels to current pixels, following the font's DPI scale.
 float px(float value);
 
+// Buttons, tabs, and similar ease their fill color (and the tab pill its
+// position) toward each new state instead of snapping, so hovering and
+// switching tabs read as motion. Call begin_frame_animations() once, before
+// drawing, and check animations_active() afterward to decide whether to
+// redraw again next frame instead of waiting idle for the next input event.
+void begin_frame_animations();
+[[nodiscard]] bool animations_active();
+
 // A flat card with an optional title. Height 0 fits the contents; negative
 // fills the remaining space minus that much.
 bool begin_card(const char* id, const char* title = nullptr, float height = 0.0f);
@@ -86,19 +94,21 @@ void pill(const char* text, ImU32 dot, bool blink = false);
 
 void spinner(float radius, ImU32 color);
 
-// Text tabs with an accent underline under the current one.
+// A pill-shaped segmented control: a rounded track holding the labels, with
+// the current one on its own rounded pill.
 bool tabs(const char* id, const char* const* labels, int count, int* current);
 
 // A seekable progress bar. While dragging, `preview` follows the pointer;
 // returns true on the frame the pointer is released, with `preview` set to
-// the chosen fraction.
+// the chosen fraction. `fill` colors the filled portion and its knob accent
+// (theme::accent if omitted), so callers can tell one bar from another.
 struct ScrubState {
     bool hovered{};
     bool dragging{};
     float hover_fraction{};
 };
 bool scrub_bar(const char* id, float fraction, float width, float height, float* preview,
-               ScrubState* state = nullptr);
+               ScrubState* state = nullptr, ImU32 fill = 0);
 
 // A thin track with a round knob and the value printed to its right, filling
 // the rest of the row, e.g. "10 fingers" or "1.50x". Click or drag to set;

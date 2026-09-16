@@ -182,8 +182,8 @@ void App::live_enable(const bool on) {
 // long as this is captured — otherwise that unbounded position eventually
 // drifts onto some other button in this window and clicks it. With
 // io.MousePos pinned, ImGui's own io.MouseDelta no longer reflects the
-// pointer's motion, so it is tracked independently via on_cursor() instead
-// (see live_raw_delta_x_/y_) while captured.
+// pointer's motion, so on_cursor() tracks and sends it independently while
+// captured (see live_move_x_/y_'s comment in app.hpp).
 void App::live_capture_pointer(const bool captured) {
     if (captured == live_mouse_captured_)
         return;
@@ -199,8 +199,6 @@ void App::live_capture_pointer(const bool captured) {
     // around the transition.
     live_move_x_ = 0.0;
     live_move_y_ = 0.0;
-    live_raw_delta_x_ = 0.0;
-    live_raw_delta_y_ = 0.0;
     live_raw_cursor_valid_ = false;
     if (captured)
         return;
@@ -294,29 +292,10 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
         if (!live_mouse_captured_)
             return;
 
-        // Relative motion; the fraction left over is kept so slow movement is
-        // not lost to truncation.
-        // Sent as-is, unlike touch: the preview's rotation only remaps where a
-        // position lands, and a mouse delta is not a position. The phone's own
-        // OS applies its own orientation to the cursor it moves.
-        // io.MouseDelta is not used here: io.MousePos is pinned off-screen
-        // every frame while captured (see frame()), so ImGui never sees the
-        // cursor actually move and io.MouseDelta would read zero. The raw
-        // motion on_cursor() accumulated since the last frame is used
-        // instead, then drained.
-        live_move_x_ += live_raw_delta_x_;
-        live_move_y_ += live_raw_delta_y_;
-        live_raw_delta_x_ = 0.0;
-        live_raw_delta_y_ = 0.0;
-        const auto whole = [](double& value) {
-            const double truncated = std::trunc(value);
-            value -= truncated;
-            return static_cast<int32_t>(std::clamp(truncated, -32767.0, 32767.0));
-        };
-        const int32_t dx = whole(live_move_x_);
-        const int32_t dy = whole(live_move_y_);
-        if (dx != 0 || dy != 0)
-            engine_.live_send(aoap::MouseMove{dx, dy});
+        // Relative motion is sent straight from on_cursor() as the window
+        // system reports it, not from here: waiting for this once-per-frame
+        // pass would hold every drag step behind the render/vsync cadence
+        // (see on_cursor() and live_move_x_/y_'s comment in app.hpp).
         for (int button = 0; button < 5 && button < static_cast<int>(setup.mouse.buttons);
              ++button) {
             const uint32_t index = static_cast<uint32_t>(button) + 1;
@@ -524,9 +503,15 @@ void App::draw_live_surface(const ImVec2 size) {
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
 
-    // The phone, centred and as large as it fits.
+    // The phone, centred and as large as it fits. In the normal view it is
+    // framed in a bezel so the preview reads as a phone rather than a plain
+    // rounded rectangle; full screen skips the bezel entirely and keeps the
+    // surface pure black (or the reference image, drawn separately below)
+    // edge to edge, with no gray chrome eating into the one thing full
+    // screen exists to maximize.
     const ImVec2 area = ImGui::GetContentRegionAvail();
-    const float margin = px(10);
+    const float bezel = live_fullscreen_ ? 0.0f : px(12);
+    const float margin = px(10) + bezel;
     float width = area.x - margin * 2;
     float height = width / aspect;
     if (height > area.y - margin * 2) {
@@ -537,6 +522,23 @@ void App::draw_live_surface(const ImVec2 size) {
     const ImVec2 p0(origin.x + (area.x - width) * 0.5f, origin.y + (area.y - height) * 0.5f);
     const ImVec2 p1(p0.x + width, p0.y + height);
     ImDrawList* list = ImGui::GetWindowDrawList();
+    if (!live_fullscreen_) {
+        const ImVec2 b0(p0.x - bezel, p0.y - bezel);
+        const ImVec2 b1(p1.x + bezel, p1.y + bezel);
+        list->AddRectFilled(b0, b1, ImGui::GetColorU32(theme::surface_hi), px(22));
+        list->AddRect(b0, b1, ImGui::GetColorU32(theme::border_strong), px(22), px(1.5f));
+        // A speaker/camera notch on the bezel's top edge. Fixed there rather
+        // than tracking live_rotation_: the preview rectangle itself already
+        // turns landscape at a quarter turn (see live_preview_aspect()), so
+        // a notch on whichever edge is drawn "up" looks right either way.
+        const float notch_width = std::min(px(46.0f), width * 0.3f);
+        const float notch_height = px(5.0f);
+        const float notch_cx = (b0.x + b1.x) * 0.5f;
+        const float notch_cy = b0.y + bezel * 0.5f;
+        list->AddRectFilled(ImVec2(notch_cx - notch_width * 0.5f, notch_cy - notch_height * 0.5f),
+                            ImVec2(notch_cx + notch_width * 0.5f, notch_cy + notch_height * 0.5f),
+                            ImGui::GetColorU32(theme::rgb(0x000000)), notch_height * 0.5f);
+    }
     list->AddRect(p0, p1, ImGui::GetColorU32(theme::border_strong), px(10), px(1.5f));
 
     const bool running = engine_.phase() == Phase::live;
@@ -1009,7 +1011,9 @@ void App::draw_live_controls() {
         ImGui::SetItemTooltip("Types the clipboard's text on the phone. Ctrl+Shift+V");
 
     // Reference image: an optional picture over the preview (a screenshot
-    // works well) to line touches up against, not saved between runs.
+    // works well) to line touches up against. Position, size, rotation, and
+    // opacity persist between runs like any other setting; the image file
+    // itself is reloaded from its saved path at startup if still there.
     gap(2);
     ui::caption("Reference image");
     const float image_button_width = px(64);
@@ -1034,6 +1038,14 @@ void App::draw_live_controls() {
                       ? "Locked: touches and clicks pass straight through it."
                       : "Drag it to move, its corner handle to resize, its top handle to "
                         "rotate.");
+        gap(2);
+        ui::caption("Opacity");
+        float opacity_percent = live_image_.opacity() * 100.0f;
+        if (ui::slider("##live_image_opacity", &opacity_percent, 0.0f, 100.0f, 0, "%", 1.0f))
+            live_image_.set_opacity(opacity_percent / 100.0f);
+        gap(2);
+        if (ui::button("Reset size/rotation", ImVec2(px(150), 0)))
+            live_image_.reset_transform();
     } else {
         small_dim("Load a screenshot, or drop an image file on the preview above.");
     }

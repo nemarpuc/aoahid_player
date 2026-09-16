@@ -179,6 +179,50 @@ Settings load_settings(const std::filesystem::path& path) {
             read_int(value, 0, 348, settings.live_fullscreen_key);
         else if (key == "ui.sidebar_width")
             read_float(value, 280.0f, 640.0f, settings.sidebar_width);
+        else if (key == "window.x")
+            read_int(value, -32768, 32767, settings.window_x);
+        else if (key == "window.y")
+            read_int(value, -32768, 32767, settings.window_y);
+        else if (key == "window.width")
+            read_int(value, 0, 16384, settings.window_width);
+        else if (key == "window.height")
+            read_int(value, 0, 16384, settings.window_height);
+        else if (key == "ui.tab")
+            read_int(value, 0, 3, settings.tab);
+        else if (key == "ui.last_script")
+            settings.last_script = value;
+        else if (key == "ui.log_open")
+            read_bool(value, settings.log_open);
+        else if (key == "player.speed")
+            read_float(value, 0.01f, 100.0f, settings.speed);
+        else if (key == "player.loop_limit")
+            read_int(value, 0, 1000000, settings.loop_limit);
+        else if (key == "live.touch")
+            read_bool(value, settings.live_touch);
+        else if (key == "live.mouse")
+            read_bool(value, settings.live_mouse);
+        else if (key == "live.key")
+            read_bool(value, settings.live_key);
+        else if (key == "live.gamepad")
+            read_bool(value, settings.live_gamepad);
+        else if (key == "live.ratio_w")
+            read_int(value, 0, 65536, settings.live_ratio_w);
+        else if (key == "live.ratio_h")
+            read_int(value, 0, 65536, settings.live_ratio_h);
+        else if (key == "live.rotation")
+            read_int(value, 0, 3, settings.live_rotation);
+        else if (key == "live_image.path")
+            settings.live_image_path = value;
+        else if (key == "live_image.x")
+            read_float(value, 0.0f, 1.0f, settings.live_image_x);
+        else if (key == "live_image.y")
+            read_float(value, 0.0f, 1.0f, settings.live_image_y);
+        else if (key == "live_image.half_width")
+            read_float(value, 0.02f, 4.0f, settings.live_image_half_width);
+        else if (key == "live_image.rotation")
+            read_float(value, -1000.0f, 1000.0f, settings.live_image_rotation);
+        else if (key == "live_image.opacity")
+            read_float(value, 0.0f, 1.0f, settings.live_image_opacity);
     }
     if (settings.key_max < settings.key_min)
         settings.key_max = settings.key_min;
@@ -212,6 +256,28 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
     out << "ui.sidebar_width = " << settings.sidebar_width << '\n';
+    out << "window.x = " << settings.window_x << '\n';
+    out << "window.y = " << settings.window_y << '\n';
+    out << "window.width = " << settings.window_width << '\n';
+    out << "window.height = " << settings.window_height << '\n';
+    out << "ui.tab = " << settings.tab << '\n';
+    out << "ui.last_script = " << settings.last_script << '\n';
+    out << "ui.log_open = " << (settings.log_open ? 1 : 0) << '\n';
+    out << "player.speed = " << settings.speed << '\n';
+    out << "player.loop_limit = " << settings.loop_limit << '\n';
+    out << "live.touch = " << (settings.live_touch ? 1 : 0) << '\n';
+    out << "live.mouse = " << (settings.live_mouse ? 1 : 0) << '\n';
+    out << "live.key = " << (settings.live_key ? 1 : 0) << '\n';
+    out << "live.gamepad = " << (settings.live_gamepad ? 1 : 0) << '\n';
+    out << "live.ratio_w = " << settings.live_ratio_w << '\n';
+    out << "live.ratio_h = " << settings.live_ratio_h << '\n';
+    out << "live.rotation = " << settings.live_rotation << '\n';
+    out << "live_image.path = " << settings.live_image_path << '\n';
+    out << "live_image.x = " << settings.live_image_x << '\n';
+    out << "live_image.y = " << settings.live_image_y << '\n';
+    out << "live_image.half_width = " << settings.live_image_half_width << '\n';
+    out << "live_image.rotation = " << settings.live_image_rotation << '\n';
+    out << "live_image.opacity = " << settings.live_image_opacity << '\n';
 
     std::filesystem::path temporary = path;
     temporary += ".tmp";

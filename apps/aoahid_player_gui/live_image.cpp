@@ -98,8 +98,34 @@ std::string LiveImageOverlay::load(const std::string& path) {
     center_ = ImVec2(0.5f, 0.5f);
     half_width_frac_ = 0.35f;
     rotation_ = 0.0f;
+    alpha_ = 1.0f;
     dragging_ = Drag::none;
     return {};
+}
+
+void LiveImageOverlay::set_opacity(const float value) noexcept {
+    alpha_ = std::clamp(value, 0.0f, 1.0f);
+}
+
+void LiveImageOverlay::reset_transform() noexcept {
+    center_ = ImVec2(0.5f, 0.5f);
+    half_width_frac_ = 0.35f;
+    rotation_ = 0.0f;
+}
+
+LiveImageOverlay::State LiveImageOverlay::snapshot() const {
+    return State{path_, center_, half_width_frac_, rotation_, alpha_};
+}
+
+std::string LiveImageOverlay::restore(const State& state) {
+    std::string error;
+    if (!state.path.empty())
+        error = load(state.path); // resets center_/half_width_frac_/rotation_/alpha_ first
+    center_ = state.center;
+    half_width_frac_ = state.half_width_frac;
+    rotation_ = state.rotation;
+    alpha_ = std::clamp(state.alpha, 0.0f, 1.0f);
+    return error;
 }
 
 void LiveImageOverlay::clear() {
@@ -229,7 +255,9 @@ void LiveImageOverlay::draw(ImDrawList* list, const ImVec2 surface_min,
     const ImVec2 br = to_screen(ImVec2(half_w, half_h));
     const ImVec2 bl = to_screen(ImVec2(-half_w, half_h));
 
-    list->AddImageQuad(texture_, tl, tr, br, bl);
+    const ImU32 tint = IM_COL32(255, 255, 255, static_cast<int>(alpha_ * 255.0f + 0.5f));
+    list->AddImageQuad(texture_, tl, tr, br, bl, ImVec2(0, 0), ImVec2(1, 0), ImVec2(1, 1),
+                       ImVec2(0, 1), tint);
     if (locked)
         return;
 

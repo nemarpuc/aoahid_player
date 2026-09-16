@@ -19,10 +19,30 @@
 #endif
 #endif
 
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+#include <immintrin.h>
+#endif
+
 namespace aoap {
 namespace {
 
 constexpr int64_t ns_per_sec = 1'000'000'000;
+
+// A hint for the final sub-millisecond busy-spin below: on x86 it lets the
+// core avoid a costly memory-order mis-speculation on loop exit and yields
+// the front end to a sibling SMT thread, without adding meaningful latency
+// of its own. A plain no-op elsewhere.
+inline void cpu_relax() noexcept {
+#if defined(__x86_64__) || defined(_M_X64) || defined(__i386__) || defined(_M_IX86)
+    _mm_pause();
+#elif defined(__aarch64__) || defined(__arm__) || defined(_M_ARM64) || defined(_M_ARM)
+#if defined(_MSC_VER)
+    __yield();
+#else
+    asm volatile("yield" ::: "memory");
+#endif
+#endif
+}
 
 static_assert(std::atomic_ref<uint32_t>::is_always_lock_free);
 
@@ -214,10 +234,11 @@ bool Timing::wait_until(const int64_t deadline_ns, const WakeSignal* wake,
         while (now_ns() < deadline_ns) {
             if (woken())
                 return false;
+            cpu_relax();
         }
     } else {
         while (now_ns() < deadline_ns)
-            ;
+            cpu_relax();
     }
     return true;
 }

@@ -187,6 +187,12 @@ int run() {
     glfwWindowHint(GLFW_VISIBLE, GLFW_FALSE);
     glfwWindowHint(GLFW_SCALE_FRAMEBUFFER, GLFW_TRUE);
 
+    // Read once, directly, before the window (and so the App that would
+    // normally own this) exists. main() also writes this same geometry back
+    // each frame via App::set_window_geometry() so the App's own
+    // persist_settings() carries it forward like every other setting.
+    const gui::Settings startup_settings = gui::load_settings(gui::settings_path());
+
     GLFWmonitor* monitor = glfwGetPrimaryMonitor();
     float scale = monitor_scale(monitor);
     int width = static_cast<int>(1360 * scale);
@@ -202,6 +208,10 @@ int run() {
             height = std::min(height, static_cast<int>(work_height * 0.92));
         }
     }
+    if (startup_settings.window_width > 0 && startup_settings.window_height > 0) {
+        width = startup_settings.window_width;
+        height = startup_settings.window_height;
+    }
 
     GLFWwindow* window = glfwCreateWindow(width, height, "AOA HID Player", nullptr, nullptr);
     if (window == nullptr) {
@@ -214,6 +224,32 @@ int run() {
     glfwSetWindowSizeLimits(window, std::min(width, static_cast<int>(1000 * scale)),
                             std::min(height, static_cast<int>(640 * scale)), GLFW_DONT_CARE,
                             GLFW_DONT_CARE);
+    if (startup_settings.window_width > 0 && startup_settings.window_height > 0) {
+        // Position is inert on native Wayland: the protocol gives a client
+        // no way to query or set its own absolute position, so GLFW's
+        // glfwGetWindowPos()/glfwSetWindowPos() are no-ops there and this
+        // block only ever restores 0,0 (harmless — width/height still
+        // apply). Real on X11, XWayland, and Windows.
+        // Only trusted if its centre still lands on some connected monitor;
+        // a display that has since been unplugged should not strand the
+        // window somewhere it can never be reached again.
+        const int centre_x = startup_settings.window_x + startup_settings.window_width / 2;
+        const int centre_y = startup_settings.window_y + startup_settings.window_height / 2;
+        int monitor_count = 0;
+        GLFWmonitor** monitors = glfwGetMonitors(&monitor_count);
+        for (int index = 0; index < monitor_count; ++index) {
+            int area_x = 0;
+            int area_y = 0;
+            int area_width = 0;
+            int area_height = 0;
+            glfwGetMonitorWorkarea(monitors[index], &area_x, &area_y, &area_width, &area_height);
+            if (centre_x >= area_x && centre_x < area_x + area_width && centre_y >= area_y &&
+                centre_y < area_y + area_height) {
+                glfwSetWindowPos(window, startup_settings.window_x, startup_settings.window_y);
+                break;
+            }
+        }
+    }
     glfwMakeContextCurrent(window);
 
     // Wayland may block a vsync'd swap for as long as the window is hidden, so
@@ -282,11 +318,29 @@ int run() {
             if (want_fullscreen) {
                 glfwGetWindowPos(window, &windowed_x, &windowed_y);
                 glfwGetWindowSize(window, &windowed_width, &windowed_height);
-                GLFWmonitor* target = monitor_for_window(window);
-                const GLFWvidmode* mode = target != nullptr ? glfwGetVideoMode(target) : nullptr;
-                if (target != nullptr && mode != nullptr)
-                    glfwSetWindowMonitor(window, target, 0, 0, mode->width, mode->height,
-                                        mode->refreshRate);
+                if (wayland) {
+                    // glfwGetWindowPos()/monitor_for_window() cannot work on
+                    // native Wayland: the protocol gives a client no way to
+                    // learn its own position or which output it is on, so
+                    // asking GLFW for exclusive fullscreen on a specific
+                    // GLFWmonitor* here would often land on the wrong
+                    // screen. Maximizing a decoration-less window is a
+                    // compositor-driven action that keeps it on whatever
+                    // output it already occupies, which is what full screen
+                    // should do.
+                    glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_FALSE);
+                    glfwMaximizeWindow(window);
+                } else {
+                    GLFWmonitor* target = monitor_for_window(window);
+                    const GLFWvidmode* mode =
+                        target != nullptr ? glfwGetVideoMode(target) : nullptr;
+                    if (target != nullptr && mode != nullptr)
+                        glfwSetWindowMonitor(window, target, 0, 0, mode->width, mode->height,
+                                            mode->refreshRate);
+                }
+            } else if (wayland) {
+                glfwRestoreWindow(window);
+                glfwSetWindowAttrib(window, GLFW_DECORATED, GLFW_TRUE);
             } else {
                 glfwSetWindowMonitor(window, nullptr, windowed_x, windowed_y, windowed_width,
                                     windowed_height, 0);
@@ -313,6 +367,19 @@ int run() {
         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) == GLFW_TRUE) {
             glfwWaitEventsTimeout(0.25);
             continue;
+        }
+        // Reported every frame so App's own persist_settings() carries the
+        // latest windowed geometry forward like any other setting; skipped
+        // while OS-fullscreen since that geometry is a monitor filling, not
+        // where the window should reappear windowed next run.
+        if (!os_fullscreen) {
+            int win_x = 0;
+            int win_y = 0;
+            int win_width = 0;
+            int win_height = 0;
+            glfwGetWindowPos(window, &win_x, &win_y);
+            glfwGetWindowSize(window, &win_width, &win_height);
+            app->set_window_geometry(win_x, win_y, win_width, win_height);
         }
         if (wayland) {
             const int64_t since = aoap::Timing::now_ns() - last_frame;

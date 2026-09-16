@@ -68,6 +68,10 @@ class App {
     // preview-filling mode. The window owner (main()) polls this once per
     // loop iteration and drives glfwSetWindowMonitor() accordingly.
     [[nodiscard]] bool wants_os_fullscreen() const noexcept { return live_fullscreen_; }
+    // The window owner (main()) reports its windowed geometry here once a
+    // frame (skipped while OS-fullscreen), purely so it round-trips through
+    // the same persist_settings() as everything else; App does not use it.
+    void set_window_geometry(int x, int y, int width, int height) noexcept;
 
   private:
     enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3 };
@@ -223,6 +227,12 @@ class App {
     std::string connect_error_;
     float connect_height_{120.0f};
     float sidebar_width_{392.0f};
+    // Last windowed geometry main() reported (see set_window_geometry());
+    // 0 width/height means "never reported yet".
+    int window_x_{};
+    int window_y_{};
+    int window_width_{};
+    int window_height_{};
     Engine::Phase last_phase_{Engine::Phase::idle};
     AdbStatus adb_status_{AdbStatus::unknown};
 
@@ -320,19 +330,19 @@ class App {
                                            // straight to the engine instead (see on_key())
     double live_move_x_{};    // pointer motion not yet sent as whole pixels
     double live_move_y_{};
-    // Raw cursor position from the window system and the motion accumulated
-    // from it since live_pointer() last drained it. Tracked independently of
-    // ImGui's io.MouseDelta: while the pointer is captured, io.MousePos is
-    // pinned off-screen every frame (see frame()) so a captured, invisible,
-    // unboundedly-moving cursor can never drift onto — and click — some
-    // other button in this window. ImGui's own delta calculation depends on
-    // io.MousePos actually moving, so once it is pinned this raw delta is
-    // the only source of the pointer's motion.
+    // Raw cursor position from the window system, used to compute motion
+    // independently of ImGui's io.MouseDelta: while the pointer is captured,
+    // io.MousePos is pinned off-screen every frame (see frame()) so a
+    // captured, invisible, unboundedly-moving cursor can never drift onto —
+    // and click — some other button in this window. ImGui's own delta
+    // calculation depends on io.MousePos actually moving, so once it is
+    // pinned this is the only source of the pointer's motion. on_cursor()
+    // sends each raw motion event straight to the engine as it arrives,
+    // rather than waiting for the next rendered frame to drain it, so
+    // dragging is not held up by the render/vsync cadence.
     bool live_raw_cursor_valid_{};
     double live_raw_cursor_x_{};
     double live_raw_cursor_y_{};
-    double live_raw_delta_x_{};
-    double live_raw_delta_y_{};
     LiveImageOverlay live_image_;      // optional reference picture over the preview
     std::string live_image_path_input_;
     // Clipboard paste: types characters on a worker thread so the ~8ms

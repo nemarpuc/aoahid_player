@@ -35,14 +35,29 @@ using namespace detail;
 App::App(std::function<void()> wake)
     : wake_(std::move(wake)), log_(wake_), engine_(log_, wake_) {
     settings_path_ = settings_path();
-    apply_settings(load_settings(settings_path_));
+    const Settings loaded = load_settings(settings_path_);
+    apply_settings(loaded);
     saved_settings_ = current_settings();
     engine_.player().set_speed(speed_);
     engine_.player().set_loop_limit(loop_limit_);
     refresh_scripts();
     refresh_playlists();
-    if (!scripts_.empty())
-        load_script(scripts_.front().path);
+    // Picks up where the last run left off when that script is still there;
+    // otherwise, as before, whatever sorts first.
+    std::string startup_script;
+    if (!loaded.last_script.empty()) {
+        const std::string resolved = resolve_script_reference(loaded.last_script);
+        for (const ScriptFile& file : scripts_) {
+            if (file.path == resolved) {
+                startup_script = resolved;
+                break;
+            }
+        }
+    }
+    if (startup_script.empty() && !scripts_.empty())
+        startup_script = scripts_.front().path;
+    if (!startup_script.empty())
+        load_script(startup_script);
     log_.message(aoap::Severity::info,
                  "Scripts folder: " + aoap::script_directory() + ". Searching for devices...");
 
@@ -90,7 +105,7 @@ bool App::settings_locked() const { return engine_.phase() != Phase::idle; }
 bool App::animating() const {
     const Phase phase = engine_.phase();
     if (engine_.busy() || recording() || startup_prep_task_.valid() || retry_task_.valid() ||
-        adb_task_.valid())
+        adb_task_.valid() || ui::animations_active())
         return true;
     if (phase == Phase::playing)
         return engine_.player().status().state != aoap::PlaybackState::paused ||
@@ -126,6 +141,29 @@ Settings App::current_settings() const {
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
     settings.sidebar_width = sidebar_width_;
+    settings.window_x = window_x_;
+    settings.window_y = window_y_;
+    settings.window_width = window_width_;
+    settings.window_height = window_height_;
+    settings.tab = static_cast<int>(tab_);
+    settings.last_script = script_path_.empty() ? std::string() : script_reference(script_path_);
+    settings.speed = speed_;
+    settings.loop_limit = loop_limit_;
+    settings.log_open = log_open_;
+    settings.live_touch = live_.touch;
+    settings.live_mouse = live_.mouse;
+    settings.live_key = live_.key;
+    settings.live_gamepad = live_.gamepad;
+    settings.live_ratio_w = live_ratio_w_;
+    settings.live_ratio_h = live_ratio_h_;
+    settings.live_rotation = live_rotation_;
+    const LiveImageOverlay::State image = live_image_.snapshot();
+    settings.live_image_path = image.path;
+    settings.live_image_x = image.center.x;
+    settings.live_image_y = image.center.y;
+    settings.live_image_half_width = image.half_width_frac;
+    settings.live_image_rotation = image.rotation;
+    settings.live_image_opacity = image.alpha;
     return settings;
 }
 
@@ -149,6 +187,40 @@ void App::apply_settings(const Settings& settings) {
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
     sidebar_width_ = settings.sidebar_width;
+    window_x_ = settings.window_x;
+    window_y_ = settings.window_y;
+    window_width_ = settings.window_width;
+    window_height_ = settings.window_height;
+    tab_ = settings.tab >= 0 && settings.tab <= 3 ? static_cast<Tab>(settings.tab) : Tab::player;
+    speed_ = settings.speed;
+    loop_limit_ = settings.loop_limit;
+    log_open_ = settings.log_open;
+    live_.touch = settings.live_touch;
+    live_.mouse = settings.live_mouse;
+    live_.key = settings.live_key;
+    live_.gamepad = settings.live_gamepad;
+    live_ratio_w_ = settings.live_ratio_w;
+    live_ratio_h_ = settings.live_ratio_h;
+    live_rotation_ = settings.live_rotation & 3;
+    if (!settings.live_image_path.empty()) {
+        LiveImageOverlay::State image;
+        image.path = settings.live_image_path;
+        image.center = ImVec2(settings.live_image_x, settings.live_image_y);
+        image.half_width_frac = settings.live_image_half_width;
+        image.rotation = settings.live_image_rotation;
+        image.alpha = settings.live_image_opacity;
+        const std::string error = live_image_.restore(image);
+        if (!error.empty())
+            log_.message(aoap::Severity::warning, "Reference image: " + error);
+    }
+}
+
+void App::set_window_geometry(const int x, const int y, const int width,
+                              const int height) noexcept {
+    window_x_ = x;
+    window_y_ = y;
+    window_width_ = width;
+    window_height_ = height;
 }
 
 void App::persist_settings() {
@@ -629,13 +701,29 @@ void App::on_cursor(const double x, const double y) {
     // Only needed while the pointer is captured (see live_pointer() and
     // frame()); otherwise ImGui's own io.MouseDelta is used as before, so
     // this stays a no-op the rest of the time and adds no per-frame cost.
+    // live_mouse_captured_ is only ever true once live_pointer() has already
+    // checked live_.mouse && setup.mouse.enabled, so it is safe to send here.
     if (!live_mouse_captured_) {
         live_raw_cursor_valid_ = false;
         return;
     }
     if (live_raw_cursor_valid_) {
-        live_raw_delta_x_ += x - live_raw_cursor_x_;
-        live_raw_delta_y_ += y - live_raw_cursor_y_;
+        // Sent as it arrives, straight from the window system's callback,
+        // instead of accumulating for the next rendered frame to drain: a
+        // drag's feel depends on this not waiting on render/vsync cadence.
+        // The fractional remainder is kept in live_move_x_/y_ so slow
+        // movement is not lost to truncation.
+        live_move_x_ += x - live_raw_cursor_x_;
+        live_move_y_ += y - live_raw_cursor_y_;
+        const auto whole = [](double& value) {
+            const double truncated = std::trunc(value);
+            value -= truncated;
+            return static_cast<int32_t>(std::clamp(truncated, -32767.0, 32767.0));
+        };
+        const int32_t dx = whole(live_move_x_);
+        const int32_t dy = whole(live_move_y_);
+        if (dx != 0 || dy != 0)
+            engine_.live_send(aoap::MouseMove{dx, dy});
     }
     live_raw_cursor_x_ = x;
     live_raw_cursor_y_ = y;
@@ -658,6 +746,7 @@ void App::on_paste_shortcut() {
 
 void App::frame() {
     poll();
+    ui::begin_frame_animations();
 
     ImGuiIO& io = ImGui::GetIO();
     // Mouse mode's captured pointer is invisible and moves without limit
@@ -674,9 +763,23 @@ void App::frame() {
         io.MousePosPrev = off_screen;
     }
     const bool popup_open = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
-    if (tab_ == Tab::player && !io.WantTextInput && !popup_open &&
-        ImGui::IsKeyPressed(ImGuiKey_Space, false))
-        toggle_playback();
+    if (tab_ == Tab::player && !io.WantTextInput && !popup_open) {
+        if (ImGui::IsKeyPressed(ImGuiKey_Space, false))
+            toggle_playback();
+        if (engine_.phase() == Phase::playing &&
+            (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+             (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))))
+            stop_playback();
+        if (!script_path_.empty() && (ImGui::IsKeyPressed(ImGuiKey_Home, false) ||
+                                      ImGui::IsKeyPressed(ImGuiKey_Backspace, false)))
+            seek({});
+        if (engine_.phase() == Phase::playing && io.KeyCtrl) {
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
+                engine_.player().adjust_offset_ns(-ns_per_ms);
+            if (ImGui::IsKeyPressed(ImGuiKey_RightArrow))
+                engine_.player().adjust_offset_ns(ns_per_ms);
+        }
+    }
     const bool forwarding_keys = engine_.phase() == Phase::live && live_.key;
     // The pointer capture's own release key, and full screen's own Escape
     // and configurable toggle key, are all handled in on_key(), straight
@@ -752,15 +855,7 @@ void App::frame() {
 }
 
 void App::draw_header() {
-    ImDrawList* list = ImGui::GetWindowDrawList();
     const float size = px(30);
-    const ImVec2 p0 = ImGui::GetCursorScreenPos();
-    list->AddRectFilled(p0, ImVec2(p0.x + size, p0.y + size), theme::accent, px(7));
-    ui::draw_icon(list, ui::Icon::play, ImVec2(p0.x + size * 0.53f, p0.y + size * 0.5f),
-                  size * 0.5f, IM_COL32_WHITE);
-    ImGui::Dummy(ImVec2(size, size));
-
-    ImGui::SameLine(0, px(12));
     ImGui::BeginGroup();
     ImGui::PushFont(nullptr, theme::font_title);
     ImGui::TextUnformatted("AOA HID Player");
@@ -1601,7 +1696,7 @@ void App::draw_transport_card() {
             fraction = 1.0f;
         const float row_top = ImGui::GetCursorPosY();
         const float row_left = ImGui::GetCursorPosX();
-        const float bar_row = std::max(px(6) + px(12), px(20));
+        const float bar_row = std::max(px(9) + px(14), px(20)); // matches scrub_bar's own row calc
         ImGui::SetCursorPosY(row_top + (bar_row - ImGui::GetTextLineHeight()) * 0.5f);
         ImGui::PushStyleColor(ImGuiCol_Text, here ? theme::text : theme::text_faint);
         ImGui::TextUnformatted(label);
@@ -1610,7 +1705,10 @@ void App::draw_transport_card() {
         ImGui::SetCursorPosY(row_top);
         ui::ScrubState state;
         ImGui::BeginDisabled(!have_script);
-        const bool released = ui::scrub_bar(id, fraction, bar_w, px(6), scrub, &state);
+        // Intro and Loop are colored apart so it reads at a glance which
+        // segment a bar belongs to, matching the label beside it.
+        const ImU32 fill = segment == aoap::Segment::intro ? theme::accent : theme::success;
+        const bool released = ui::scrub_bar(id, fraction, bar_w, px(9), scrub, &state, fill);
         ImGui::EndDisabled();
         if (state.hovered || state.dragging) {
             const float at = state.dragging ? *scrub : state.hover_fraction;
@@ -1642,7 +1740,7 @@ void App::draw_transport_card() {
     ImGui::SetCursorPosY(row_y + (large - small) * 0.5f);
     ImGui::BeginDisabled(!have_script);
     if (ui::icon_button("##restart", ui::Icon::restart, small, ui::Tone::secondary,
-                        "Back to the start"))
+                        "Back to the start (Home)"))
         seek({});
     ImGui::EndDisabled();
 
@@ -1664,7 +1762,7 @@ void App::draw_transport_card() {
     ImGui::SetCursorPosY(row_y + (large - small) * 0.5f);
     ImGui::BeginDisabled(phase != Phase::playing);
     if (ui::icon_button("##stop", ui::Icon::stop, small, ui::Tone::secondary,
-                        "Stop and release everything"))
+                        "Stop and release everything (Esc or Ctrl+S)"))
         stop_playback();
     ImGui::EndDisabled();
     ImGui::SetCursorPosY(row_y + large);
@@ -1729,6 +1827,8 @@ void App::draw_transport_card() {
         ImGui::EndDisabled();
         if (!live_offset && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Available while playing; it resets at every start.");
+        else if (live_offset && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Ctrl+Left/Right also nudges this by 1 ms.");
         ImGui::EndTable();
     }
     ui::end_card();
@@ -1833,7 +1933,7 @@ void App::draw_playlist() {
             ImGui::SetItemTooltip("This file is no longer in the csv folder.");
 
         const float loops_width = px(92);
-        ui::align_right(loops_width + button + px(6));
+        ui::align_right(loops_width + button * 3 + px(14));
         ImGui::SetNextItemWidth(loops_width);
         ImGui::BeginDisabled(running);
         int loops = static_cast<int>(entry.loops);
@@ -1842,6 +1942,20 @@ void App::draw_playlist() {
             playlist_dirty_ = true;
         }
         ImGui::SetItemTooltip("How many times this script loops");
+        ImGui::SameLine(0, px(8));
+        ImGui::BeginDisabled(index == 0);
+        if (ui::icon_button("##up", ui::Icon::up, button, ui::Tone::quiet, "Move up")) {
+            std::swap(playlist_.entries[index], playlist_.entries[index - 1]);
+            playlist_dirty_ = true;
+        }
+        ImGui::EndDisabled();
+        ImGui::SameLine(0, px(4));
+        ImGui::BeginDisabled(index + 1 == playlist_.entries.size());
+        if (ui::icon_button("##down", ui::Icon::down, button, ui::Tone::quiet, "Move down")) {
+            std::swap(playlist_.entries[index], playlist_.entries[index + 1]);
+            playlist_dirty_ = true;
+        }
+        ImGui::EndDisabled();
         ImGui::SameLine(0, px(6));
         if (ui::icon_button("##remove", ui::Icon::close, button, ui::Tone::quiet, "Remove"))
             remove_at = index;

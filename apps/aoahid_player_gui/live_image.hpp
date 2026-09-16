@@ -12,8 +12,9 @@ namespace gui {
 // visual aid: it never reaches the device. While unlocked it captures the
 // pointer for its own move/resize/rotate handles instead of Live control;
 // once locked it draws underneath the touch dot and lets every click and
-// drag pass straight through to touch/mouse forwarding. Not saved between
-// runs — reload it after restarting the program.
+// drag pass straight through to touch/mouse forwarding. State (see
+// snapshot()/restore()) is saved between runs; the image itself is reloaded
+// from `path` at startup if the file is still there.
 class LiveImageOverlay {
   public:
     LiveImageOverlay() = default;
@@ -29,6 +30,26 @@ class LiveImageOverlay {
     void clear();
     [[nodiscard]] bool loaded() const noexcept { return texture_ != 0; }
     [[nodiscard]] const std::string& path() const noexcept { return path_; }
+
+    // Opacity the image draws at, 0 (invisible) to 1 (opaque); does not
+    // affect the outline or drag handles.
+    [[nodiscard]] float opacity() const noexcept { return alpha_; }
+    void set_opacity(float value) noexcept;
+    // Back to the default position, size, and rotation; opacity is untouched.
+    void reset_transform() noexcept;
+
+    // Everything worth remembering between runs.
+    struct State {
+        std::string path;
+        ImVec2 center{0.5f, 0.5f};
+        float half_width_frac{0.35f};
+        float rotation{0.0f};
+        float alpha{1.0f};
+    };
+    [[nodiscard]] State snapshot() const;
+    // Reloads `state.path` (a no-op if empty) and applies the rest. Returns
+    // the same error load() would on a failed reload, or an empty string.
+    std::string restore(const State& state);
 
     bool locked{false};
 
@@ -53,6 +74,7 @@ class LiveImageOverlay {
     ImVec2 center_{0.5f, 0.5f};    // fraction of the preview rectangle
     float half_width_frac_{0.35f}; // half-width as a fraction of the preview's width
     float rotation_{0.0f};         // radians, clockwise on screen
+    float alpha_{1.0f};
 
     Drag dragging_{Drag::none};
     ImVec2 drag_offset_{};
