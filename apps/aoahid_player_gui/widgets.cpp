@@ -35,7 +35,7 @@ struct Colors {
 Colors colors_for(const Tone tone) {
     switch (tone) {
     case Tone::primary:
-        return {theme::accent, theme::accent_hover, theme::accent_active, IM_COL32_WHITE};
+        return {theme::accent, theme::accent_hover, theme::accent_active, theme::accent_ink};
     case Tone::record:
         return {theme::field, theme::field_hover, theme::field_active, theme::text};
     case Tone::danger:
@@ -90,22 +90,6 @@ ImU32 smoothed_color(const ImGuiID id, const ImU32 target) {
     else
         g_animations_active = true;
     storage->SetInt(id, static_cast<int>(next));
-    return next;
-}
-
-// Same idea as smoothed_color(), for a single scalar (a pill's x or width).
-float smoothed_float(const ImGuiID id, const float target) {
-    ImGuiStorage* storage = ImGui::GetStateStorage();
-    const float previous = storage->GetFloat(id, target);
-    if (std::fabs(previous - target) < 0.5f) {
-        storage->SetFloat(id, target);
-        return target;
-    }
-    constexpr float speed = 22.0f;
-    const float t = std::clamp(1.0f - std::exp(-speed * ImGui::GetIO().DeltaTime), 0.0f, 1.0f);
-    const float next = previous + (target - previous) * t;
-    storage->SetFloat(id, next);
-    g_animations_active = true;
     return next;
 }
 
@@ -330,16 +314,49 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
         list->AddPolyline(points, 3, color, std::max(1.5f, s * 0.12f));
         break;
     }
+    case Icon::monitor: {
+        const float w = s * 0.36f;
+        const float h = s * 0.26f;
+        list->AddRect(ImVec2(c.x - w, c.y - h), ImVec2(c.x + w, c.y + h), color, t * 0.5f, t);
+        list->AddLine(ImVec2(c.x - w * 0.4f, c.y + h + t * 1.6f),
+                      ImVec2(c.x + w * 0.4f, c.y + h + t * 1.6f), color, t);
+        break;
+    }
+    case Icon::list: {
+        const float w = s * 0.32f;
+        const float step = s * 0.22f;
+        for (int row = -1; row <= 1; ++row) {
+            const float y = c.y + static_cast<float>(row) * step;
+            const float end = row == 1 ? w * 0.55f : w;
+            list->AddLine(ImVec2(c.x - w, y), ImVec2(c.x + end, y), color, t);
+        }
+        break;
+    }
+    case Icon::sun: {
+        const float r = s * 0.20f;
+        list->AddCircle(c, r, color, 24, t);
+        const float inner = r + t * 1.4f;
+        const float outer = r + t * 3.2f;
+        for (int ray = 0; ray < 8; ++ray) {
+            const float a = static_cast<float>(ray) * (pi / 4.0f);
+            const ImVec2 d(std::cos(a), std::sin(a));
+            list->AddLine(ImVec2(c.x + d.x * inner, c.y + d.y * inner),
+                          ImVec2(c.x + d.x * outer, c.y + d.y * outer), color, t);
+        }
+        break;
+    }
     }
 }
 
-void draw_check(ImDrawList* list, const ImVec2 p0, const float size, const bool checked) {
+void draw_check(ImDrawList* list, const ImVec2 p0, const float size, const bool checked,
+                const ImU32 fill) {
     const ImVec2 p1(p0.x + size, p0.y + size);
     const float rounding = size * 0.25f;
     if (checked) {
-        list->AddRectFilled(p0, p1, faded(theme::accent), rounding);
+        const ImU32 box = fill != 0 ? fill : theme::accent;
+        list->AddRectFilled(p0, p1, faded(box), rounding);
         draw_icon(list, Icon::check, ImVec2(p0.x + size * 0.5f, p0.y + size * 0.5f), size,
-                  faded(IM_COL32_WHITE));
+                  faded(theme::accent_ink));
     } else {
         list->AddRect(p0, p1, faded(theme::border_strong), rounding, px(1.5f));
     }
@@ -477,35 +494,46 @@ bool toggle(const char* label, bool* value) {
     return pressed;
 }
 
-float pill_width(const char* text) {
+float status_item_width(const char* text) {
     ImGui::PushFont(nullptr, theme::font_small);
-    const float width = ImGui::CalcTextSize(text).x + px(3.5f) * 2 + px(24);
+    const float width = ImGui::CalcTextSize(text).x + px(3) * 2 + px(10);
     ImGui::PopFont();
     return width;
 }
 
-void pill(const char* text, const ImU32 dot, const bool blink) {
+// A small square dot and its label, set directly on the header's own
+// background — no pill, no border. A dense status readout (like a
+// hardware panel's indicator lights) rather than a row of chips.
+void status_item(const char* text, const ImU32 dot, const bool blink) {
     ImGui::PushFont(nullptr, theme::font_small);
     const ImVec2 text_size = ImGui::CalcTextSize(text);
-    const float height = text_size.y + px(12);
-    const float dot_r = px(3.5f);
-    const ImVec2 size(text_size.x + dot_r * 2 + px(24), height);
+    const float dot_size = px(6);
+    const ImVec2 size(dot_size + px(7) + text_size.x, text_size.y);
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
     ImGui::Dummy(size);
     ImDrawList* list = ImGui::GetWindowDrawList();
-    const ImVec2 p1(p0.x + size.x, p0.y + size.y);
-    list->AddRectFilled(p0, p1, faded(theme::surface), height * 0.5f);
-    list->AddRect(p0, p1, faded(theme::border), height * 0.5f);
-    const ImVec2 c(p0.x + px(10) + dot_r, p0.y + height * 0.5f);
+    const ImVec2 d0(p0.x, p0.y + (text_size.y - dot_size) * 0.5f);
     ImU32 dot_color = dot;
     if (blink) {
         const float phase = static_cast<float>(std::fmod(ImGui::GetTime(), 1.2) / 1.2);
         const float level = 0.45f + 0.55f * (0.5f + 0.5f * std::cos(phase * 2.0f * pi));
         dot_color = with_alpha(dot, static_cast<unsigned>(level * 255.0f));
     }
-    list->AddCircleFilled(c, dot_r, faded(dot_color), 16);
-    list->AddText(ImVec2(c.x + dot_r + px(7), p0.y + (height - text_size.y) * 0.5f),
-                  faded(theme::text_dim), text);
+    list->AddRectFilled(d0, ImVec2(d0.x + dot_size, d0.y + dot_size), faded(dot_color), px(1));
+    list->AddText(ImVec2(p0.x + dot_size + px(7), p0.y), faded(theme::text_dim), text);
+    ImGui::PopFont();
+}
+
+// A thin vertical rule between status_item()s, the width of one space.
+void status_divider() {
+    const float height = px(11);
+    ImGui::PushFont(nullptr, theme::font_small);
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImGui::Dummy(ImVec2(px(1), ImGui::GetTextLineHeight()));
+    ImGui::GetWindowDrawList()->AddRectFilled(
+        ImVec2(p0.x, p0.y + (ImGui::GetTextLineHeight() - height) * 0.5f),
+        ImVec2(p0.x + px(1), p0.y + (ImGui::GetTextLineHeight() + height) * 0.5f),
+        faded(theme::border_strong));
     ImGui::PopFont();
 }
 
@@ -519,80 +547,6 @@ void spinner(const float radius, const ImU32 color) {
     const float start = static_cast<float>(ImGui::GetTime() * 5.0);
     list->PathArcTo(c, radius - px(1), start, start + pi * 0.6f, 12);
     list->PathStroke(faded(color), px(2));
-}
-
-// A pill-shaped segmented control: one rounded track holding the labels,
-// with a smaller rounded pill behind whichever is selected (and a fainter
-// one under the pointer). Content-width, not stretched to the row, the way
-// a segmented control reads elsewhere.
-bool tabs(const char* id, const char* const* labels, const int count, int* current) {
-    ImGui::PushID(id);
-    const float pad = px(4);
-    const float inner_height = ImGui::GetFrameHeight();
-    const float height = inner_height + pad * 2;
-    const ImVec2 origin = ImGui::GetCursorScreenPos();
-    ImDrawList* list = ImGui::GetWindowDrawList();
-
-    // Measure first: locates the selected tab's own x/width so its pill can
-    // slide to it below instead of jumping.
-    float total_width = pad;
-    float selected_x = origin.x + pad;
-    float selected_width = 0.0f;
-    for (int index = 0; index < count; ++index) {
-        const float width = ImGui::CalcTextSize(labels[index]).x + px(24);
-        if (index == *current) {
-            selected_x = origin.x + total_width;
-            selected_width = width;
-        }
-        total_width += width;
-    }
-    total_width += pad;
-    list->AddRectFilled(origin, ImVec2(origin.x + total_width, origin.y + height),
-                        faded(theme::field), height * 0.5f);
-
-    // The selected pill eases to the current tab instead of snapping, so
-    // switching tabs reads as motion rather than a cut.
-    const float pill_x = smoothed_float(ImGui::GetID("##pill_x"), selected_x);
-    const float pill_w = smoothed_float(ImGui::GetID("##pill_w"), selected_width);
-    if (pill_w > 0.0f) {
-        list->AddRectFilled(ImVec2(pill_x, origin.y + pad),
-                            ImVec2(pill_x + pill_w, origin.y + height - pad),
-                            faded(theme::field_active), inner_height * 0.5f);
-    }
-
-    bool changed = false;
-    float x = origin.x + pad;
-    for (int index = 0; index < count; ++index) {
-        const ImVec2 text_size = ImGui::CalcTextSize(labels[index]);
-        const float width = text_size.x + px(24);
-        ImGui::SetCursorScreenPos(ImVec2(x, origin.y + pad));
-        ImGui::PushID(index);
-        if (ImGui::InvisibleButton("##tab", ImVec2(width, inner_height)) && *current != index) {
-            *current = index;
-            changed = true;
-        }
-        const bool hovered = ImGui::IsItemHovered();
-        const ImGuiID hover_id = ImGui::GetID("##hover");
-        ImGui::PopID();
-        const bool selected = *current == index;
-        if (!selected) {
-            const ImU32 hover_fill = smoothed_color(
-                hover_id, hovered ? theme::field_hover : with_alpha(theme::field_hover, 0));
-            if ((hover_fill & IM_COL32_A_MASK) != 0U) {
-                list->AddRectFilled(ImVec2(x, origin.y + pad),
-                                    ImVec2(x + width, origin.y + height - pad),
-                                    faded(hover_fill), inner_height * 0.5f);
-            }
-        }
-        list->AddText(
-            ImVec2(x + (width - text_size.x) * 0.5f, origin.y + (height - text_size.y) * 0.5f),
-            faded(selected ? theme::text : theme::text_dim), labels[index]);
-        x += width;
-    }
-    ImGui::SetCursorScreenPos(origin);
-    ImGui::Dummy(ImVec2(total_width, height));
-    ImGui::PopID();
-    return changed;
 }
 
 bool scrub_bar(const char* id, const float fraction, const float width, const float height,

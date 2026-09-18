@@ -24,7 +24,10 @@ enum class Icon {
     search,
     trash,
     expand,
-    collapse
+    collapse,
+    monitor, // a screen with a small stand, for "Live"
+    list,    // three lines, for "Playlist"
+    sun      // a small circle with rays, for the light/dark theme toggle
 };
 
 // What a button is for, which decides how loud it looks.
@@ -80,7 +83,7 @@ bool toggle(const char* label, bool* value);
 
 void draw_icon(ImDrawList* list, Icon icon, ImVec2 center, float size, ImU32 color);
 // A check box drawn at `p0`, for custom rows.
-void draw_check(ImDrawList* list, ImVec2 p0, float size, bool checked);
+void draw_check(ImDrawList* list, ImVec2 p0, float size, bool checked, ImU32 fill = 0);
 
 // Draws `text` at `pos` in `color`, truncating with a trailing "..." if it
 // would exceed `max_width`. For raw ImDrawList text (device names, serials)
@@ -88,15 +91,14 @@ void draw_check(ImDrawList* list, ImVec2 p0, float size, bool checked);
 void draw_text_ellipsized(ImDrawList* list, ImVec2 pos, ImU32 color, const char* text,
                           float max_width);
 
-// Status label with a coloured dot; `blink` fades the dot (recording).
-void pill(const char* text, ImU32 dot, bool blink = false);
-[[nodiscard]] float pill_width(const char* text);
+// A dense status readout: a small square dot and its label, with no pill
+// background — several of these separated by status_divider() read as one
+// hardware-panel-style status line. `blink` fades the dot (recording).
+void status_item(const char* text, ImU32 dot, bool blink = false);
+[[nodiscard]] float status_item_width(const char* text);
+void status_divider();
 
 void spinner(float radius, ImU32 color);
-
-// A pill-shaped segmented control: a rounded track holding the labels, with
-// the current one on its own rounded pill.
-bool tabs(const char* id, const char* const* labels, int count, int* current);
 
 // A seekable progress bar. While dragging, `preview` follows the pointer;
 // returns true on the frame the pointer is released, with `preview` set to

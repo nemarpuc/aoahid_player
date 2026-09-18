@@ -277,6 +277,7 @@ int run() {
     glfwSetFramebufferSizeCallback(window, on_size);
 
     scale = window_scale(window);
+    gui::theme::set_mode(startup_settings.dark_theme);
     gui::theme::setup(scale);
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     if (!ImGui_ImplOpenGL3_Init(nullptr)) {
@@ -294,7 +295,6 @@ int run() {
     });
     g_app = app.get();
 
-    const ImVec4 clear = gui::theme::vec(gui::theme::background);
     int pending_frames = 2;
     bool shown = false;
     double last_motion = 0.0;
@@ -390,6 +390,8 @@ int run() {
             scale = window_scale(window);
             gui::theme::apply_style(scale);
         }
+        if (app->consume_theme_change())
+            gui::theme::apply_style(scale);
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();
@@ -401,6 +403,10 @@ int run() {
         int framebuffer_height = 0;
         glfwGetFramebufferSize(window, &framebuffer_width, &framebuffer_height);
         glViewport(0, 0, framebuffer_width, framebuffer_height);
+        // Read fresh each frame (not hoisted above the loop): the theme
+        // toggle changes `background` at any time, and glClearColor must
+        // never paint one frame's edges in the other theme's colour.
+        const ImVec4 clear = gui::theme::vec(gui::theme::background);
         glClearColor(clear.x, clear.y, clear.z, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());

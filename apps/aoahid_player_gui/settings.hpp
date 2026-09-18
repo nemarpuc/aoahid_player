@@ -38,6 +38,10 @@ struct Settings {
     int live_fullscreen_key{};
     // Unscaled width of the sidebar, dragged via the splitter next to it.
     float sidebar_width{392.0f};
+    // Whether Devices/Profiles/Connect are collapsed to a slim rail.
+    bool sidebar_collapsed{};
+    // Dark theme (purple accent) or light theme (teal accent).
+    bool dark_theme{true};
 
     // Window geometry in OS pixels. 0 width/height means "unset": main.cpp
     // then falls back to its own centred, monitor-fitted default instead of

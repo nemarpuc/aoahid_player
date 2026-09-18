@@ -83,6 +83,92 @@ std::string find_cjk_font_path() {
 
 } // namespace
 
+// Two full palettes, assigned wholesale so nothing is left half-updated.
+// `accent` and `accent2` swap identities between them (purple leads in dark,
+// teal leads in light) rather than either colour just getting darker or
+// lighter, since a flipped light theme needs new values for nearly
+// everything else anyway.
+void set_mode(const bool dark) {
+    if (dark) {
+        background = rgb(0x0B0C0E);
+        surface = rgb(0x14151A);
+        surface_hi = rgb(0x1A1B21);
+        field = rgb(0x1E1F25);
+        field_hover = rgb(0x272830);
+        field_active = rgb(0x2F3039);
+        border = rgb(0x22242B);
+        border_strong = rgb(0x33353D);
+        text = rgb(0xE8E9ED);
+        text_dim = rgb(0x9D9EA9);
+        text_faint = rgb(0x83848F);
+
+        // Black text on `accent` is about 8.6:1 (a light purple reads better
+        // with dark text than white).
+        accent = rgb(0x9C8CE6);
+        accent_hover = rgb(0xAC9EEC);
+        accent_active = rgb(0x8A78D8);
+        accent_text = rgb(0xC7BBF5);
+        accent_soft = rgb(0x9C8CE6, 40);
+        accent_line = rgb(0x9C8CE6, 140);
+        accent_ink = rgb(0x1B1030);
+
+        accent2 = rgb(0x4FD1C5);
+        accent2_soft = rgb(0x4FD1C5, 40);
+        accent2_line = rgb(0x4FD1C5, 140);
+        accent2_text = rgb(0x8FE4DA);
+
+        success = rgb(0x4DB885);
+        warning = rgb(0xD8A445);
+        danger = rgb(0xE0564E);
+        danger_soft = rgb(0xE0564E, 36);
+
+        popup_bg = rgb(0x1A1B20);
+        scrollbar_hover = rgb(0x44454E);
+        scrollbar_active = rgb(0x55565F);
+        check_mark = rgb(0xFFFFFF);
+        text_selected_bg = rgb(0x9C8CE6, 110);
+    } else {
+        background = rgb(0xF5F5F8);
+        surface = rgb(0xFFFFFF);
+        surface_hi = rgb(0xF0F0F4);
+        field = rgb(0xEAEBF0);
+        field_hover = rgb(0xDFE0E7);
+        field_active = rgb(0xD2D3DC);
+        border = rgb(0xDBDCE2);
+        border_strong = rgb(0xC3C4CE);
+        text = rgb(0x191A1F);
+        text_dim = rgb(0x53555F);
+        text_faint = rgb(0x6C6E78); // about 4.9:1 on `background`
+
+        // The same teal as the dark theme's second accent, kept exactly —
+        // only the derived text/line shades below are tuned for a white
+        // page instead of a black one.
+        accent = rgb(0x4FD1C5);
+        accent_hover = rgb(0x63DBD0);
+        accent_active = rgb(0x3FB9AE);
+        accent_text = rgb(0x0E8F80); // deep enough for text on white
+        accent_soft = rgb(0x4FD1C5, 45);
+        accent_line = rgb(0x4FD1C5, 160);
+        accent_ink = rgb(0x06201C); // still reads on the same light fill
+
+        accent2 = rgb(0x7C6AD8);
+        accent2_soft = rgb(0x7C6AD8, 45);
+        accent2_line = rgb(0x7C6AD8, 160);
+        accent2_text = rgb(0x5D4BC0);
+
+        success = rgb(0x1E8F5F);
+        warning = rgb(0xAD7A12);
+        danger = rgb(0xC63B33);
+        danger_soft = rgb(0xC63B33, 40);
+
+        popup_bg = rgb(0xFCFCFE);
+        scrollbar_hover = rgb(0xB9BAC4);
+        scrollbar_active = rgb(0xA5A6B2);
+        check_mark = rgb(0x1B1030);
+        text_selected_bg = rgb(0x4FD1C5, 90);
+    }
+}
+
 void apply_style(const float dpi_scale) {
     ImGuiStyle style;
     style.WindowPadding = ImVec2(0, 0);
@@ -98,12 +184,12 @@ void apply_style(const float dpi_scale) {
     style.PopupBorderSize = 1;
     style.FrameBorderSize = 0;
     style.WindowRounding = 0;
-    style.ChildRounding = 10;
-    style.FrameRounding = 6;
-    style.PopupRounding = 8;
-    style.ScrollbarRounding = 6;
-    style.GrabRounding = 4;
-    style.TabRounding = 6;
+    style.ChildRounding = 4;
+    style.FrameRounding = 3;
+    style.PopupRounding = 4;
+    style.ScrollbarRounding = 3;
+    style.GrabRounding = 2;
+    style.TabRounding = 3;
     style.SeparatorTextBorderSize = 1;
     style.SelectableTextAlign = ImVec2(0, 0.5f);
     style.DisabledAlpha = 0.4f;
@@ -113,7 +199,7 @@ void apply_style(const float dpi_scale) {
     c[ImGuiCol_TextDisabled] = vec(text_faint);
     c[ImGuiCol_WindowBg] = vec(background);
     c[ImGuiCol_ChildBg] = vec(surface);
-    c[ImGuiCol_PopupBg] = vec(rgb(0x1A1B20));
+    c[ImGuiCol_PopupBg] = vec(popup_bg);
     c[ImGuiCol_Border] = vec(border);
     c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_FrameBg] = vec(field);
@@ -125,9 +211,9 @@ void apply_style(const float dpi_scale) {
     c[ImGuiCol_MenuBarBg] = vec(surface);
     c[ImGuiCol_ScrollbarBg] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_ScrollbarGrab] = vec(border_strong);
-    c[ImGuiCol_ScrollbarGrabHovered] = vec(rgb(0x44454E));
-    c[ImGuiCol_ScrollbarGrabActive] = vec(rgb(0x55565F));
-    c[ImGuiCol_CheckMark] = vec(rgb(0xFFFFFF));
+    c[ImGuiCol_ScrollbarGrabHovered] = vec(scrollbar_hover);
+    c[ImGuiCol_ScrollbarGrabActive] = vec(scrollbar_active);
+    c[ImGuiCol_CheckMark] = vec(check_mark);
     c[ImGuiCol_SliderGrab] = vec(accent);
     c[ImGuiCol_SliderGrabActive] = vec(accent_hover);
     c[ImGuiCol_Button] = vec(field);
@@ -145,7 +231,7 @@ void apply_style(const float dpi_scale) {
     c[ImGuiCol_Tab] = vec(surface);
     c[ImGuiCol_TabHovered] = vec(field_hover);
     c[ImGuiCol_TabSelected] = vec(field);
-    c[ImGuiCol_TextSelectedBg] = vec(rgb(0x6E5FD1, 110));
+    c[ImGuiCol_TextSelectedBg] = vec(text_selected_bg);
     c[ImGuiCol_NavCursor] = vec(accent);
     c[ImGuiCol_ModalWindowDimBg] = vec(rgb(0x000000, 140));
 

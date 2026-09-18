@@ -5,54 +5,82 @@
 
 namespace gui::theme {
 
-// Flat dark palette: neutral charcoal surfaces in a few steps, one calm
-// purple accent for what can be pressed or is selected, and muted status
-// colours. No gradients, glows, or shadows.
+// Flat palette: neutral surfaces in a few steps, one signal accent for what
+// can be pressed or is selected, a second accent for what has been picked,
+// and muted status colours. No gradients, glows, or shadows. Values below
+// are runtime variables, not constants: set_mode() rewrites every one of
+// them when the theme switches between dark and light (see its definition
+// in theme.cpp for both palettes side by side).
 inline constexpr ImU32 rgb(const unsigned hex, const unsigned alpha = 255U) {
     return IM_COL32((hex >> 16) & 0xFF, (hex >> 8) & 0xFF, hex & 0xFF, alpha);
 }
 
-inline constexpr ImU32 background = rgb(0x0E0F12);
-inline constexpr ImU32 surface = rgb(0x16171B);    // cards
-inline constexpr ImU32 surface_hi = rgb(0x1C1D22); // rows inside cards
-inline constexpr ImU32 field = rgb(0x212228);      // inputs, tracks, quiet buttons
-inline constexpr ImU32 field_hover = rgb(0x292A31);
-inline constexpr ImU32 field_active = rgb(0x31323A);
-inline constexpr ImU32 border = rgb(0x26272E);
-inline constexpr ImU32 border_strong = rgb(0x34353D);
-inline constexpr ImU32 text = rgb(0xECECF1);
-inline constexpr ImU32 text_dim = rgb(0x9D9EA9);
-// text_faint on `background` is about 5.2:1 (WCAG AA for normal text needs
-// 4.5:1); it carries real information (device VID:PID/serial, subtitles),
-// not just decoration, so it stays above that line even though it is dimmer
-// than text_dim.
-inline constexpr ImU32 text_faint = rgb(0x83848F);
+inline ImU32 background;
+inline ImU32 surface;    // cards
+inline ImU32 surface_hi; // rows inside cards
+inline ImU32 field;      // inputs, tracks, quiet buttons
+inline ImU32 field_hover;
+inline ImU32 field_active;
+inline ImU32 border;
+inline ImU32 border_strong;
+inline ImU32 text;
+inline ImU32 text_dim;
+// text_faint on `background` stays at or above 4.5:1 (WCAG AA for normal
+// text) in both palettes; it carries real information (device VID:PID/
+// serial, subtitles), not just decoration, so it stays readable even though
+// it is dimmer than text_dim.
+inline ImU32 text_faint;
 
-// White text on `accent` is about 4.9:1.
-inline constexpr ImU32 accent = rgb(0x6E5FD1);
-inline constexpr ImU32 accent_hover = rgb(0x7A6CDA);
-inline constexpr ImU32 accent_active = rgb(0x6152C2);
-inline constexpr ImU32 accent_text = rgb(0xAEA4F2); // accent used as text on dark
-inline constexpr ImU32 accent_soft = rgb(0x6E5FD1, 40);
-inline constexpr ImU32 accent_line = rgb(0x6E5FD1, 130);
+// `accent` is "this is happening right now" (playing, connecting,
+// recording): purple in the dark theme, teal in the light theme — each
+// tuned so `accent_ink` reads clearly as text drawn on top of the fill.
+inline ImU32 accent;
+inline ImU32 accent_hover;
+inline ImU32 accent_active;
+inline ImU32 accent_text; // accent used as free-standing text
+inline ImU32 accent_soft;
+inline ImU32 accent_line;
+inline ImU32 accent_ink; // text drawn on top of an `accent` fill
 
-inline constexpr ImU32 success = rgb(0x4DB885);
-inline constexpr ImU32 warning = rgb(0xD8A445);
-inline constexpr ImU32 danger = rgb(0xE0564E);
-inline constexpr ImU32 danger_soft = rgb(0xE0564E, 36);
+// `accent2` is "this is what you picked" (a selected device, a chosen
+// script, which tab is open, a search hit): the other of the two colours
+// from `accent` in each theme, never a gradient between them.
+inline ImU32 accent2;
+inline ImU32 accent2_soft;
+inline ImU32 accent2_line;
+inline ImU32 accent2_text; // accent2 used as free-standing text
+
+inline ImU32 success;
+inline ImU32 warning;
+inline ImU32 danger;
+inline ImU32 danger_soft;
+
+// A few more surfaces that also flip with the mode but have no other use
+// outside apply_style().
+inline ImU32 popup_bg;
+inline ImU32 scrollbar_hover;
+inline ImU32 scrollbar_active;
+inline ImU32 check_mark;       // ImGui's own Checkbox/RadioButton glyph
+inline ImU32 text_selected_bg; // selected text inside a text field
 
 inline ImVec4 vec(const ImU32 color) { return ImGui::ColorConvertU32ToFloat4(color); }
 
 // Font sizes in unscaled pixels; DPI scaling is applied by ImGui. Roboto's
 // digits are tabular, so running clocks and counters do not jitter.
 inline constexpr float font_body = 15.0f;
-inline constexpr float font_small = 12.5f;
+inline constexpr float font_small = 13.0f;
 inline constexpr float font_title = 15.5f;
 inline constexpr float font_display = 30.0f;
 
-// Loads the embedded font and applies the style for `dpi_scale`.
+// Overwrites every colour above with the dark or light palette. Call before
+// setup()/apply_style() so they build the ImGui style from the right values.
+void set_mode(bool dark);
+
+// Loads the embedded font and applies the style for `dpi_scale`. set_mode()
+// picks the palette beforehand; this only reads it.
 void setup(float dpi_scale);
-// Re-applies the style after the window moved to a monitor with another scale.
+// Re-applies the style, e.g. after the window moved to a monitor with
+// another scale, or after set_mode() changed the palette.
 void apply_style(float dpi_scale);
 
 } // namespace gui::theme

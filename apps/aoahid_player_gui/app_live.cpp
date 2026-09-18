@@ -679,16 +679,39 @@ void App::draw_live_fullscreen() {
         live_gamepad();
     }
 
-    // One slim bar holds the switches and the way out; the preview takes the
-    // rest of the window.
-    const float bar = ImGui::GetFrameHeight() + px(16);
-    const float height = std::max(ImGui::GetContentRegionAvail().y - bar -
-                                      ImGui::GetStyle().ItemSpacing.y,
-                                  px(160));
-    draw_live_surface(ImVec2(ImGui::GetContentRegionAvail().x, height));
-    gap(2);
+    // The preview fills the whole window; the control bar floats over its
+    // bottom edge instead of reserving a fixed strip below it, so on a large
+    // display the pixels mostly go to the preview, the way a video player's
+    // overlay controls do. It shows while the pointer has moved recently or
+    // sits near the bottom edge, and fades out a little after neither.
+    draw_live_surface(ImGui::GetContentRegionAvail());
+    const ImVec2 surface_min = ImGui::GetItemRectMin();
+    const ImVec2 surface_max = ImGui::GetItemRectMax();
 
-    ui::begin_card("##live_full_controls");
+    const ImGuiIO& io = ImGui::GetIO();
+    const bool moved = std::fabs(io.MouseDelta.x) > 0.01f || std::fabs(io.MouseDelta.y) > 0.01f;
+    const float reveal_band = px(96);
+    const bool near_bottom = io.MousePos.y > surface_max.y - reveal_band &&
+                             io.MousePos.x >= surface_min.x && io.MousePos.x <= surface_max.x;
+    if (moved || near_bottom || live_fullscreen_bar_seen_ == 0.0)
+        live_fullscreen_bar_seen_ = ImGui::GetTime();
+    const double since = ImGui::GetTime() - live_fullscreen_bar_seen_;
+    const float bar_alpha = static_cast<float>(std::clamp(1.4 - since, 0.0, 1.0));
+    if (bar_alpha <= 0.02f)
+        return;
+
+    const float bar_h = ImGui::GetFrameHeight() + px(16);
+    ImGui::SetCursorScreenPos(ImVec2(surface_min.x + px(8), surface_max.y - bar_h - px(8)));
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, bar_alpha);
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x0E0F13, 210));
+    ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(16), px(12)));
+    ImGui::BeginChild("##live_full_controls",
+                      ImVec2(surface_max.x - surface_min.x - px(16), bar_h),
+                      ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
+    ImGui::PopStyleVar();
+    ImGui::PopStyleColor(2);
+
     const uint32_t available = engine_.connected_profiles();
     bool on = engine_.phase() == Phase::live;
     ImGui::BeginDisabled(!live_ready());
@@ -731,7 +754,8 @@ void App::draw_live_fullscreen() {
         "Esc always exits full screen too, even while Keyboard is on. %s does as well "
         "(set below, in the normal view).",
         glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11));
-    ui::end_card();
+    ImGui::EndChild();
+    ImGui::PopStyleVar(); // Alpha
 }
 
 void App::draw_live_log(const ImVec2 size) {
@@ -949,8 +973,10 @@ void App::draw_live_controls() {
     ui::align_right(full_width + rotate_width + ratio_width * 2 + reset_width + px(14) +
                     gap_x * 5);
     if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
-                        "Fill the window with the preview"))
+                        "Fill the window with the preview")) {
         live_fullscreen_ = true;
+        live_fullscreen_bar_seen_ = ImGui::GetTime();
+    }
     ImGui::SameLine(0, gap_x);
 
     char turn[32];

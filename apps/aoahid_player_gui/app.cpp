@@ -141,6 +141,8 @@ Settings App::current_settings() const {
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
     settings.sidebar_width = sidebar_width_;
+    settings.sidebar_collapsed = sidebar_collapsed_;
+    settings.dark_theme = dark_theme_;
     settings.window_x = window_x_;
     settings.window_y = window_y_;
     settings.window_width = window_width_;
@@ -187,6 +189,10 @@ void App::apply_settings(const Settings& settings) {
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
     sidebar_width_ = settings.sidebar_width;
+    sidebar_collapsed_ = settings.sidebar_collapsed;
+    // Not re-applied here: main() already set the theme from this same file
+    // before the window (and this App) existed, so the two never disagree.
+    dark_theme_ = settings.dark_theme;
     window_x_ = settings.window_x;
     window_y_ = settings.window_y;
     window_width_ = settings.window_width;
@@ -221,6 +227,12 @@ void App::set_window_geometry(const int x, const int y, const int width,
     window_y_ = y;
     window_width_ = width;
     window_height_ = height;
+}
+
+bool App::consume_theme_change() noexcept {
+    const bool changed = theme_dirty_;
+    theme_dirty_ = false;
+    return changed;
 }
 
 void App::persist_settings() {
@@ -661,6 +673,8 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
     if (pressed && is_fullscreen_key(glfw_key, live_fullscreen_key_) &&
         (live_fullscreen_ || live_ready())) {
         live_fullscreen_ = !live_fullscreen_;
+        if (live_fullscreen_)
+            live_fullscreen_bar_seen_ = ImGui::GetTime();
         return;
     }
     // The release key lets go of the captured pointer no matter which
@@ -817,23 +831,27 @@ void App::frame() {
                                 px(120));
 
     ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
-    ImGui::BeginChild("##sidebar", ImVec2(px(sidebar_width_), body), ImGuiChildFlags_None);
-    draw_sidebar();
+    const float sidebar_shown_width = sidebar_collapsed_ ? px(44) : px(sidebar_width_);
+    ImGui::BeginChild("##sidebar", ImVec2(sidebar_shown_width, body), ImGuiChildFlags_None);
+    if (sidebar_collapsed_)
+        draw_sidebar_collapsed();
+    else
+        draw_sidebar();
     ImGui::EndChild();
-    ImGui::SameLine(0, px(6));
-    draw_sidebar_splitter(body);
-    ImGui::SameLine(0, px(6));
+    if (sidebar_collapsed_) {
+        ImGui::SameLine(0, px(12));
+    } else {
+        ImGui::SameLine(0, px(6));
+        draw_sidebar_splitter(body);
+        ImGui::SameLine(0, px(6));
+    }
+    ImGui::BeginChild("##navrail", ImVec2(px(52), body), ImGuiChildFlags_None);
+    draw_nav_rail();
+    ImGui::EndChild();
+    ImGui::SameLine(0, px(10));
     ImGui::BeginChild("##main", ImVec2(0, body), ImGuiChildFlags_None);
     ImGui::PopStyleColor();
     {
-        static const char* const tabs[] = {"Player", "Live", "Playlist", "Recorder"};
-        int current = static_cast<int>(tab_);
-        if (ui::tabs("##tabs", tabs, 4, &current)) {
-            tab_ = static_cast<Tab>(current);
-            if (tab_ != Tab::live)
-                live_capture_pointer(false);
-        }
-        gap(4);
         if (tab_ == Tab::player)
             draw_player();
         else if (tab_ == Tab::live)
@@ -854,6 +872,28 @@ void App::frame() {
     ImGui::End();
 }
 
+App::ConnectionStatus App::connection_status() const {
+    const Phase phase = engine_.phase();
+    switch (phase) {
+    case Phase::idle:
+        return {"Not connected", theme::text_faint, false};
+    case Phase::refreshing:
+        return {"Searching", theme::accent, true};
+    case Phase::connecting:
+        return {"Connecting", theme::accent, true};
+    case Phase::connected:
+    case Phase::playing:
+    case Phase::live: {
+        const size_t count = engine_.device_status().size();
+        return {std::to_string(count) + (count == 1 ? " device" : " devices") + " connected",
+                theme::success, false};
+    }
+    case Phase::disconnecting:
+        return {"Disconnecting", theme::warning, true};
+    }
+    return {"Not connected", theme::text_faint, false};
+}
+
 void App::draw_header() {
     const float size = px(30);
     ImGui::BeginGroup();
@@ -868,39 +908,21 @@ void App::draw_header() {
     ImGui::PopFont();
     ImGui::EndGroup();
 
+    ImGui::SameLine(0, px(14));
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (size - ImGui::GetFrameHeight()) * 0.5f);
+    if (ui::icon_button("##theme", ui::Icon::sun, ImGui::GetFrameHeight(), ui::Tone::quiet,
+                        dark_theme_ ? "Switch to the light theme" : "Switch to the dark theme")) {
+        dark_theme_ = !dark_theme_;
+        theme::set_mode(dark_theme_);
+        theme_dirty_ = true;
+    }
+
     // Status pills, right-aligned.
     const Phase phase = engine_.phase();
-    std::string connection;
-    ImU32 connection_dot = theme::text_faint;
-    bool connection_pulse = false;
-    switch (phase) {
-    case Phase::idle:
-        connection = "Not connected";
-        break;
-    case Phase::refreshing:
-        connection = "Searching";
-        connection_dot = theme::accent;
-        connection_pulse = true;
-        break;
-    case Phase::connecting:
-        connection = "Connecting";
-        connection_dot = theme::accent;
-        connection_pulse = true;
-        break;
-    case Phase::connected:
-    case Phase::playing:
-    case Phase::live: {
-        const size_t count = engine_.device_status().size();
-        connection = std::to_string(count) + (count == 1 ? " device" : " devices") + " connected";
-        connection_dot = theme::success;
-        break;
-    }
-    case Phase::disconnecting:
-        connection = "Disconnecting";
-        connection_dot = theme::warning;
-        connection_pulse = true;
-        break;
-    }
+    const ConnectionStatus connection_status_now = connection_status();
+    const std::string& connection = connection_status_now.text;
+    const ImU32 connection_dot = connection_status_now.dot;
+    const bool connection_pulse = connection_status_now.pulse;
     const aoap::PlaybackState state =
         phase == Phase::playing ? engine_.player().status().state : aoap::PlaybackState::stopped;
     const char* playback = state == aoap::PlaybackState::playing  ? "Playing"
@@ -917,28 +939,83 @@ void App::draw_header() {
                          : adb_status_ == AdbStatus::stopped   ? theme::text_faint
                          : adb_status_ == AdbStatus::not_found ? theme::danger
                                                                 : theme::warning;
-    const float spacing = px(8);
-    float width = ui::pill_width(adb_label) + spacing + ui::pill_width(connection.c_str()) +
-                  spacing + ui::pill_width(playback);
+    const float spacing = px(12);
+    const float divider_w = px(1) + spacing;
+    float width = ui::status_item_width(adb_label) + divider_w +
+                  ui::status_item_width(connection.c_str()) + divider_w +
+                  ui::status_item_width(playback);
     if (recording())
-        width += spacing + ui::pill_width("Recording");
+        width += divider_w + ui::status_item_width("Recording");
 
-    const float pill_height =
-        ImGui::GetFontSize() * (theme::font_small / theme::font_body) + px(12);
+    ImGui::PushFont(nullptr, theme::font_small);
+    const float row_height = ImGui::GetTextLineHeight();
+    ImGui::PopFont();
     ImGui::SameLine();
-    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (size - pill_height) * 0.5f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (size - row_height) * 0.5f);
     ui::align_right(width);
-    ui::pill(adb_label, adb_dot);
+    ui::status_item(adb_label, adb_dot);
     ImGui::SetItemTooltip("Whether the adb server is running. The startup read and the Devices "
                           "card's refresh button manage it automatically.");
     ImGui::SameLine(0, spacing);
+    ui::status_divider();
+    ImGui::SameLine(0, spacing);
     if (recording()) {
-        ui::pill("Recording", theme::danger, true);
+        ui::status_item("Recording", theme::danger, true);
+        ImGui::SameLine(0, spacing);
+        ui::status_divider();
         ImGui::SameLine(0, spacing);
     }
-    ui::pill(connection.c_str(), connection_dot, connection_pulse);
+    ui::status_item(connection.c_str(), connection_dot, connection_pulse);
     ImGui::SameLine(0, spacing);
-    ui::pill(playback, playback_dot);
+    ui::status_divider();
+    ImGui::SameLine(0, spacing);
+    ui::status_item(playback, playback_dot);
+}
+
+// The Player/Live/Playlist/Recorder switch, drawn as a left icon rail
+// instead of a top segmented control: it sits in the window's own chrome
+// (beside the sidebar, spanning the full body height) rather than floating
+// as a pill above each screen's content.
+void App::draw_nav_rail() {
+    struct Item {
+        const char* label;
+        ui::Icon icon;
+        Tab tab;
+    };
+    static constexpr Item items[] = {
+        {"Player", ui::Icon::play, Tab::player},
+        {"Live", ui::Icon::monitor, Tab::live},
+        {"Playlist", ui::Icon::list, Tab::playlist},
+        {"Recorder", ui::Icon::record, Tab::recorder},
+    };
+    const float diameter = px(40);
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    for (const Item& item : items) {
+        ImGui::PushID(item.label);
+        const ImVec2 p0 = ImGui::GetCursorScreenPos();
+        const bool pressed = ImGui::InvisibleButton("##nav", ImVec2(diameter, diameter));
+        const bool hovered = ImGui::IsItemHovered();
+        const bool active = tab_ == item.tab;
+        const ImVec2 c(p0.x + diameter * 0.5f, p0.y + diameter * 0.5f);
+        if (active) {
+            list->AddRectFilled(p0, ImVec2(p0.x + diameter, p0.y + diameter),
+                                ImGui::GetColorU32(theme::accent2_soft), px(8));
+        } else if (hovered) {
+            list->AddRectFilled(p0, ImVec2(p0.x + diameter, p0.y + diameter),
+                                ImGui::GetColorU32(theme::field_hover), px(8));
+        }
+        ui::draw_icon(list, item.icon, c, diameter * 0.5f,
+                      ImGui::GetColorU32(active ? theme::accent2_text : theme::text_dim));
+        if (hovered)
+            ImGui::SetTooltip("%s", item.label);
+        if (pressed && !active) {
+            tab_ = item.tab;
+            if (tab_ != Tab::live)
+                live_capture_pointer(false);
+        }
+        ImGui::PopID();
+        gap(4);
+    }
 }
 
 // A thin drag handle between the sidebar and the main pane. Width is stored
@@ -971,6 +1048,13 @@ void App::draw_sidebar_splitter(const float height) {
 // --- Sidebar ---------------------------------------------------------------
 
 void App::draw_sidebar() {
+    // Puts Devices/Profiles/Connect away once they are not needed for a
+    // while, so Player/Live/Playlist/Recorder can use the full width.
+    if (ui::icon_button("##collapse_sidebar", ui::Icon::collapse, ImGui::GetFrameHeight(),
+                        ui::Tone::quiet, "Collapse"))
+        sidebar_collapsed_ = true;
+    gap(2);
+
     // The connect card stays pinned below; its height is last frame's.
     const float spacing = ImGui::GetStyle().ItemSpacing.y;
     const float scroll = std::max(ImGui::GetContentRegionAvail().y - connect_height_ - spacing,
@@ -982,6 +1066,39 @@ void App::draw_sidebar() {
     ImGui::EndChild();
     draw_connect_card();
     connect_height_ = ImGui::GetItemRectSize().y;
+}
+
+// The slim rail Devices/Profiles/Connect collapse to: just the way back and
+// a quiet readout of the connection, since the cards themselves are put
+// away (see draw_sidebar()).
+void App::draw_sidebar_collapsed() {
+    const float button = ImGui::GetFrameHeight();
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                         (ImGui::GetContentRegionAvail().x - button) * 0.5f);
+    if (ui::icon_button("##expand_sidebar", ui::Icon::expand, button, ui::Tone::quiet,
+                        "Devices, profiles, and Connect"))
+        sidebar_collapsed_ = false;
+    gap(3);
+
+    const ConnectionStatus status = connection_status();
+    const float diameter = px(10);
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
+                         (ImGui::GetContentRegionAvail().x - diameter) * 0.5f);
+    ImGui::Dummy(ImVec2(diameter, diameter));
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const ImVec2 p0 = ImGui::GetItemRectMin();
+    const ImVec2 c(p0.x + diameter * 0.5f, p0.y + diameter * 0.5f);
+    if (status.pulse) {
+        const float phase = static_cast<float>(std::fmod(ImGui::GetTime(), 1.2) / 1.2);
+        const float level = 0.45f + 0.55f * (0.5f + 0.5f * std::cos(phase * 2.0f * 3.14159265f));
+        ImVec4 dot = theme::vec(status.dot);
+        dot.w = level;
+        list->AddCircleFilled(c, diameter * 0.5f, ImGui::GetColorU32(dot), 16);
+    } else {
+        list->AddCircleFilled(c, diameter * 0.5f, ImGui::GetColorU32(status.dot), 16);
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetTooltip("%s", status.text.c_str());
 }
 
 void App::draw_devices_card() {
@@ -1028,19 +1145,21 @@ void App::draw_devices_card() {
 
         ImDrawList* list = ImGui::GetWindowDrawList();
         const ImVec2 p1(p0.x + width, p0.y + row);
+        // accent2 (not accent): ticking a device only chooses it for the
+        // next Connect, it is not connected yet.
         list->AddRectFilled(p0, p1,
-                            ImGui::GetColorU32(selected             ? theme::accent_soft
+                            ImGui::GetColorU32(selected             ? theme::accent2_soft
                                                : hovered && !locked ? theme::field
                                                                     : theme::surface_hi),
                             px(8));
         if (selected)
-            list->AddRect(p0, p1, ImGui::GetColorU32(theme::accent_line), px(8));
+            list->AddRect(p0, p1, ImGui::GetColorU32(theme::accent2_line), px(8));
 
         // Check box.
         const float box = px(18);
         const ImVec2 b0(p0.x + px(12), p0.y + (row - box) * 0.5f);
         const ImVec2 b1(b0.x + box, b0.y + box);
-        ui::draw_check(list, b0, box, selected);
+        ui::draw_check(list, b0, box, selected, theme::accent2);
 
         const float text_x = b1.x + px(12);
         const float line = ImGui::GetTextLineHeight();
@@ -1564,7 +1683,7 @@ void App::draw_script_picker(const float width) {
                 segment(text, text + file.name.size(), base);
             } else {
                 segment(text, text + hit, base);
-                segment(text + hit, text + hit + hit_length, theme::accent_text);
+                segment(text + hit, text + hit + hit_length, theme::accent2_text);
                 segment(text + hit + hit_length, text + file.name.size(), base);
             }
             ImGui::PushFont(nullptr, theme::font_small);
@@ -1680,53 +1799,96 @@ void App::draw_transport_card() {
     ImGui::EndGroup();
     ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), top + big_line + px(4)));
 
-    // Timeline bars; releasing a bar seeks.
+    // Timeline: Intro and Loop drawn as one continuous bar, colored by
+    // segment (accent then success, matching their labels elsewhere), so a
+    // single drag can seek across the whole cycle instead of two bars.
     const float width = ImGui::GetContentRegionAvail().x;
-    const float label_w = px(52);
     const float length_w = ImGui::CalcTextSize("00:00.000").x;
-    const float bar_w = std::max(width - label_w - length_w - px(20), px(40));
-    const auto bar = [&](const char* id, const char* label, const aoap::Segment segment,
-                         const int64_t duration, float* scrub) {
-        const bool here = position.segment == segment;
-        float fraction = 0.0f;
-        if (duration > 0 && here)
-            fraction = static_cast<float>(static_cast<double>(position.time_ns) /
-                                          static_cast<double>(duration));
-        else if (segment == aoap::Segment::intro && position.segment == aoap::Segment::loop)
-            fraction = 1.0f;
-        const float row_top = ImGui::GetCursorPosY();
-        const float row_left = ImGui::GetCursorPosX();
-        const float bar_row = std::max(px(9) + px(14), px(20)); // matches scrub_bar's own row calc
-        ImGui::SetCursorPosY(row_top + (bar_row - ImGui::GetTextLineHeight()) * 0.5f);
-        ImGui::PushStyleColor(ImGuiCol_Text, here ? theme::text : theme::text_faint);
-        ImGui::TextUnformatted(label);
-        ImGui::PopStyleColor();
-        ImGui::SameLine(row_left + label_w);
-        ImGui::SetCursorPosY(row_top);
-        ui::ScrubState state;
-        ImGui::BeginDisabled(!have_script);
-        // Intro and Loop are colored apart so it reads at a glance which
-        // segment a bar belongs to, matching the label beside it.
-        const ImU32 fill = segment == aoap::Segment::intro ? theme::accent : theme::success;
-        const bool released = ui::scrub_bar(id, fraction, bar_w, px(9), scrub, &state, fill);
-        ImGui::EndDisabled();
-        if (state.hovered || state.dragging) {
-            const float at = state.dragging ? *scrub : state.hover_fraction;
-            ImGui::SetTooltip("%s", format_time(static_cast<int64_t>(
-                                        static_cast<double>(duration) * at))
-                                        .c_str());
-        }
-        ImGui::SameLine(0, px(20));
-        ImGui::SetCursorPosY(row_top + (bar_row - ImGui::GetTextLineHeight()) * 0.5f);
-        ImGui::TextDisabled("%s", format_time(duration).c_str());
-        ImGui::SetCursorPosY(row_top + bar_row + px(2));
-        if (released && have_script)
-            seek({segment, static_cast<int64_t>(static_cast<double>(duration) * *scrub)});
-    };
-    if (has_intro)
-        bar("##intro", "Intro", aoap::Segment::intro, intro_ns, &scrub_intro_);
-    if (has_loop || !have_script)
-        bar("##loop", "Loop", aoap::Segment::loop, loop_ns, &scrub_loop_);
+    const float bar_w = std::max(width - length_w - px(20), px(60));
+    const int64_t total_ns = intro_ns + loop_ns;
+    const float intro_frac =
+        total_ns > 0 ? static_cast<float>(static_cast<double>(intro_ns) /
+                                          static_cast<double>(total_ns))
+                     : 0.0f;
+    float position_fraction = 0.0f;
+    if (total_ns > 0 && have_script) {
+        const int64_t absolute_ns = position.segment == aoap::Segment::intro
+                                        ? position.time_ns
+                                        : intro_ns + position.time_ns;
+        position_fraction = static_cast<float>(static_cast<double>(absolute_ns) /
+                                               static_cast<double>(total_ns));
+    }
+
+    const float row_top = ImGui::GetCursorPosY();
+    const float bar_h = px(9);
+    const float bar_row = std::max(bar_h + px(14), px(20)); // matches scrub_bar's own row calc
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    ImGui::BeginDisabled(!have_script);
+    ImGui::InvisibleButton("##timeline", ImVec2(bar_w, bar_row));
+    const bool hovered = ImGui::IsItemHovered();
+    const bool active = ImGui::IsItemActive();
+    const bool released = ImGui::IsItemDeactivated();
+    ImGui::EndDisabled();
+    const float mouse_fraction = std::clamp((ImGui::GetIO().MousePos.x - p0.x) / bar_w, 0.0f, 1.0f);
+    if (active)
+        scrub_timeline_ = mouse_fraction;
+    const float shown_fraction =
+        std::clamp(active ? scrub_timeline_ : position_fraction, 0.0f, 1.0f);
+
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const float cy = std::round(p0.y + bar_row * 0.5f);
+    const float radius = bar_h * 0.5f;
+    const ImVec2 t0(p0.x, cy - radius);
+    const ImVec2 t1(p0.x + bar_w, cy + radius);
+    list->AddRectFilled(t0, t1, ImGui::GetColorU32(theme::field_active), radius);
+    const float boundary_x = p0.x + bar_w * intro_frac;
+    if (has_intro) {
+        const float fill_to = p0.x + std::min(shown_fraction, intro_frac) * bar_w;
+        if (fill_to > t0.x + 0.5f)
+            list->AddRectFilled(t0, ImVec2(std::max(fill_to, t0.x + bar_h), t1.y),
+                                ImGui::GetColorU32(theme::accent), radius);
+    }
+    if (has_loop && shown_fraction > intro_frac) {
+        const float fill_to = p0.x + shown_fraction * bar_w;
+        list->AddRectFilled(ImVec2(boundary_x, t0.y),
+                            ImVec2(std::max(fill_to, boundary_x + bar_h), t1.y),
+                            ImGui::GetColorU32(theme::success), radius);
+    }
+    if (has_intro && has_loop) {
+        list->AddRectFilled(ImVec2(boundary_x - px(0.75f), t0.y),
+                            ImVec2(boundary_x + px(0.75f), t1.y),
+                            ImGui::GetColorU32(theme::background));
+    }
+    if (hovered && !active && have_script) {
+        const float x = p0.x + bar_w * mouse_fraction;
+        list->AddLine(ImVec2(x, cy - bar_h * 1.6f), ImVec2(x, cy + bar_h * 1.6f),
+                      ImGui::GetColorU32(theme::text_dim), px(1));
+        ImGui::SetTooltip(
+            "%s", format_time(static_cast<int64_t>(static_cast<double>(total_ns) * mouse_fraction))
+                      .c_str());
+    } else if (active) {
+        ImGui::SetTooltip("%s", format_time(static_cast<int64_t>(
+                                    static_cast<double>(total_ns) * scrub_timeline_))
+                                    .c_str());
+    }
+    const float knob_x = p0.x + bar_w * shown_fraction;
+    const float knob_r = (hovered || active) ? bar_h * 1.5f : bar_h * 1.2f;
+    list->AddCircleFilled(ImVec2(knob_x, cy), knob_r, IM_COL32(245, 245, 248, 255), 24);
+
+    ImGui::SameLine(0, px(20));
+    ImGui::SetCursorPosY(row_top + (bar_row - ImGui::GetTextLineHeight()) * 0.5f);
+    ImGui::TextDisabled("%s", format_time(total_ns).c_str());
+    ImGui::SetCursorPosY(row_top + bar_row + px(2));
+
+    if (released && have_script) {
+        const int64_t absolute_ns =
+            static_cast<int64_t>(static_cast<double>(total_ns) * scrub_timeline_);
+        if (has_intro && absolute_ns <= intro_ns)
+            seek({aoap::Segment::intro, absolute_ns});
+        else
+            seek({aoap::Segment::loop,
+                  std::clamp<int64_t>(absolute_ns - intro_ns, int64_t{0}, loop_ns)});
+    }
 
     // Transport buttons, centred.
     gap(2);
@@ -2266,7 +2428,15 @@ void App::draw_log(const float height) {
         ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
         ImGui::BeginChild("##entries", ImVec2(0, 0), ImGuiChildFlags_None);
         const bool at_bottom = ImGui::GetScrollY() >= ImGui::GetScrollMaxY() - 2.0f;
-        log_.visit([](const ActivityLog::Entry& entry) {
+        // Every other row gets a faint tint, so a long run of entries stays
+        // easy to scan by eye instead of reading as one solid block of text.
+        ImDrawList* entries_list = ImGui::GetWindowDrawList();
+        entries_list->ChannelsSplit(2);
+        int row_index = 0;
+        log_.visit([&](const ActivityLog::Entry& entry) {
+            const ImVec2 row0 = ImGui::GetCursorScreenPos();
+            const float row_width = ImGui::GetContentRegionAvail().x;
+            entries_list->ChannelsSetCurrent(1);
             ImGui::PushFont(nullptr, theme::font_small);
             ImGui::TextColored(theme::vec(theme::text_faint), "%s", entry.time.c_str());
             ImGui::PopFont();
@@ -2277,7 +2447,16 @@ void App::draw_log(const float height) {
             ImGui::PushStyleColor(ImGuiCol_Text, color);
             ImGui::TextWrapped("%s", entry.text.c_str());
             ImGui::PopStyleColor();
+            if (row_index % 2 == 1) {
+                entries_list->ChannelsSetCurrent(0);
+                entries_list->AddRectFilled(
+                    ImVec2(row0.x - px(4), row0.y - px(1)),
+                    ImVec2(row0.x + row_width + px(4), ImGui::GetCursorScreenPos().y - px(1)),
+                    ImGui::GetColorU32(theme::rgb(0xFFFFFF, 5)));
+            }
+            ++row_index;
         });
+        entries_list->ChannelsMerge();
         const uint64_t version = log_.version();
         if (version != log_seen_ && (at_bottom || log_follow_))
             ImGui::SetScrollHereY(1.0f);

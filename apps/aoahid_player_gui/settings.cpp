@@ -179,6 +179,10 @@ Settings load_settings(const std::filesystem::path& path) {
             read_int(value, 0, 348, settings.live_fullscreen_key);
         else if (key == "ui.sidebar_width")
             read_float(value, 280.0f, 640.0f, settings.sidebar_width);
+        else if (key == "ui.sidebar_collapsed")
+            read_bool(value, settings.sidebar_collapsed);
+        else if (key == "ui.dark_theme")
+            read_bool(value, settings.dark_theme);
         else if (key == "window.x")
             read_int(value, -32768, 32767, settings.window_x);
         else if (key == "window.y")
@@ -256,6 +260,8 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
     out << "ui.sidebar_width = " << settings.sidebar_width << '\n';
+    out << "ui.sidebar_collapsed = " << (settings.sidebar_collapsed ? 1 : 0) << '\n';
+    out << "ui.dark_theme = " << (settings.dark_theme ? 1 : 0) << '\n';
     out << "window.x = " << settings.window_x << '\n';
     out << "window.y = " << settings.window_y << '\n';
     out << "window.width = " << settings.window_width << '\n';

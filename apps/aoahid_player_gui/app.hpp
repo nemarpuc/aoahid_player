@@ -72,6 +72,11 @@ class App {
     // frame (skipped while OS-fullscreen), purely so it round-trips through
     // the same persist_settings() as everything else; App does not use it.
     void set_window_geometry(int x, int y, int width, int height) noexcept;
+    // True on the one frame after the dark/light toggle changed the theme,
+    // and only then: the window owner (main()) polls this once per loop
+    // iteration to know when to call theme::apply_style() again, since only
+    // it knows the current DPI scale to pass it.
+    [[nodiscard]] bool consume_theme_change() noexcept;
 
   private:
     enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3 };
@@ -125,10 +130,24 @@ class App {
         std::string meta;  // "1.2 KB  ·  2026-09-11 06:20"
     };
 
+    // The connection phase, summarised as one label and dot colour; shared
+    // by the header's pill and the collapsed sidebar's compact readout.
+    struct ConnectionStatus {
+        std::string text;
+        ImU32 dot;
+        bool pulse;
+    };
+    [[nodiscard]] ConnectionStatus connection_status() const;
+
     // Layout pieces.
     void draw_header();
     void draw_sidebar();
+    void draw_sidebar_collapsed();
     void draw_sidebar_splitter(float height);
+    // The Player/Live/Playlist/Recorder switch, as a left icon rail (not a
+    // top segmented control), so it reads as part of the window's chrome
+    // rather than a tab bar competing with each screen's own content.
+    void draw_nav_rail();
     void draw_devices_card();
     void draw_profiles_card();
     void draw_touch_settings();
@@ -227,6 +246,13 @@ class App {
     std::string connect_error_;
     float connect_height_{120.0f};
     float sidebar_width_{392.0f};
+    // Collapses Devices/Profiles/Connect to a slim rail so the Player/Live/
+    // Playlist/Recorder pane can use the full width; meant for once a device
+    // is already connected and the setup cards are not needed for a while.
+    bool sidebar_collapsed_{};
+    bool dark_theme_{true};
+    // Set by the header's theme toggle, cleared by consume_theme_change().
+    bool theme_dirty_{};
     // Last windowed geometry main() reported (see set_window_geometry());
     // 0 width/height means "never reported yet".
     int window_x_{};
@@ -271,8 +297,7 @@ class App {
 
     // Transport.
     aoap::PlaybackPosition cursor_{};
-    float scrub_intro_{};
-    float scrub_loop_{};
+    float scrub_timeline_{};
     float speed_{1.0f};
     int loop_limit_{};
     float offset_step_ms_{10.0f};
@@ -311,6 +336,9 @@ class App {
     int live_ratio_h_{};
     int live_rotation_{};
     bool live_fullscreen_{};
+    // ImGui::GetTime() the full screen control bar was last shown at (mouse
+    // moved, or near the bottom edge); it fades out a little after this.
+    double live_fullscreen_bar_seen_{};
     std::vector<LiveLogEntry> live_log_lines_;
     uint64_t live_log_version_{};
     uint64_t live_log_seen_{};
