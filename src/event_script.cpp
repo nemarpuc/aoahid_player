@@ -2,6 +2,7 @@
 #include "aoahid_player/event_script.hpp"
 
 #include "aoahid_player/device_group.hpp"
+#include "aoahid_player/key_names.hpp"
 #include "aoahid_player/paths.hpp"
 
 #include <algorithm>
@@ -101,8 +102,24 @@ bool parse_wait_ns(std::string_view text, int64_t& out) noexcept {
     return true;
 }
 
+// "0.5" -> a position in the 65536-wide normalized space; 1.0 stays inside it.
+bool parse_fraction(std::string_view text, int32_t& out) noexcept {
+    if (text.empty())
+        return false;
+    const std::string buffer(text);
+    char* end = nullptr;
+    errno = 0;
+    const double value = std::strtod(buffer.c_str(), &end);
+    if (end == buffer.c_str() || *end != '\0' || errno == ERANGE || !(value >= 0.0) ||
+        value > 1.0)
+        return false;
+    out = static_cast<int32_t>(std::min<int64_t>(
+        std::llround(value * static_cast<double>(normalized_space)), normalized_space - 1));
+    return true;
+}
+
 bool parse_row(const char prefix, std::string_view* field, const size_t count,
-               EventPayload& payload, std::string& reason) {
+               EventPayload& payload, std::string& reason, const bool normalized) {
     int64_t values[6]{};
     switch (prefix) {
     case 't': {
@@ -111,14 +128,27 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
             return false;
         }
         bool state = false;
-        if (!parse_bounded(field[0], 0, 65535, values[0]) || !parse_flag(field[1], state) ||
-            !parse_bounded(field[2], INT32_MIN, INT32_MAX, values[2]) ||
-            !parse_bounded(field[3], INT32_MIN, INT32_MAX, values[3])) {
+        int32_t x = 0;
+        int32_t y = 0;
+        if (!parse_bounded(field[0], 0, 65535, values[0]) || !parse_flag(field[1], state)) {
             reason = "touch column is not a valid number";
             return false;
         }
-        payload = TouchEvent{static_cast<int>(values[0]), state,
-                             static_cast<int32_t>(values[2]), static_cast<int32_t>(values[3])};
+        if (normalized) {
+            if (!parse_fraction(field[2], x) || !parse_fraction(field[3], y)) {
+                reason = "touch x and y must be a fraction from 0 to 1 under @coords normalized";
+                return false;
+            }
+        } else {
+            if (!parse_bounded(field[2], INT32_MIN, INT32_MAX, values[2]) ||
+                !parse_bounded(field[3], INT32_MIN, INT32_MAX, values[3])) {
+                reason = "touch column is not a valid number";
+                return false;
+            }
+            x = static_cast<int32_t>(values[2]);
+            y = static_cast<int32_t>(values[3]);
+        }
+        payload = TouchEvent{static_cast<int>(values[0]), state, x, y};
         return true;
     }
     case 'm': {
@@ -149,15 +179,27 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
     }
     case 'k': {
         if (count != 3) {
-            reason = "key needs usage,down,wait_ms";
+            reason = "key needs usage_or_name,down,wait_ms";
             return false;
         }
         bool down = false;
-        if (!parse_bounded(field[0], 0, 0xFFFF, values[0]) || !parse_flag(field[1], down)) {
-            reason = "key usage must be 0..0xffff and down must be 0 or 1";
+        uint16_t usage = 0;
+        if (!parse_flag(field[1], down)) {
+            reason = "key down must be 0 or 1";
             return false;
         }
-        payload = KeyEvent{static_cast<uint16_t>(values[0]), down};
+        // A number is a usage; anything else must be a key name.
+        if (parse_int64(field[0], values[0])) {
+            if (values[0] < 0 || values[0] > 0xFFFF) {
+                reason = "key usage must be 0..0xffff";
+                return false;
+            }
+            usage = static_cast<uint16_t>(values[0]);
+        } else if (!key_usage_from_name(field[0], usage)) {
+            reason = "unknown key name \"" + std::string(field[0]) + "\"";
+            return false;
+        }
+        payload = KeyEvent{usage, down};
         return true;
     }
     case 'g': {
@@ -208,19 +250,32 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         }
         bool in_range = false;
         bool tip = false;
+        int32_t x = 0;
+        int32_t y = 0;
         if (!parse_flag(field[0], in_range) || !parse_flag(field[1], tip) ||
-            !parse_bounded(field[2], INT32_MIN, INT32_MAX, values[2]) ||
-            !parse_bounded(field[3], INT32_MIN, INT32_MAX, values[3]) ||
             !parse_bounded(field[4], INT32_MIN, INT32_MAX, values[4])) {
             reason = "pen column is not a valid number";
             return false;
+        }
+        if (normalized) {
+            if (!parse_fraction(field[2], x) || !parse_fraction(field[3], y)) {
+                reason = "pen x and y must be a fraction from 0 to 1 under @coords normalized";
+                return false;
+            }
+        } else {
+            if (!parse_bounded(field[2], INT32_MIN, INT32_MAX, values[2]) ||
+                !parse_bounded(field[3], INT32_MIN, INT32_MAX, values[3])) {
+                reason = "pen column is not a valid number";
+                return false;
+            }
+            x = static_cast<int32_t>(values[2]);
+            y = static_cast<int32_t>(values[3]);
         }
         if (tip && !in_range) {
             reason = "pen tip=1 requires in_range=1";
             return false;
         }
-        payload = PenSample{in_range, tip, static_cast<int32_t>(values[2]),
-                            static_cast<int32_t>(values[3]), static_cast<int32_t>(values[4])};
+        payload = PenSample{in_range, tip, x, y, static_cast<int32_t>(values[4])};
         return true;
     }
     default:
@@ -258,6 +313,28 @@ uint64_t batch_key(const EventPayload& payload) noexcept {
 
 namespace {
 
+// "1080x2400" -> 1080, 2400.
+bool parse_size(std::string_view text, int32_t& width, int32_t& height) {
+    text = trim(text);
+    const size_t cross = text.find_first_of("xX");
+    if (cross == std::string_view::npos)
+        return false;
+    int32_t w = 0;
+    int32_t h = 0;
+    const std::string_view left = trim(text.substr(0, cross));
+    const std::string_view right = trim(text.substr(cross + 1));
+    const auto [end_w, error_w] = std::from_chars(left.data(), left.data() + left.size(), w);
+    const auto [end_h, error_h] = std::from_chars(right.data(), right.data() + right.size(), h);
+    if (error_w != std::errc{} || error_h != std::errc{} || end_w != left.data() + left.size() ||
+        end_h != right.data() + right.size())
+        return false;
+    if (w < 1 || h < 1 || w > 65536 || h > 65536)
+        return false;
+    width = w;
+    height = h;
+    return true;
+}
+
 // "# screen 1080x2400" -> 1080, 2400. Anything else is an ordinary comment.
 bool parse_screen_directive(std::string_view comment, int32_t& width, int32_t& height) {
     comment = trim(comment);
@@ -270,24 +347,7 @@ bool parse_screen_directive(std::string_view comment, int32_t& width, int32_t& h
     }
     if (comment[keyword.size()] != ' ' && comment[keyword.size()] != '\t')
         return false;
-    comment = trim(comment.substr(keyword.size()));
-    const size_t cross = comment.find_first_of("xX");
-    if (cross == std::string_view::npos)
-        return false;
-    int32_t w = 0;
-    int32_t h = 0;
-    const std::string_view left = trim(comment.substr(0, cross));
-    const std::string_view right = trim(comment.substr(cross + 1));
-    const auto [end_w, error_w] = std::from_chars(left.data(), left.data() + left.size(), w);
-    const auto [end_h, error_h] = std::from_chars(right.data(), right.data() + right.size(), h);
-    if (error_w != std::errc{} || error_h != std::errc{} || end_w != left.data() + left.size() ||
-        end_h != right.data() + right.size())
-        return false;
-    if (w < 1 || h < 1 || w > 65536 || h > 65536)
-        return false;
-    width = w;
-    height = h;
-    return true;
+    return parse_size(comment.substr(keyword.size()), width, height);
 }
 
 int32_t scale_coordinate(const int32_t value, const int32_t from, const int32_t to) {
@@ -323,8 +383,7 @@ bool scale_script(const EventScript& script, const int32_t touch_width,
             }
         }
     };
-    convert(out.once_rows);
-    convert(out.loop_rows);
+    convert(out.rows);
     if (touch) {
         out.screen_width = touch_width;
         out.screen_height = touch_height;
@@ -333,22 +392,41 @@ bool scale_script(const EventScript& script, const int32_t touch_width,
 }
 
 bool EventScript::load(const std::string& path, std::string& error) {
-    once_rows.clear();
-    loop_rows.clear();
+    rows.clear();
+    errors.clear();
     screen_width = 0;
     screen_height = 0;
+    coords_normalized = false;
 
     const std::string name = path_utf8(utf8_path(path).filename());
     std::ifstream input(utf8_path(path), std::ios::binary);
     if (!input) {
         error = name + ": cannot open the file";
+        errors.push_back(error);
         return false;
     }
+
+    constexpr size_t max_errors = 50;
+    bool stopped = false;
+    const auto fail = [&](const size_t number, const std::string& reason) {
+        if (errors.size() < max_errors) {
+            errors.push_back(name + ':' + std::to_string(number) + ": " + reason);
+        } else if (!stopped) {
+            errors.push_back(name + ": too many errors; reading stopped");
+            stopped = true;
+        }
+    };
 
     std::string line;
     size_t number = 0;
     bool first_line = true;
-    while (std::getline(input, line)) {
+    bool seen_row = false;
+    bool screen_directive = false;
+    bool coords_directive = false;
+    bool in_once = false;
+    bool keep_time = false;
+    size_t once_line = 0;
+    while (!stopped && std::getline(input, line)) {
         ++number;
         std::string_view view(line);
         if (first_line && view.size() >= 3 && static_cast<unsigned char>(view[0]) == 0xEF &&
@@ -368,49 +446,125 @@ bool EventScript::load(const std::string& path, std::string& error) {
         if (view.empty())
             continue;
 
+        if (view.front() == '@') {
+            view.remove_prefix(1);
+            const size_t space = view.find_first_of(" \t");
+            std::string word(space == std::string_view::npos ? view : view.substr(0, space));
+            for (char& c : word)
+                c = static_cast<char>(c >= 'A' && c <= 'Z' ? c | 0x20 : c);
+            std::string argument_text(space == std::string_view::npos
+                                          ? std::string_view()
+                                          : trim(view.substr(space)));
+            for (char& c : argument_text)
+                c = static_cast<char>(c >= 'A' && c <= 'Z' ? c | 0x20 : c);
+            const std::string_view argument = argument_text;
+            if (word == "once") {
+                if (in_once) {
+                    fail(number, "@once cannot be nested");
+                    continue;
+                }
+                in_once = true;
+                keep_time = argument == "keep-time";
+                once_line = number;
+                if (!argument.empty() && !keep_time)
+                    fail(number, "@once takes no option except keep-time");
+            } else if (word == "end") {
+                if (!in_once)
+                    fail(number, "@end without @once");
+                in_once = false;
+                keep_time = false;
+            } else if (word == "format") {
+                int64_t version = 0;
+                if (seen_row)
+                    fail(number, "@format must come before the first row");
+                else if (!parse_bounded(argument, 1, 2, version))
+                    fail(number, "unsupported @format (this version reads 1 and 2)");
+            } else if (word == "screen") {
+                int32_t w = 0;
+                int32_t h = 0;
+                if (seen_row)
+                    fail(number, "@screen must come before the first row");
+                else if (screen_directive)
+                    fail(number, "@screen given twice");
+                else if (coords_normalized)
+                    fail(number, "@screen cannot be combined with @coords normalized");
+                else if (!parse_size(argument, w, h))
+                    fail(number, "@screen needs WxH, each between 1 and 65536");
+                else {
+                    screen_width = w;
+                    screen_height = h;
+                    screen_directive = true;
+                }
+            } else if (word == "coords") {
+                if (seen_row)
+                    fail(number, "@coords must come before the first row");
+                else if (coords_directive)
+                    fail(number, "@coords given twice");
+                else if (argument == "normalized" && screen_directive)
+                    fail(number, "@coords normalized cannot be combined with @screen");
+                else if (argument == "normalized" || argument == "integer") {
+                    coords_directive = true;
+                    coords_normalized = argument == "normalized";
+                } else
+                    fail(number, "@coords takes normalized or integer");
+            } else {
+                fail(number, "unknown directive @" + word);
+            }
+            continue;
+        }
+        seen_row = true;
+
         const char prefix = view.front();
         const char lowered = static_cast<char>(prefix | 0x20);
         if (lowered < 'a' || lowered > 'z') {
-            error = name + ':' + std::to_string(number) +
-                    ": row must start with a profile letter";
-            return false;
+            fail(number, "row must start with a profile letter");
+            continue;
         }
         const bool once = prefix >= 'A' && prefix <= 'Z';
         view.remove_prefix(1);
         view = trim(view);
         if (view.empty() || view.front() != ',') {
-            error = name + ':' + std::to_string(number) + ": expected ',' after the row prefix";
-            return false;
+            fail(number, "expected ',' after the row prefix");
+            continue;
         }
         view.remove_prefix(1);
 
         std::string_view fields[6];
         const size_t count = split_fields(view, fields, 6);
         if (count > 6) {
-            error = name + ':' + std::to_string(number) + ": too many columns";
-            return false;
+            fail(number, "too many columns");
+            continue;
         }
 
         EventPayload payload{};
         std::string reason;
-        if (!parse_row(lowered, fields, count, payload, reason)) {
-            error = name + ':' + std::to_string(number) + ": " + reason;
-            return false;
+        if (!parse_row(lowered, fields, count, payload, reason, coords_normalized)) {
+            fail(number, reason);
+            continue;
         }
 
         int64_t wait_ns = 0;
         if (!parse_wait_ns(fields[count - 1], wait_ns)) {
-            error = name + ':' + std::to_string(number) +
-                    ": wait_ms must be zero or a positive number of milliseconds";
-            return false;
+            fail(number, "wait_ms must be zero or a positive number of milliseconds");
+            continue;
         }
 
-        EventRecord record{payload, once, wait_ns};
-        (once ? once_rows : loop_rows).push_back(record);
+        rows.push_back(EventRecord{payload, once || in_once, wait_ns, in_once && keep_time});
     }
 
-    if (once_rows.empty() && loop_rows.empty()) {
-        error = name + ": contains no event rows";
+    if (in_once && !stopped)
+        fail(once_line, "@once is not closed by @end");
+    if (coords_normalized) {
+        screen_width = normalized_space;
+        screen_height = normalized_space;
+    }
+    if (errors.empty() && rows.empty())
+        errors.push_back(name + ": contains no event rows");
+
+    if (!errors.empty()) {
+        error = errors.front();
+        if (errors.size() > 1)
+            error += " (and " + std::to_string(errors.size() - 1) + " more)";
         return false;
     }
     return true;
@@ -418,34 +572,45 @@ bool EventScript::load(const std::string& path, std::string& error) {
 
 uint32_t EventScript::required_profiles() const noexcept {
     uint32_t mask = 0;
-    for (const EventRecord& record : once_rows)
-        mask |= profile_bit(profile_of(record.payload));
-    for (const EventRecord& record : loop_rows)
+    for (const EventRecord& record : rows)
         mask |= profile_bit(profile_of(record.payload));
     return mask;
 }
 
-size_t Timeline::row_at(const Segment segment, const int64_t time_ns) const noexcept {
-    const std::vector<int64_t>& list = starts(segment);
-    // The trailing entry is the segment length, not a row.
+size_t Timeline::row_at(const Lap lap, const int64_t time_ns) const noexcept {
+    const std::vector<int64_t>& list = starts(lap);
+    // The trailing entry is the lap length, not a row.
     const auto last = list.end() - 1;
     return static_cast<size_t>(std::lower_bound(list.begin(), last, time_ns) - list.begin());
 }
 
 Timeline build_timeline(const EventScript& script) {
     Timeline timeline;
-    const auto fill = [](const std::vector<EventRecord>& rows, std::vector<int64_t>& starts) {
-        starts.clear();
-        starts.reserve(rows.size() + 1);
-        int64_t time = 0;
-        for (const EventRecord& record : rows) {
-            starts.push_back(time);
-            time += record.wait_ns;
+    timeline.first.clear();
+    timeline.repeat.clear();
+    timeline.first.reserve(script.rows.size() + 1);
+    timeline.repeat.reserve(script.rows.size() + 1);
+    int64_t first_time = 0;
+    int64_t repeat_time = 0;
+    for (size_t index = 0; index < script.rows.size(); ++index) {
+        const EventRecord& record = script.rows[index];
+        timeline.first.push_back(first_time);
+        if (!record.once) {
+            timeline.repeat.push_back(repeat_time);
+            timeline.repeat_row.push_back(static_cast<uint32_t>(index));
+            repeat_time += record.wait_ns;
+        } else if (record.keep_time) {
+            repeat_time += record.wait_ns; // skipped, but the wait stays
         }
-        starts.push_back(time);
-    };
-    fill(script.once_rows, timeline.intro);
-    fill(script.loop_rows, timeline.loop);
+        const int64_t end = first_time + record.wait_ns;
+        if (!timeline.first_runs.empty() && timeline.first_runs.back().once == record.once)
+            timeline.first_runs.back().end = end;
+        else
+            timeline.first_runs.push_back({first_time, end, record.once});
+        first_time = end;
+    }
+    timeline.first.push_back(first_time);
+    timeline.repeat.push_back(repeat_time);
     return timeline;
 }
 

@@ -5,6 +5,7 @@
 #include <bitset>
 #include <cstddef>
 #include <cstdint>
+#include <string>
 #include <vector>
 
 #include "event_script.hpp"
@@ -54,5 +55,18 @@ class InputState {
     GamepadDpad dpad_{};
     PenSample pen_{};
 };
+
+// The state uninterrupted playback holds at `row` of `lap`, once `loops` laps
+// have completed. Every row sets an absolute value, so one pass over the
+// repeated rows stands for any number of completed repeat laps.
+void state_at(InputState& out, const EventScript& script, const Timeline& timeline, Lap lap,
+              size_t row, uint64_t loops);
+
+// Problems worth a warning before playing. Laps from the third on start where
+// the second one ended, so a control the repeat lap leaves changed (usually a
+// once-only row releases what the repeated rows press) makes them start
+// differently from the second. Empty when the script has no once rows or
+// nothing to repeat, and for scripts whose repeat lap ends as it began.
+std::vector<std::string> lap_warnings(const EventScript& script, const Timeline& timeline);
 
 } // namespace aoap

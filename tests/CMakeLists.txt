@@ -7,6 +7,7 @@
 add_executable(aoahid_player_tests
   test_main.cpp
   test_event_script.cpp
+  test_recorder.cpp
   test_spec_builder.cpp
   test_getevent_parser.cpp
   test_input_state.cpp

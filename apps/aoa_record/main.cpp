@@ -75,6 +75,8 @@ int run(int argc, char** argv) {
     record.output_path = aoap::resolve_record_path(options.output);
     record.adb_serial = options.adb_serial;
     record.input_device = options.input_device;
+    record.coords = options.coords;
+    record.virtual_size = options.virtual_size;
     std::printf("[INFO] saving to %s (Ctrl+C to stop)\n", record.output_path.c_str());
     std::fflush(stdout);
 

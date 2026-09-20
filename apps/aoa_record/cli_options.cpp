@@ -25,6 +25,15 @@ void print_usage(const char* program) {
                 "  -s, --serial ID     adb device serial, for `adb -s ID`\n"
                 "      --input PATH    Only record /dev/input/eventN; default is every\n"
                 "                       device getevent reports\n"
+                "      --coords MODE   How touch coordinates are written (default: raw)\n"
+                "                       raw         the touch panel's own values, with\n"
+                "                                   \"# screen WxH\" naming its range\n"
+                "                       virtual[=N] scaled into an N x N space (default\n"
+                "                                   32768, N from 2 to 65536); older\n"
+                "                                   versions can play it too\n"
+                "                       normalized  fractions 0..1 of the panel, written with\n"
+                "                                   \"@coords normalized\" (needs a version\n"
+                "                                   that reads script format 2)\n"
                 "      --echo          Print each captured row while recording\n"
                 "  -h, --help          Show this text\n"
                 "\n"
@@ -57,6 +66,17 @@ std::optional<Options> parse(const int argc, char** argv) {
             if (!needs_value(index, argc, "--input"))
                 return std::nullopt;
             options.input_device = argv[++index];
+            continue;
+        }
+        if (argument == "--coords") {
+            if (!needs_value(index, argc, "--coords"))
+                return std::nullopt;
+            std::string problem;
+            if (!aoap::parse_coord_mode(argv[++index], options.coords, options.virtual_size,
+                                        problem)) {
+                std::fprintf(stderr, "[ERROR] --coords: %s\n", problem.c_str());
+                return std::nullopt;
+            }
             continue;
         }
         if (argument == "--echo") {

@@ -9,11 +9,13 @@
 #include "aoahid_player/adb.hpp"
 #include "aoahid_player/event_script.hpp"
 #include "aoahid_player/events.hpp"
+#include "aoahid_player/input_state.hpp"
 #include "aoahid_player/paths.hpp"
 #include "aoahid_player/player.hpp"
 #include "aoahid_player/session.hpp"
 #include "aoahid_player/timing.hpp"
 
+#include <algorithm>
 #include <atomic>
 #include <csignal>
 #include <cstdio>
@@ -219,11 +221,17 @@ bool load_script(const aoap::cli::Options& options, std::string& path,
     auto loaded = std::make_shared<aoap::EventScript>();
     std::string error;
     if (!loaded->load(path, error)) {
-        fail(error);
+        for (const std::string& problem : loaded->errors)
+            fail(problem);
         return false;
     }
-    std::printf("[INFO] %s: %zu intro rows, %zu loop rows\n", aoap::display_name(path).c_str(),
-                loaded->once_rows.size(), loaded->loop_rows.size());
+    const auto once_rows = static_cast<size_t>(
+        std::count_if(loaded->rows.begin(), loaded->rows.end(),
+                      [](const aoap::EventRecord& row) { return row.once; }));
+    std::printf("[INFO] %s: %zu once rows, %zu every-lap rows\n", aoap::display_name(path).c_str(),
+                once_rows, loaded->rows.size() - once_rows);
+    for (const std::string& warning : aoap::lap_warnings(*loaded, aoap::build_timeline(*loaded)))
+        std::fprintf(stderr, "[WARN] %s: %s\n", aoap::display_name(path).c_str(), warning.c_str());
     script = std::move(loaded);
     return true;
 }

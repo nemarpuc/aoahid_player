@@ -1,16 +1,27 @@
+@format 2
 # aoahid-player example script
-# Uppercase prefix = runs once on the first loop iteration only.
-# Lowercase prefix = runs on every loop iteration.
+# Uppercase prefix, or a row inside @once ... @end = runs only on the first lap,
+# at the position where it is written. Lowercase = runs on every lap.
+# Keys can be written by name (k,A / k,Enter / k,LShift) or by usage (k,0x04).
 
-# --- one-time setup, before the loop body ---
-K,0x04,1,8
-K,0x04,0,8
+# --- first lap only: setup ---
+K,A,1,8
+K,A,0,8
 
-# --- repeated every loop ---
+# --- every lap ---
 t,0,1,500,500,16
 t,0,0,600,650,16
 
 m,10,-5,8
+
+# --- first lap only, in the middle of the loop body ---
+# keep-time: later laps skip these rows but still wait their 16 ms.
+@once keep-time
+k,B,1,8
+k,B,0,8
+@end
+
+# --- every lap ---
 b,1,1,0
 b,1,0,16
 

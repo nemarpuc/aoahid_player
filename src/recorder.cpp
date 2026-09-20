@@ -8,6 +8,8 @@
 #include "aoahid_player/process.hpp"
 #include "aoahid_player/timing.hpp"
 
+#include <algorithm>
+#include <charconv>
 #include <ctime>
 #include <filesystem>
 #include <fstream>
@@ -19,21 +21,6 @@ namespace {
 
 constexpr int read_slice_ms = 100;           // how quickly stop() is noticed
 constexpr int64_t flush_interval_ns = 250'000'000;
-
-void append_rows(std::string& text, const std::vector<EventRecord>& rows) {
-    for (const EventRecord& record : rows) {
-        const double wait_ms = static_cast<double>(record.wait_ns) / 1'000'000.0;
-        std::visit(
-            [&](const auto& value) {
-                using T = std::decay_t<decltype(value)>;
-                if constexpr (std::is_same_v<T, TouchEvent>)
-                    append_touch_row(text, value.finger_id, value.state, value.x, value.y, wait_ms);
-                else if constexpr (std::is_same_v<T, KeyEvent>)
-                    append_key_row(text, value.usage, value.down, wait_ms);
-            },
-            record.payload);
-    }
-}
 
 // adb's first real complaint; lines starting with '*' are server start-up chatter.
 std::string first_complaint(const std::string& text) {
@@ -53,6 +40,96 @@ std::string first_complaint(const std::string& text) {
 }
 
 } // namespace
+
+bool parse_coord_mode(const std::string_view text, CoordMode& mode, int32_t& virtual_size,
+                      std::string& error) {
+    if (text == "raw") {
+        mode = CoordMode::raw;
+        return true;
+    }
+    if (text == "normalized") {
+        mode = CoordMode::normalized;
+        return true;
+    }
+    constexpr std::string_view virtual_word = "virtual";
+    if (text.substr(0, virtual_word.size()) == virtual_word) {
+        std::string_view rest = text.substr(virtual_word.size());
+        int32_t size = default_virtual_size;
+        if (!rest.empty()) {
+            if (rest.front() != '=') {
+                error = "unknown coordinate mode \"" + std::string(text) + "\"";
+                return false;
+            }
+            rest.remove_prefix(1);
+            const auto [end, code] = std::from_chars(rest.data(), rest.data() + rest.size(), size);
+            if (code != std::errc{} || end != rest.data() + rest.size() || size < 2 ||
+                size > 65536) {
+                error = "virtual size must be a number from 2 to 65536";
+                return false;
+            }
+        }
+        mode = CoordMode::virtual_space;
+        virtual_size = size;
+        return true;
+    }
+    error = "unknown coordinate mode \"" + std::string(text) +
+            "\" (use raw, virtual, virtual=N, or normalized)";
+    return false;
+}
+
+std::string record_header(const RecordFormat& format) {
+    if (format.panel_width <= 0 || format.panel_height <= 0)
+        return {};
+    switch (format.mode) {
+    case CoordMode::virtual_space:
+        return "# screen " + std::to_string(format.virtual_size) + 'x' +
+               std::to_string(format.virtual_size) + '\n';
+    case CoordMode::normalized:
+        return "@format 2\n@coords normalized\n";
+    case CoordMode::raw:
+    default:
+        return "# screen " + std::to_string(format.panel_width) + 'x' +
+               std::to_string(format.panel_height) + '\n';
+    }
+}
+
+void append_recorded_rows(std::string& text, const std::vector<EventRecord>& rows,
+                          const RecordFormat& format) {
+    const bool known = format.panel_width > 0 && format.panel_height > 0;
+    const CoordMode mode = known ? format.mode : CoordMode::raw;
+    // Same rounding as scale_script(), so a virtual recording lands where a
+    // raw one would.
+    const auto to_virtual = [&](const int32_t value, const int32_t from) {
+        const int64_t scaled =
+            (static_cast<int64_t>(value) * format.virtual_size + from / 2) / from;
+        return static_cast<int32_t>(std::clamp<int64_t>(scaled, 0, format.virtual_size - 1));
+    };
+    for (const EventRecord& record : rows) {
+        const double wait_ms = static_cast<double>(record.wait_ns) / 1'000'000.0;
+        std::visit(
+            [&](const auto& value) {
+                using T = std::decay_t<decltype(value)>;
+                if constexpr (std::is_same_v<T, TouchEvent>) {
+                    if (mode == CoordMode::virtual_space)
+                        append_touch_row(text, value.finger_id, value.state,
+                                         to_virtual(value.x, format.panel_width),
+                                         to_virtual(value.y, format.panel_height), wait_ms);
+                    else if (mode == CoordMode::normalized)
+                        append_touch_row_fraction(
+                            text, value.finger_id, value.state,
+                            std::clamp(static_cast<double>(value.x) / format.panel_width, 0.0, 1.0),
+                            std::clamp(static_cast<double>(value.y) / format.panel_height, 0.0, 1.0),
+                            wait_ms);
+                    else
+                        append_touch_row(text, value.finger_id, value.state, value.x, value.y,
+                                         wait_ms);
+                } else if constexpr (std::is_same_v<T, KeyEvent>) {
+                    append_key_row(text, value.usage, value.down, wait_ms);
+                }
+            },
+            record.payload);
+    }
+}
 
 std::string timestamped_record_name() {
     const std::time_t now = std::time(nullptr);
@@ -105,9 +182,13 @@ bool Recorder::run(const RecordOptions& options) {
     output << "# recorded by aoahid-player from `adb shell getevent -lt`\n"
               "# every row is lowercase, so the whole script repeats each loop\n";
 
-    // The rows keep the touch panel's raw coordinates, which are not always
-    // screen pixels; recording the panel's range lets playback scale them to
-    // whatever touchscreen resolution is connected.
+    // The panel reports raw coordinates, which are not always screen pixels.
+    // Its range lets the recording name its coordinate space (raw), or be
+    // converted into a device-independent one (virtual, normalized); playback
+    // then scales it to whatever touchscreen resolution is connected.
+    RecordFormat format;
+    format.mode = options.coords;
+    format.virtual_size = options.virtual_size;
     {
         const CommandResult ranges = run_command(
             adb_command(options.adb_serial, {"shell", "getevent", "-lp"}), 8000);
@@ -115,12 +196,24 @@ bool Recorder::run(const RecordOptions& options) {
         int32_t height = 0;
         if (ranges.started && !ranges.timed_out && ranges.exit_code == 0 &&
             record::parse_touch_range(ranges.output, options.input_device, width, height)) {
-            output << "# screen " << width << 'x' << height << '\n';
+            format.panel_width = width;
+            format.panel_height = height;
             note(Severity::info, "Touch panel range " + std::to_string(width) + "x" +
-                                     std::to_string(height) +
-                                     "; playback scales it to the connected touchscreen.");
+                                     std::to_string(height) + ".");
+        } else if (format.mode != CoordMode::raw) {
+            note(Severity::warning, "The touch panel's range could not be read, so coordinates "
+                                    "are written raw instead.");
         }
     }
+    output << record_header(format);
+    if (format.panel_width > 0 && format.mode == CoordMode::normalized)
+        note(Severity::info, "Writing positions as fractions of the panel (0 to 1).");
+    else if (format.panel_width > 0 && format.mode == CoordMode::virtual_space)
+        note(Severity::info, "Writing positions in a " + std::to_string(format.virtual_size) +
+                                 " x " + std::to_string(format.virtual_size) + " space.");
+    else if (format.panel_width > 0)
+        note(Severity::info, "Writing the panel's own values; playback scales them to the "
+                             "connected touchscreen.");
 
     ChildProcess adb;
     std::string error;
@@ -150,7 +243,7 @@ bool Recorder::run(const RecordOptions& options) {
         if (rows.empty())
             return;
         text.clear();
-        append_rows(text, rows);
+        append_recorded_rows(text, rows, format);
         output << text;
         if (sink_ != nullptr && !text.empty())
             sink_->recorded_row(text);

@@ -165,6 +165,16 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "gamepad.axes")
             read_axes(value, settings.pad_axes);
+        else if (key == "record.coords") {
+            if (value == "raw")
+                settings.record_coords = 0;
+            else if (value == "virtual")
+                settings.record_coords = 1;
+            else if (value == "normalized")
+                settings.record_coords = 2;
+        }
+        else if (key == "record.virtual_size")
+            read_int(value, 2, 65536, settings.record_virtual_size);
         else if (key == "pen")
             read_bool(value, settings.use_pen);
         else if (key == "pen.mode") {
@@ -277,6 +287,12 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live.gamepad = " << (settings.live_gamepad ? 1 : 0) << '\n';
     out << "live.ratio_w = " << settings.live_ratio_w << '\n';
     out << "live.ratio_h = " << settings.live_ratio_h << '\n';
+    out << "record.coords = "
+        << (settings.record_coords == 2   ? "normalized"
+            : settings.record_coords == 1 ? "virtual"
+                                          : "raw")
+        << '\n';
+    out << "record.virtual_size = " << settings.record_virtual_size << '\n';
     out << "live.rotation = " << settings.live_rotation << '\n';
     out << "live_image.path = " << settings.live_image_path << '\n';
     out << "live_image.x = " << settings.live_image_x << '\n';

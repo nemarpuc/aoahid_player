@@ -18,7 +18,7 @@ enum class PlaybackState : uint8_t { stopped, playing, paused };
 
 // A point on the script timeline, in script time (speed 1.0).
 struct PlaybackPosition {
-    Segment segment{Segment::intro};
+    Lap lap{Lap::first};
     int64_t time_ns{};
 };
 
@@ -39,8 +39,9 @@ class PlaybackObserver {
 };
 
 // Drives an EventScript against a DeviceGroup.
-//   - The intro (uppercase rows) runs before loop iteration 1; the loop rows
-//     then repeat until the loop limit, stop(), or the loss of every device.
+//   - The first lap runs every row in the order written; each later lap skips
+//     the uppercase (once-only) rows. Laps repeat until the loop limit,
+//     stop(), or the loss of every device. The loop limit counts laps.
 //   - Every row runs at an absolute deadline measured from one anchor, so a
 //     slow send never makes the script drift.
 //   - Rows with wait_ms 0 are batched into the next report. A row that would
@@ -118,7 +119,7 @@ class Player {
     Outcome service();
     Outcome hold_paused();
     Outcome wait_to(int64_t script_time);
-    bool finish_segment();
+    bool finish_lap();
 
     void execute(const EventRecord& record);
     aoahid_result send(const EventPayload& payload);
@@ -146,7 +147,7 @@ class Player {
     std::vector<EventPayload> releases_;
     std::vector<EventPayload> presses_;
     std::vector<uint64_t> staged_keys_;
-    Segment segment_{Segment::intro};
+    Lap lap_{Lap::first};
     size_t index_{};
     int64_t cursor_{}; // script time of the batch being staged
     uint64_t loops_{};
@@ -175,7 +176,7 @@ class Player {
     // position without the playback thread writing anything per row.
     std::atomic<uint32_t> seq_{};
     std::atomic<uint8_t> pub_state_{};
-    std::atomic<uint8_t> pub_segment_{};
+    std::atomic<uint8_t> pub_lap_{};
     std::atomic<int64_t> pub_anchor_real_{};
     std::atomic<int64_t> pub_anchor_script_{};
     std::atomic<int64_t> pub_offset_anchor_{};

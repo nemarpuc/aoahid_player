@@ -138,6 +138,8 @@ Settings App::current_settings() const {
     settings.pad_axes = pad_axes_;
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
+    settings.record_coords = record_coords_;
+    settings.record_virtual_size = std::clamp(record_virtual_size_, 2, 65536);
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
     settings.sidebar_width = sidebar_width_;
@@ -186,6 +188,8 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
+    record_coords_ = std::clamp(settings.record_coords, 0, 2);
+    record_virtual_size_ = std::clamp(settings.record_virtual_size, 2, 65536);
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
     sidebar_width_ = settings.sidebar_width;
@@ -358,6 +362,7 @@ void App::delete_script(const std::string& path) {
     if (path == script_path_) {
         script_.reset();
         script_path_.clear();
+        script_warnings_.clear();
         timeline_ = {};
         cursor_ = {};
     }
@@ -370,15 +375,18 @@ void App::load_script(const std::string& path) {
     auto script = std::make_shared<aoap::EventScript>();
     std::string error;
     if (!script->load(path, error)) {
-        script_error_ = error;
+        script_errors_ = script->errors;
         log_.message(aoap::Severity::error, error);
         return;
     }
     timeline_ = aoap::build_timeline(*script);
+    script_warnings_ = aoap::lap_warnings(*script, timeline_);
+    for (const std::string& warning : script_warnings_)
+        log_.message(aoap::Severity::warning, aoap::display_name(path) + ": " + warning);
     script_ = std::move(script);
     script_path_ = path;
     path_input_ = path;
-    script_error_.clear();
+    script_errors_.clear();
     cursor_ = {};
 }
 
@@ -573,6 +581,8 @@ void App::start_recording() {
         record_name_.empty() ? std::string() : record_file_name(record_name_));
     options.adb_serial = adb_serial();
     options.input_device = record_input_;
+    options.coords = static_cast<aoap::CoordMode>(std::clamp(record_coords_, 0, 2));
+    options.virtual_size = std::clamp(record_virtual_size_, 2, 65536);
     record_path_ = options.output_path;
     record_saved_ = false;
     record_done_.store(false, std::memory_order_relaxed);
@@ -1551,21 +1561,28 @@ void App::draw_script_card() {
     ImGui::SetNextWindowPos(ImVec2(p0.x, p1.y + px(4)));
     draw_script_picker(width);
 
-    if (!script_error_.empty()) {
+    if (!script_errors_.empty()) {
         gap(2);
-        small_colored(theme::danger, script_error_);
+        constexpr size_t shown = 6;
+        for (size_t index = 0; index < script_errors_.size() && index < shown; ++index)
+            small_colored(theme::danger, script_errors_[index]);
+        if (script_errors_.size() > shown)
+            small_colored(theme::danger, "...and " + std::to_string(script_errors_.size() - shown) +
+                                             " more (see the Activity log for the first).");
     }
     if (script_) {
         gap(2);
         char summary[200];
         std::snprintf(summary, sizeof summary,
-                      "%zu intro rows (%s)  ·  %zu loop rows (%s)  ·  uses the %s",
-                      script_->once_rows.size(),
-                      format_time(timeline_.duration(aoap::Segment::intro)).c_str(),
-                      script_->loop_rows.size(),
-                      format_time(timeline_.duration(aoap::Segment::loop)).c_str(),
+                      "%zu rows (%zu once)  ·  first lap %s  ·  repeat lap %s  ·  uses the %s",
+                      script_->size(), timeline_.once_rows(),
+                      format_time(timeline_.duration(aoap::Lap::first)).c_str(),
+                      format_time(timeline_.duration(aoap::Lap::repeat)).c_str(),
                       aoap::describe_profiles(script_->required_profiles()).c_str());
         small_dim(summary);
+
+        for (const std::string& warning : script_warnings_)
+            small_colored(theme::warning, warning);
 
         const uint32_t available = engine_.connected() ? engine_.connected_profiles()
                                                        : aoap::enabled_profiles(build_setup());
@@ -1795,10 +1812,11 @@ void App::draw_transport_card() {
     const bool live = phase == Phase::playing && status.state != aoap::PlaybackState::stopped;
     const aoap::PlaybackPosition position = live ? status.position : cursor_;
     const bool have_script = script_ != nullptr;
-    const int64_t intro_ns = have_script ? timeline_.duration(aoap::Segment::intro) : 0;
-    const int64_t loop_ns = have_script ? timeline_.duration(aoap::Segment::loop) : 0;
-    const bool has_intro = have_script && timeline_.rows(aoap::Segment::intro) > 0;
-    const bool has_loop = have_script && timeline_.rows(aoap::Segment::loop) > 0;
+    const int64_t first_ns = have_script ? timeline_.duration(aoap::Lap::first) : 0;
+    const int64_t repeat_ns = have_script ? timeline_.duration(aoap::Lap::repeat) : 0;
+    const bool has_repeat = have_script && timeline_.rows(aoap::Lap::repeat) > 0;
+    // Two laps are drawn only when they differ; otherwise the bar is one lap.
+    const bool two_laps = has_repeat && timeline_.once_rows() > 0;
 
     // Time readout and loop counter.
     const float top = ImGui::GetCursorPosY();
@@ -1808,14 +1826,14 @@ void App::draw_transport_card() {
     ImGui::PopFont();
     ImGui::SameLine(0, px(10));
     ImGui::SetCursorPosY(top + big_line - ImGui::GetTextLineHeight() - px(4));
-    const int64_t segment_ns = position.segment == aoap::Segment::intro ? intro_ns : loop_ns;
-    ImGui::TextDisabled("/ %s", format_time(segment_ns).c_str());
+    const int64_t lap_ns = position.lap == aoap::Lap::first ? first_ns : repeat_ns;
+    ImGui::TextDisabled("/ %s", format_time(lap_ns).c_str());
 
     std::string where;
     if (!have_script)
         where = "No script";
-    else if (position.segment == aoap::Segment::intro && has_intro)
-        where = "Intro";
+    else if (!has_repeat)
+        where = "Once";
     else {
         const uint64_t current = (live ? status.loops : 0) + 1;
         where = "Loop " + format_count(current);
@@ -1834,25 +1852,21 @@ void App::draw_transport_card() {
     ImGui::EndGroup();
     ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), top + big_line + px(4)));
 
-    // Timeline: Intro and Loop drawn as one continuous bar, colored by
-    // segment (accent then success, matching their labels elsewhere), so a
-    // single drag can seek across the whole cycle instead of two bars.
+    // Timeline: the first lap (once-only rows purple, repeated rows green in
+    // the order written) and the repeat lap (green) as one continuous bar, so
+    // a single drag can seek across the whole cycle.
     const float width = ImGui::GetContentRegionAvail().x;
     const float length_w = ImGui::CalcTextSize("00:00.000").x;
     const float bar_w = std::max(width - length_w - px(20), px(60));
-    const int64_t total_ns = intro_ns + loop_ns;
-    const float intro_frac =
-        total_ns > 0 ? static_cast<float>(static_cast<double>(intro_ns) /
-                                          static_cast<double>(total_ns))
-                     : 0.0f;
-    float position_fraction = 0.0f;
-    if (total_ns > 0 && have_script) {
-        const int64_t absolute_ns = position.segment == aoap::Segment::intro
-                                        ? position.time_ns
-                                        : intro_ns + position.time_ns;
-        position_fraction = static_cast<float>(static_cast<double>(absolute_ns) /
-                                               static_cast<double>(total_ns));
-    }
+    const int64_t total_ns = two_laps ? first_ns + repeat_ns : first_ns;
+    const double inverse_total = total_ns > 0 ? 1.0 / static_cast<double>(total_ns) : 0.0;
+    const int64_t lap_offset = (two_laps && position.lap == aoap::Lap::repeat) ? first_ns : 0;
+    const float position_fraction =
+        have_script ? static_cast<float>(static_cast<double>(lap_offset + position.time_ns) *
+                                         inverse_total)
+                    : 0.0f;
+    const float boundary_fraction =
+        two_laps ? static_cast<float>(static_cast<double>(first_ns) * inverse_total) : 1.0f;
 
     const float row_top = ImGui::GetCursorPosY();
     const float bar_h = px(9);
@@ -1876,20 +1890,39 @@ void App::draw_transport_card() {
     const ImVec2 t0(p0.x, cy - radius);
     const ImVec2 t1(p0.x + bar_w, cy + radius);
     list->AddRectFilled(t0, t1, ImGui::GetColorU32(theme::field_active), radius);
-    const float boundary_x = p0.x + bar_w * intro_frac;
-    if (has_intro) {
-        const float fill_to = p0.x + std::min(shown_fraction, intro_frac) * bar_w;
-        if (fill_to > t0.x + 0.5f)
-            list->AddRectFilled(t0, ImVec2(std::max(fill_to, t0.x + bar_h), t1.y),
-                                ImGui::GetColorU32(theme::accent), radius);
+
+    // Rounded only at the ends of the whole bar, so neighbouring spans join.
+    const auto fill_span = [&](const float x0, float x1, const ImU32 color) {
+        if (x1 - x0 < 0.5f)
+            return;
+        ImDrawFlags flags = ImDrawFlags_RoundCornersNone;
+        if (x0 <= t0.x + 0.5f) {
+            flags |= ImDrawFlags_RoundCornersLeft;
+            x1 = std::max(x1, t0.x + bar_h);
+        }
+        if (x1 >= t1.x - 0.5f)
+            flags |= ImDrawFlags_RoundCornersRight;
+        list->AddRectFilled(ImVec2(x0, t0.y), ImVec2(x1, t1.y), color, radius, flags);
+    };
+    // Spans not reached yet show their colour faintly, so the once-only
+    // parts are visible before they play.
+    const auto faint = [](const ImU32 color) {
+        const ImU32 alpha = ((color >> IM_COL32_A_SHIFT) & 0xFFU) * 70U / 255U;
+        return ImGui::GetColorU32((color & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT));
+    };
+    const auto x_at = [&](const int64_t ns) {
+        return p0.x + static_cast<float>(static_cast<double>(ns) * inverse_total) * bar_w;
+    };
+    const float filled_x = p0.x + bar_w * shown_fraction;
+    for (const aoap::Timeline::Run& run : timeline_.first_runs) {
+        const ImU32 tone = run.once ? theme::accent : theme::success;
+        fill_span(x_at(run.start), x_at(run.end), faint(tone));
+        fill_span(x_at(run.start), std::min(x_at(run.end), filled_x), ImGui::GetColorU32(tone));
     }
-    if (has_loop && shown_fraction > intro_frac) {
-        const float fill_to = p0.x + shown_fraction * bar_w;
-        list->AddRectFilled(ImVec2(boundary_x, t0.y),
-                            ImVec2(std::max(fill_to, boundary_x + bar_h), t1.y),
-                            ImGui::GetColorU32(theme::success), radius);
-    }
-    if (has_intro && has_loop) {
+    if (two_laps) {
+        const float boundary_x = p0.x + bar_w * boundary_fraction;
+        fill_span(boundary_x, t1.x, faint(theme::success));
+        fill_span(boundary_x, filled_x, ImGui::GetColorU32(theme::success));
         list->AddRectFilled(ImVec2(boundary_x - px(0.75f), t0.y),
                             ImVec2(boundary_x + px(0.75f), t1.y),
                             ImGui::GetColorU32(theme::background));
@@ -1918,11 +1951,10 @@ void App::draw_transport_card() {
     if (released && have_script) {
         const int64_t absolute_ns =
             static_cast<int64_t>(static_cast<double>(total_ns) * scrub_timeline_);
-        if (has_intro && absolute_ns <= intro_ns)
-            seek({aoap::Segment::intro, absolute_ns});
-        else
-            seek({aoap::Segment::loop,
-                  std::clamp<int64_t>(absolute_ns - intro_ns, int64_t{0}, loop_ns)});
+        if (two_laps && absolute_ns > first_ns)
+            seek({aoap::Lap::repeat, std::clamp<int64_t>(absolute_ns - first_ns, 0, repeat_ns)});
+        else // one lap is drawn: stay in the lap that is playing so the loop count is kept
+            seek({two_laps ? aoap::Lap::first : position.lap, absolute_ns});
     }
 
     // Transport buttons, centred.
@@ -2298,6 +2330,121 @@ void App::draw_playlist_picker() {
 
 // --- Recorder --------------------------------------------------------------
 
+// The three ways a recording can write touch positions, as selectable rows.
+// Where a touch lands is the same in all of them; only the numbers differ.
+void App::draw_record_coords(const bool locked) {
+    struct Choice {
+        const char* title;
+        const char* detail;
+        const char* badge;
+        bool newer; // a script only this version (or newer) can read
+    };
+    static const Choice choices[] = {
+        {"Raw", "The touch panel's own numbers, as the phone reports them.", "Any version", false},
+        {"Virtual", "Scaled into a fixed square, the same size on every phone.", "Any version",
+         false},
+        {"Normalized", "Fractions of the screen from 0 to 1, so 0.5 is the middle.",
+         "Newer versions only", true},
+    };
+    const auto tone = [](const ImU32 color, const unsigned alpha) {
+        return ImGui::GetColorU32((color & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT));
+    };
+
+    ImGui::BeginDisabled(locked);
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    const float width = ImGui::GetContentRegionAvail().x;
+    for (int index = 0; index < 3; ++index) {
+        const Choice& choice = choices[index];
+        const bool selected = record_coords_ == index;
+        std::string example = "Middle of the screen:  t,0,1,";
+        if (index == 0)
+            example += "800,1280";
+        else if (index == 1)
+            example += std::to_string(record_virtual_size_ / 2) + ',' +
+                       std::to_string(record_virtual_size_ / 2);
+        else
+            example += "0.500000,0.500000";
+        example += ",16.000";
+
+        ImGui::PushID(index);
+        const ImVec2 p0 = ImGui::GetCursorScreenPos();
+        const float title_h = ImGui::GetTextLineHeight();
+        ImGui::PushFont(nullptr, theme::font_small);
+        const float small_h = ImGui::GetTextLineHeight();
+        ImGui::PopFont();
+        const float height = px(12) + title_h + px(3) + small_h + px(2) + small_h + px(12);
+        ImGui::InvisibleButton("##mode", ImVec2(width, height));
+        const bool hovered = ImGui::IsItemHovered();
+        if (ImGui::IsItemClicked())
+            record_coords_ = index;
+        const ImVec2 p1(p0.x + width, p0.y + height);
+        const float rounding = px(8);
+        list->AddRectFilled(p0, p1,
+                            ImGui::GetColorU32(selected  ? theme::accent_soft
+                                               : hovered ? theme::field_hover
+                                                         : theme::field),
+                            rounding);
+        if (selected)
+            list->AddRect(p0, p1, ImGui::GetColorU32(theme::accent_line), rounding, px(1.5f));
+
+        const ImVec2 dot(p0.x + px(20), p0.y + px(12) + title_h * 0.5f);
+        list->AddCircle(dot, px(8), ImGui::GetColorU32(selected ? theme::accent : theme::text_faint),
+                        24, px(1.5f));
+        if (selected)
+            list->AddCircleFilled(dot, px(4), ImGui::GetColorU32(theme::accent), 20);
+
+        const float text_x = p0.x + px(40);
+        const float text_width = width - px(40) - px(14);
+        float y = p0.y + px(12);
+        list->AddText(ImVec2(text_x, y), ImGui::GetColorU32(theme::text), choice.title);
+
+        ImGui::PushFont(nullptr, theme::font_small);
+        const ImU32 badge_color = choice.newer ? theme::warning : theme::success;
+        const ImVec2 badge_size = ImGui::CalcTextSize(choice.badge);
+        const ImVec2 badge0(p1.x - px(14) - badge_size.x - px(16), y);
+        const ImVec2 badge1(p1.x - px(14), y + title_h);
+        list->AddRectFilled(badge0, badge1, tone(badge_color, 38), title_h * 0.5f);
+        list->AddText(ImVec2(badge0.x + px(8), y + (title_h - badge_size.y) * 0.5f),
+                      ImGui::GetColorU32(badge_color), choice.badge);
+        y += title_h + px(3);
+        ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_dim),
+                                 choice.detail, text_width);
+        y += small_h + px(2);
+        ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_faint),
+                                 example.c_str(), text_width);
+        ImGui::PopFont();
+        if (hovered && choice.newer)
+            ImGui::SetTooltip("Older versions of this player cannot read this file.\n"
+                              "Use Raw or Virtual if it has to open there too.");
+        ImGui::PopID();
+
+        if (index == 1 && selected) {
+            // The size of the virtual square.
+            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + px(40));
+            ImGui::AlignTextToFramePadding();
+            small_dim("Square size");
+            static constexpr int presets[] = {4096, 32768, 65536};
+            for (const int preset : presets) {
+                ImGui::SameLine(0, px(8));
+                const std::string label = std::to_string(preset);
+                if (ui::button(label.c_str(), ImVec2(px(64), 0),
+                               record_virtual_size_ == preset ? ui::Tone::primary
+                                                              : ui::Tone::secondary))
+                    record_virtual_size_ = preset;
+            }
+            ImGui::SameLine(0, px(8));
+            ImGui::SetNextItemWidth(px(92));
+            ImGui::InputInt("##virtual_size", &record_virtual_size_, 0, 0);
+            if (ImGui::IsItemDeactivatedAfterEdit())
+                record_virtual_size_ = std::clamp(record_virtual_size_, 2, 65536);
+            gap(2);
+        }
+        ImGui::Dummy(ImVec2(0, px(4)));
+    }
+    ImGui::EndDisabled();
+    small_dim("If the phone's touch range cannot be read, the recording is written raw.");
+}
+
 void App::draw_recorder() {
     const bool active = recording();
 
@@ -2345,6 +2492,13 @@ void App::draw_recorder() {
     gap(2);
     small_dim("Recording reads touches and keys with adb over USB debugging. The result plays "
               "back with the touchscreen and keyboard profiles.");
+    ui::end_card();
+
+    gap(2);
+    ui::begin_card("##coords");
+    caption_row("Coordinates");
+    gap(2);
+    draw_record_coords(active);
     ui::end_card();
 
     gap(2);
@@ -2410,6 +2564,11 @@ void App::draw_recorder() {
             format_count(recorder_ ? recorder_->rows() : 0) + " rows captured  ·  " +
             aoap::display_name(record_path_);
         small_dim(rows.c_str());
+        small_dim(record_coords_ == 2   ? "Coordinates: normalized (0 to 1)"
+                  : record_coords_ == 1 ? ("Coordinates: virtual " +
+                                           std::to_string(record_virtual_size_) + " x " +
+                                           std::to_string(record_virtual_size_)).c_str()
+                                        : "Coordinates: raw");
         gap(6);
         if (ui::button("Stop and save", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(12)),
                        ui::Tone::primary))

@@ -2,7 +2,10 @@
 #include "aoahid_player/input_state.hpp"
 
 #include <algorithm>
+#include <cstdio>
+#include <string>
 #include <type_traits>
+#include <variant>
 
 namespace aoap {
 namespace {
@@ -142,6 +145,85 @@ void InputState::transition(const InputState& from, const InputState& to,
         else
             releases.push_back(PenSample{false, false, from.pen_.x, from.pen_.y, 0});
     }
+}
+
+void state_at(InputState& out, const EventScript& script, const Timeline& timeline,
+              const Lap lap, const size_t row, const uint64_t loops) {
+    out.clear();
+    if (lap == Lap::first) {
+        for (size_t index = 0; index < row; ++index)
+            out.apply(script.rows[index].payload);
+        return;
+    }
+    for (const EventRecord& record : script.rows)
+        out.apply(record.payload);
+    if (loops >= 2) {
+        for (const uint32_t index : timeline.repeat_row)
+            out.apply(script.rows[index].payload);
+    }
+    for (size_t index = 0; index < row; ++index)
+        out.apply(script.rows[timeline.repeat_row[index]].payload);
+}
+
+namespace {
+
+std::string control_name(const EventPayload& payload) {
+    return std::visit(
+        [](const auto& value) -> std::string {
+            using T = std::decay_t<decltype(value)>;
+            if constexpr (std::is_same_v<T, TouchEvent>)
+                return "finger " + std::to_string(value.finger_id);
+            else if constexpr (std::is_same_v<T, KeyEvent>) {
+                char text[16];
+                std::snprintf(text, sizeof text, "key 0x%02x", static_cast<unsigned>(value.usage));
+                return text;
+            } else if constexpr (std::is_same_v<T, MouseButton>)
+                return "mouse button " + std::to_string(value.button);
+            else if constexpr (std::is_same_v<T, GamepadButton>)
+                return "gamepad button " + std::to_string(value.button);
+            else if constexpr (std::is_same_v<T, GamepadAxis>)
+                return "gamepad axis " + std::to_string(value.axis_index);
+            else if constexpr (std::is_same_v<T, GamepadDpad>)
+                return "the D-pad";
+            else if constexpr (std::is_same_v<T, PenSample>)
+                return "the pen";
+            else
+                return "an input";
+        },
+        payload);
+}
+
+} // namespace
+
+std::vector<std::string> lap_warnings(const EventScript& script, const Timeline& timeline) {
+    std::vector<std::string> warnings;
+    if (timeline.once_rows() == 0 || timeline.rows(Lap::repeat) == 0)
+        return warnings;
+
+    InputState start;
+    InputState end;
+    state_at(start, script, timeline, Lap::repeat, 0, 1);
+    state_at(end, script, timeline, Lap::repeat, timeline.rows(Lap::repeat), 1);
+    std::vector<EventPayload> released;
+    std::vector<EventPayload> pressed;
+    InputState::transition(start, end, released, pressed);
+
+    constexpr size_t shown = 4;
+    const size_t total = released.size() + pressed.size();
+    const auto add = [&](const std::vector<EventPayload>& changed) {
+        for (const EventPayload& payload : changed) {
+            if (warnings.size() < shown)
+                warnings.push_back(control_name(payload) +
+                                   " ends a repeat lap in a different state than it began in, so "
+                                   "lap 3 and later start differently from lap 2. A once-only row "
+                                   "probably changes it.");
+        }
+    };
+    add(pressed);
+    add(released);
+    if (total > shown)
+        warnings.push_back("...and " + std::to_string(total - shown) + " more controls.");
+    return warnings;
 }
 
 } // namespace aoap

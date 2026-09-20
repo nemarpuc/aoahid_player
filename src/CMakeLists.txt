@@ -10,6 +10,7 @@ add_library(aoahid_player_core STATIC
   event_script.cpp
   getevent_parser.cpp
   input_state.cpp
+  key_names.cpp
   paths.cpp
   player.cpp
   process.cpp

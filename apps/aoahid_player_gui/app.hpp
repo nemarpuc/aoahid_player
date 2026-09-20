@@ -183,6 +183,7 @@ class App {
     void draw_playlist();
     void draw_playlist_picker();
     void draw_recorder();
+    void draw_record_coords(bool locked);
     void draw_log(float height);
 
     // Actions.
@@ -291,7 +292,8 @@ class App {
     std::string script_path_;
     std::shared_ptr<const aoap::EventScript> script_;
     aoap::Timeline timeline_;
-    std::string script_error_;
+    std::vector<std::string> script_errors_;   // every problem of the last failed load
+    std::vector<std::string> script_warnings_; // aoap::lap_warnings() of script_
     std::string path_input_;
     std::string script_filter_;
     bool focus_search_{};
@@ -405,6 +407,8 @@ class App {
     int adb_choice_{}; // 0 = automatic, else adb_devices_[choice - 1]
     std::string record_name_;
     std::string record_input_;
+    int record_coords_{0}; // aoap::CoordMode's order: raw, virtual, normalized
+    int record_virtual_size_{aoap::default_virtual_size};
     std::unique_ptr<aoap::Recorder> recorder_;
     std::thread record_thread_;
     std::atomic<bool> record_done_{};
