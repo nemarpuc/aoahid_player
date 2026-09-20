@@ -23,8 +23,13 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # would reject every Gamepad Spec at runtime, so the minimum is pinned here to
 # fail at configure time instead. 0.5.0 renamed aoahid_touch_options to
 # aoahid_touchscreen_options (build_touch() follows), which an older libaoahid
-# would fail to even compile against, so the pin moves with it.
-find_package(aoahid 0.5.0 CONFIG REQUIRED)
+# would fail to even compile against, so the pin moves with it. 0.5.3 fixed a
+# runtime AOAHID_ERR_PARAM ("HID 1.11 section 8.4 forbids one field from
+# spanning more than four bytes") that an older libaoahid raises for
+# reachable Gamepad settings here: the GUI's D-pad default is Hat and its
+# axis-bits slider (build_gamepad(), 2-32 bits) allows 29-32, a combination
+# an older libaoahid always rejected regardless of any other setting.
+find_package(aoahid 0.5.3 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree
