@@ -287,8 +287,10 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
         // key forwarding; here only capturing on a click is left to do. The
         // release key is still forwarded to the phone afterwards like any
         // other key, same as before it released the capture.
-        if (!live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+        if (!live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
             live_capture_pointer(true);
+            live_swallow_left_ = true;
+        }
         if (!live_mouse_captured_)
             return;
 
@@ -301,7 +303,15 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
             const uint32_t index = static_cast<uint32_t>(button) + 1;
             const bool held = std::find(live_buttons_.begin(), live_buttons_.end(), index) !=
                               live_buttons_.end();
-            const bool down = ImGui::IsMouseDown(button);
+            bool down = ImGui::IsMouseDown(button);
+            // The click that grabbed the pointer is not the phone's: hold the
+            // left button back until it has been let go once.
+            if (button == ImGuiMouseButton_Left && live_swallow_left_) {
+                if (down)
+                    down = false;
+                else
+                    live_swallow_left_ = false;
+            }
             if (down != held)
                 engine_.live_send(aoap::MouseButton{index, down});
         }
@@ -521,6 +531,8 @@ void App::draw_live_surface(const ImVec2 size) {
     const ImVec2 origin = ImGui::GetCursorScreenPos();
     const ImVec2 p0(origin.x + (area.x - width) * 0.5f, origin.y + (area.y - height) * 0.5f);
     const ImVec2 p1(p0.x + width, p0.y + height);
+    live_phone_min_ = p0;
+    live_phone_max_ = p1;
     ImDrawList* list = ImGui::GetWindowDrawList();
     if (!live_fullscreen_) {
         const ImVec2 b0(p0.x - bezel, p0.y - bezel);
@@ -560,6 +572,7 @@ void App::draw_live_surface(const ImVec2 size) {
     // (see GLFW_CURSOR_DISABLED), so MousePos drifts outside the item and
     // hovered/IsItemActive alone would drop input the moment it does.
     if (running && !image_active &&
+        !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) &&
         (hovered || ImGui::IsItemActive() || held_state || live_mouse_captured_))
         live_pointer(p0, ImVec2(width, height));
 
@@ -654,10 +667,11 @@ void App::draw_live_surface(const ImVec2 size) {
     // scroll out of view, so this is the one place guaranteed to be on
     // screen no matter what else is happening.
     if (live_fullscreen_) {
-        char text[64];
-        std::snprintf(text, sizeof text, "Esc or %s exits full screen",
+        char text[96];
+        std::snprintf(text, sizeof text, "Esc or %s exits full screen%s",
                      glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_
-                                                             : GLFW_KEY_F11));
+                                                             : GLFW_KEY_F11),
+                     live_.mouse ? "" : ". Right-click for controls");
         ImGui::PushFont(nullptr, theme::font_small);
         const ImVec2 text_size = ImGui::CalcTextSize(text);
         const float pad_x = px(10);
@@ -679,57 +693,63 @@ void App::draw_live_fullscreen() {
         live_gamepad();
     }
 
-    // The preview fills the whole window and the control bar floats over its
-    // top edge. The phone's bottom edge (navigation bar, gestures, keyboard)
-    // is where taps land, so nothing here reacts to the pointer over the
-    // phone: the bar shows only while the pointer is on the small handle in
-    // the top-right corner or on the bar itself, and for a moment after
-    // entering full screen. A drag, held button or captured pointer never
-    // reveals it, so it cannot appear under a gesture in progress.
+    // The preview fills the whole window. The controls never sit on the phone,
+    // so a tap anywhere on it always reaches the phone: they live in the side
+    // margin the phone leaves (shown while the pointer is in that margin), and
+    // in a right-click menu that works even when there is no margin. Touch
+    // mode only uses the left button; in mouse mode the right button belongs
+    // to the phone, so the menu is off there.
     draw_live_surface(ImGui::GetContentRegionAvail());
     const ImVec2 surface_min = ImGui::GetItemRectMin();
     const ImVec2 surface_max = ImGui::GetItemRectMax();
 
-    const float bar_h = ImGui::GetFrameHeight() + px(16);
-    const float handle = px(30);
-    const ImVec2 handle_min(surface_max.x - handle - px(8), surface_min.y + px(8));
-    const ImVec2 handle_max(handle_min.x + handle, handle_min.y + handle);
-    const ImVec2 bar_min(surface_min.x + px(8), surface_min.y + px(8));
-    const ImVec2 bar_max(surface_max.x - px(8), bar_min.y + bar_h);
+    if (!live_.mouse && !live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+        ImGui::IsMouseHoveringRect(surface_min, surface_max))
+        ImGui::OpenPopup("##live_full_menu");
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
+    if (ImGui::BeginPopup("##live_full_menu")) {
+        draw_live_fullscreen_switches(px(170));
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar();
 
-    const bool gesture = live_touching_ || !live_buttons_.empty() || live_mouse_captured_;
-    // Short fade: while it is still faintly there it also eats clicks.
-    constexpr double linger = 0.9;
-    const bool bar_shown = live_fullscreen_bar_seen_ != 0.0 &&
-                           ImGui::GetTime() - live_fullscreen_bar_seen_ < linger;
-    if (live_fullscreen_bar_seen_ == 0.0 ||
-        (!gesture && (ImGui::IsMouseHoveringRect(handle_min, handle_max, false) ||
-                      (bar_shown && ImGui::IsMouseHoveringRect(bar_min, bar_max, false)))))
+    const float panel_w = px(176);
+    const float left = live_phone_min_.x - surface_min.x;
+    const float right = surface_max.x - live_phone_max_.x;
+    const bool on_right = right >= left;
+    const float margin = on_right ? right : left;
+    if (margin < panel_w + px(16))
+        return;
+
+    const float column_x = on_right ? live_phone_max_.x : surface_min.x;
+    const bool gesture = live_touching_ || !live_buttons_.empty();
+    const bool hovered = ImGui::IsMouseHoveringRect(
+        ImVec2(column_x, surface_min.y), ImVec2(column_x + margin, surface_max.y), false);
+    if ((hovered && !gesture) || live_fullscreen_bar_seen_ == 0.0)
         live_fullscreen_bar_seen_ = ImGui::GetTime();
     const double since = ImGui::GetTime() - live_fullscreen_bar_seen_;
-    const float bar_alpha = static_cast<float>(std::clamp(linger - since, 0.0, 1.0));
-    if (bar_alpha <= 0.02f) {
-        // A faint handle marks where to point; it takes no input itself.
-        ImDrawList* fg = ImGui::GetForegroundDrawList();
-        const ImVec2 c((handle_min.x + handle_max.x) * 0.5f, (handle_min.y + handle_max.y) * 0.5f);
-        fg->AddCircleFilled(c, handle * 0.5f, IM_COL32(0, 0, 0, 90), 24);
-        for (int dot = -1; dot <= 1; ++dot)
-            fg->AddCircleFilled(ImVec2(c.x + static_cast<float>(dot) * px(6), c.y), px(1.6f),
-                                IM_COL32(255, 255, 255, 150), 8);
+    const float alpha = static_cast<float>(std::clamp(1.4 - since, 0.0, 1.0));
+    if (alpha <= 0.02f)
         return;
-    }
 
-    ImGui::SetCursorScreenPos(bar_min);
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, bar_alpha);
+    const float panel_h = ImGui::GetFrameHeightWithSpacing() * 6 + px(28);
+    ImGui::SetCursorScreenPos(
+        ImVec2(column_x + (margin - panel_w) * 0.5f,
+               std::max(surface_min.y, (surface_min.y + surface_max.y - panel_h) * 0.5f)));
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x0E0F13, 210));
     ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(16), px(12)));
-    ImGui::BeginChild("##live_full_controls",
-                      ImVec2(bar_max.x - bar_min.x, bar_h),
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
+    ImGui::BeginChild("##live_full_controls", ImVec2(panel_w, panel_h),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
+    draw_live_fullscreen_switches(panel_w - px(28));
+    ImGui::EndChild();
+    ImGui::PopStyleVar(); // Alpha
+}
 
+void App::draw_live_fullscreen_switches(const float width) {
     const uint32_t available = engine_.connected_profiles();
     bool on = engine_.phase() == Phase::live;
     ImGui::BeginDisabled(!live_ready());
@@ -750,7 +770,6 @@ void App::draw_live_fullscreen() {
     };
     for (const Entry& entry : entries) {
         const bool present = (available & aoap::profile_bit(entry.profile)) != 0U;
-        ImGui::SameLine(0, px(18));
         ImGui::BeginDisabled(!present);
         if (ui::toggle(entry.label, entry.flag) && *entry.flag) {
             if (entry.flag == &live_.touch) {
@@ -763,17 +782,12 @@ void App::draw_live_fullscreen() {
         ImGui::EndDisabled();
     }
 
-    const float exit_width = px(132);
-    ImGui::SameLine();
-    ui::align_right(exit_width);
-    if (ui::button("Exit full screen", ImVec2(exit_width, 0)))
+    if (ui::button("Exit full screen", ImVec2(width, 0)))
         live_fullscreen_ = false;
     ImGui::SetItemTooltip(
         "Esc always exits full screen too, even while Keyboard is on. %s does as well "
         "(set below, in the normal view).",
         glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11));
-    ImGui::EndChild();
-    ImGui::PopStyleVar(); // Alpha
 }
 
 void App::draw_live_log(const ImVec2 size) {
@@ -993,7 +1007,7 @@ void App::draw_live_controls() {
     if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
                         "Fill the window with the preview")) {
         live_fullscreen_ = true;
-        live_fullscreen_bar_seen_ = ImGui::GetTime() + 1.5; // first look lingers longer
+        live_fullscreen_bar_seen_ = ImGui::GetTime();
     }
     ImGui::SameLine(0, gap_x);
 

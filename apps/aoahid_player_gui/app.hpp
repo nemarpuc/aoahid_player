@@ -177,6 +177,9 @@ class App {
     // The Live preview filling the window, with only the input switches and
     // a way out.
     void draw_live_fullscreen();
+    // The switches and the way out, shared by the side panel and the
+    // right-click menu of the full screen view.
+    void draw_live_fullscreen_switches(float width);
     void draw_playlist();
     void draw_playlist_picker();
     void draw_recorder();
@@ -314,6 +317,9 @@ class App {
     // without turning Live control or the Mouse toggle off; clicking the
     // preview again grabs it back.
     bool live_mouse_captured_{};
+    // The click that grabbed the pointer is still held; its left button is
+    // not forwarded, so grabbing never clicks on the phone.
+    bool live_swallow_left_{};
     // The GLFW key that releases the captured pointer; 0 means "not set",
     // which is treated as Escape. Only this exact key releases the capture
     // once changed — every other key (including the mouse's own buttons)
@@ -340,8 +346,12 @@ class App {
     int live_rotation_{};
     bool live_fullscreen_{};
     // ImGui::GetTime() the full screen control bar was last shown at (pointer
-    // on its corner handle or on the bar); it fades out a little after this.
+    // in the side margin); it fades out a little after this.
     double live_fullscreen_bar_seen_{};
+    // The phone rectangle as last drawn, so full screen knows where its side
+    // margins are.
+    ImVec2 live_phone_min_{};
+    ImVec2 live_phone_max_{};
     std::vector<LiveLogEntry> live_log_lines_;
     uint64_t live_log_version_{};
     uint64_t live_log_seen_{};

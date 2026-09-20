@@ -674,7 +674,7 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         (live_fullscreen_ || live_ready())) {
         live_fullscreen_ = !live_fullscreen_;
         if (live_fullscreen_)
-            live_fullscreen_bar_seen_ = ImGui::GetTime() + 1.5; // first look lingers longer
+            live_fullscreen_bar_seen_ = ImGui::GetTime();
         return;
     }
     // The release key lets go of the captured pointer no matter which

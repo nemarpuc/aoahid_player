@@ -121,12 +121,7 @@ still-windowed frame) with just the preview and the input switches; *Exit
 full screen*, **Esc**, or the configurable *Full screen key* (**F11** by
 default, set below the preview in the normal view) always returns, even
 while Keyboard is being forwarded, and a label on the preview spells out
-which key to press for as long as full screen is on. In full screen the
-switches sit in a bar along the top edge that appears only while the pointer
-is on the small dotted handle in the top-right corner (or on the bar itself),
-so pointing at the bottom of the phone — navigation bar, gestures — never
-brings up a bar over the tap; a drag or held button never reveals it either.
-The preview shows why
+which key to press for as long as full screen is on. The preview shows why
 Live control is unavailable right now (no device connected, or a script loaded and playing)
 under itself, in both the normal and the full-screen view, instead of just a
 disabled toggle. Live control stays off while a script is playing — playing
