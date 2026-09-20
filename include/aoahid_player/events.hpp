@@ -17,7 +17,7 @@ class EventSink {
 
     virtual void message(Severity severity, std::string_view text) = 0;
 
-    // After every completed loop iteration.
+    // After every completed lap (the first included) of a script that repeats.
     virtual void loop_completed(uint64_t /*loops*/, uint64_t /*reports*/) {}
 
     // Each CSV row a recording writes, including its newline.

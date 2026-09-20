@@ -105,7 +105,7 @@ void print_usage(const char* program) {
         "Playback:\n"
         "  -A                       Auto-detect touch resolution via `adb shell wm size`\n"
         "  --speed FACTOR           Playback speed multiplier (default 1.0)\n"
-        "  --loop N                 Stop after N loop iterations (default: infinite)\n"
+        "  --loop N                 Stop after N laps, the first included (default: infinite)\n"
         "  --no-prompt              Do not start the live \"-> \" offset prompt\n"
         "  -h, --help               Show this text\n"
         "\n"

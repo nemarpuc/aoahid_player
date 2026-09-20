@@ -14,7 +14,7 @@ t,0,0,600,650,16
 
 m,10,-5,8
 
-# --- first lap only, in the middle of the loop body ---
+# --- first lap only, in the middle of the every-lap rows ---
 # keep-time: later laps skip these rows but still wait their 16 ms.
 @once keep-time
 k,B,1,8

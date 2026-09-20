@@ -25,7 +25,7 @@ struct PlaybackPosition {
 struct PlaybackStatus {
     PlaybackState state{PlaybackState::stopped};
     PlaybackPosition position;
-    uint64_t loops{}; // completed loop iterations
+    uint64_t loops{}; // completed laps, the first included
     uint64_t reports{};
 };
 

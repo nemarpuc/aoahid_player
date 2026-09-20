@@ -88,13 +88,19 @@ that stops responding is dropped without stopping playback for the others.
   Files outside `csv/` open by path from the bottom of the list, or by
   dropping them on the window. The list rescans whenever the window gets
   focus.
-- Play/pause (also **Space**), stop, and back-to-start buttons. The *Intro*
-  bar is the uppercase rows that run once; the *Loop* bar is the lowercase
-  rows that repeat. Click or drag either bar to seek, while playing, paused,
-  or stopped.
+- Play/pause (also **Space**), stop, and back-to-start buttons. One bar shows
+  the whole cycle: the first lap (rows that run only once in purple, repeated
+  rows in green, in the order the file writes them), a gap, then the repeat
+  lap (green). Click or drag it to seek across both, while playing, paused, or
+  stopped. A script with no once-only rows shows a single lap. The label reads
+  *Loop k of N*, or *Once* for a script with nothing to repeat.
+- A script with problems shows every one of them (six lines here, all of them
+  in `aoa_touch`). A script whose repeat lap ends in a different input state
+  than it began in gets a warning, in the card and in the Activity log; see
+  [Checks](#checks).
 - *Speed* is typed in directly (0.01×–1000×, with 0.5× / 1× / 2× / 4×
-  buttons) and *Loops* 0 repeats until stopped; both apply immediately, even
-  in the middle of a wait. *Offset* shifts every later event by ±1 or ±10 ms;
+  buttons) and *Loops* counts laps, the first included (0 repeats until
+  stopped); both apply immediately, even in the middle of a wait. *Offset* shifts every later event by ±1 or ±10 ms;
   it starts at zero on every run and can only be changed while playing.
 - Pause and stop release everything the script was holding. A seek rebuilds
   exactly what would be held at the new position (fingers down, keys,
@@ -190,6 +196,13 @@ Linux cannot store are refused, and a name that already exists turns the
 button into *Replace and record*. *Stop and save* writes the file into `csv/`,
 and *Open in player* loads it.
 
+*Coordinates* chooses how touch positions are written: **Raw** (the panel's own
+numbers), **Virtual** (scaled into a square of 4096, 32768, 65536, or a size
+you type) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
+in the middle of the screen looks like and whether older versions can read the
+file. Where a touch lands is the same in all three. The choice is remembered
+and is fixed while recording; see [`--coords`](#aoa_record--usage).
+
 The window only redraws when something changes, so an idle window uses no
 CPU. It follows the monitor's scale factor on Windows and X11 and the
 compositor's scale on Wayland.
@@ -221,7 +234,7 @@ Profile setup (all explicit; there are no presets):
 Playback:
   -A                       Auto-detect touch resolution via `adb shell wm size`
   --speed FACTOR           Playback speed multiplier (default 1.0)
-  --loop N                 Stop after N loop iterations (default: infinite)
+  --loop N                 Stop after N laps, the first included (default: infinite)
   --no-prompt              Do not start the live "-> " offset prompt
   -h, --help               Show this text
 ```
@@ -245,6 +258,15 @@ aoa_record [options]
   -s, --serial ID     adb device serial, for `adb -s ID`
       --input PATH    Only record /dev/input/eventN; default is every
                        device getevent reports
+      --coords MODE   How touch coordinates are written (default: raw)
+                       raw         the touch panel's own values, with
+                                   "# screen WxH" naming its range
+                       virtual[=N] scaled into an N x N space (default
+                                   32768, N from 2 to 65536); older
+                                   versions can play it too
+                       normalized  fractions 0..1 of the panel, written with
+                                   "@coords normalized" (needs a version
+                                   that reads script format 2)
       --echo          Print each captured row while recording
   -h, --help          Show this text
 ```
@@ -252,41 +274,114 @@ aoa_record [options]
 Runs `adb shell getevent -lt`, turns touch (`ABS_MT_*`) and key (`EV_KEY`)
 frames into lowercase `t` and `k` rows with measured `wait_ms`, and streams
 them to the file. The touch panel's own coordinate range is read with
-`getevent -lp` and written as a `# screen WxH` comment, so playback can scale
-the recording to whatever touchscreen resolution is connected. Ctrl+C stops; the file is flushed and closed first. A
+`getevent -lp`, so playback can scale the recording to whatever touchscreen
+resolution is connected:
+
+- `raw` (the default) writes the panel's own values and names its range with
+  `# screen WxH`.
+- `virtual` converts them into an N × N space (`# screen NxN`), the same on
+  every phone. `raw` and `virtual` files play in every version.
+- `normalized` writes fractions of the panel (`0.500000` is the middle) under
+  `@format 2` and `@coords normalized`. Older versions cannot read it; it needs
+  version 0.10.0 or newer.
+
+If the panel's range cannot be read, the recording is written raw and a
+warning says so. Ctrl+C stops; the file is flushed and closed first. A
 recording that captured nothing leaves no file behind.
 
 ## CSV script format
 
-Plain text, no header row, one event per line; `#` starts a comment.
+Plain text, no header row, one event per line. `#` starts a comment; blank
+lines and a UTF-8 byte-order mark are ignored. Lines starting with `@` are
+[directives](#directives).
 
 | prefix | profile        | columns                                     |
 |--------|----------------|---------------------------------------------|
 | `t`    | touch          | `finger_id,state,x,y,wait_ms`               |
 | `m`    | mouse move     | `dx,dy,wait_ms`                             |
 | `b`    | mouse button   | `button_no,pressed,wait_ms`                 |
-| `k`    | keyboard key   | `usage,down,wait_ms` (usage accepts `0x..`) |
+| `k`    | keyboard key   | `usage_or_name,down,wait_ms` (a usage number, `0x..` accepted, or a [key name](#key-names)) |
 | `g`    | gamepad button | `button_no,pressed,wait_ms`                 |
 | `a`    | gamepad axis   | `axis_index,value,wait_ms`                  |
 | `h`    | gamepad dpad   | `up,down,right,left,wait_ms`                |
 | `p`    | pen            | `in_range,tip,x,y,pressure,wait_ms`         |
 
-**Case controls when a row runs:**
-- Uppercase prefix (`T,M,B,K,G,A,H,P`) — the intro, run once before the
-  first loop iteration.
-- Lowercase prefix (`t,m,b,k,g,a,h,p`) — the loop, repeated.
-
 `state`, `down`, `pressed`, `in_range`, `tip`, and the four dpad directions
 are `0` or `1`. `axis_index` is the position of the axis in the gamepad axis
-list (0-based). A `# screen WxH` comment before the rows names the coordinate
-space the touch and pen rows were written in; playback scales them from it
-onto the connected surfaces. `wait_ms` is the delay after the row; rows with `0` are sent
+list (0-based). `wait_ms` is the delay after the row; rows with `0` are sent
 in the same report as the next row. Every row runs at an absolute time
-measured from the start of its segment, so a slow USB transfer never makes the
+measured from the start of its lap, so a slow USB transfer never makes the
 script drift. Keyboard modifiers (usages `0xE0`–`0xE7`) are always available,
 whatever the usage range. The keyboard profile is full N-Key Rollover (as of
 libaoahid 0.2.0), so every usage in the configured range can be held down at
 the same time with no limit on simultaneous keys. See `csv/example.csv`.
+
+### Laps: which rows run when
+
+Rows keep the order they are written in, and the script plays in laps:
+
+- The **first lap** runs every row.
+- Each **later lap** skips the *once-only* rows, together with their
+  `wait_ms`, so it is shorter by the time those rows took (`keep-time`, below,
+  keeps that time).
+
+A row is once-only when its prefix is uppercase (`T,M,B,K,G,A,H,P`) or when it
+sits between `@once` and `@end`; lowercase rows outside a block run on every
+lap. A once-only row can be anywhere in the file: first, in the middle, or
+last. A script whose rows are all once-only plays one lap and ends. *Loops*
+(`--loop N` in `aoa_touch`) count laps, the first included; 0 repeats until
+stopped.
+
+Earlier versions moved every uppercase row to the front. An uppercase row
+written after lowercase rows now runs where it is written; files that keep
+their uppercase rows at the top play as before.
+
+### Directives
+
+A directive is a line starting with `@`. Names and options ignore case. Files
+without directives are read as before; a file with one needs version 0.10.0 or
+newer.
+
+| directive | meaning |
+|-----------|---------|
+| `@format 1` / `@format 2` | Optional. The format version; 1 and 2 are the same language, and anything newer is refused. Before the first row. |
+| `@screen WxH` | The size of the coordinate space the touch and pen `x,y` are written in (each from 1 to 65536). The older `# screen WxH` comment still works; `@screen` wins when both are present. Before the first row, once. |
+| `@coords normalized` / `@coords integer` | With `normalized`, touch and pen `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen pressure stays an integer. Before the first row, once; not combined with `@screen`. |
+| `@once` … `@end` | Every row inside is once-only, whatever its case. Blocks do not nest. |
+| `@once keep-time` … `@end` | The same, and later laps still wait the rows' `wait_ms`, so every lap has the same length. |
+
+### Coordinates
+
+While playing, touch and pen positions are scaled from the space the file
+names (`@screen`, `# screen WxH`, or `@coords normalized`) onto the connected
+touchscreen and pen surface; without a named space they are used as they are.
+A file written in a large square such as `@screen 32768x32768` therefore lands
+in the same place on any phone. Each axis is scaled on its own, so a square
+space is stretched to a phone that is not square. `@coords normalized` is
+stored as a 65536 × 65536 space.
+
+### Key names
+
+`k` rows take a usage number or a name, ignoring case: `A`–`Z`,
+`Digit0`–`Digit9`, `F1`–`F24`, `Enter` (`Return`), `Esc` (`Escape`),
+`Backspace`, `Tab`, `Space`, `Minus`, `Equal`, `LBracket`, `RBracket`,
+`Backslash`, `Semicolon`, `Quote`, `Grave`, `Comma`, `Period`, `Slash`,
+`CapsLock`, `PrintScreen`, `ScrollLock`, `Pause`, `Insert`, `Delete`, `Home`,
+`End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`, `NumLock`, `Menu`,
+and the modifiers `LCtrl`, `LShift`, `LAlt`, `LGui`, `RCtrl`, `RShift`,
+`RAlt`, `RGui` (`Ctrl`, `Shift`, `Alt`, and `Gui`, `Win`, `Meta`, `Super` mean
+the left one). A bare number is always a usage number, so write digit keys as
+`Digit1`.
+
+### Checks
+
+- Every problem in a file is reported with its file and line, up to 50 (then
+  reading stops). A file with any problem is not played.
+- **Lap warning:** laps from the third on start where the second ended. When
+  the repeat lap leaves a control in a different state than it found it (usually
+  a once-only row releases what the repeated rows press, or the reverse), the
+  laps start differently from the second, and the control is named in a
+  warning. Scripts with no once-only rows never warn.
 
 ## Linux permissions (udev)
 
@@ -411,8 +506,10 @@ The main headers in `include/aoahid_player/`:
 - `player.hpp` — playback with pause, seek, speed, loop limit, live offset,
   and a wall-clock stop time, all callable from any thread; `status()` is
   lock-free, and a `PlaybackObserver` sees every row sent.
-- `recorder.hpp` — `adb getevent` recording into a CSV file.
-- `event_script.hpp` — CSV loading and the script timeline.
+- `recorder.hpp` — `adb getevent` recording into a CSV file, with the raw,
+  virtual, and normalized coordinate modes.
+- `event_script.hpp` — CSV loading (rows in file order, directives, key names)
+  and the two-lap script timeline.
 - `adb.hpp`, `paths.hpp`, `events.hpp` — adb helpers, UTF-8 paths and the
   `csv/` folder, and the `EventSink` interface.
 
@@ -420,6 +517,8 @@ The main headers in `include/aoahid_player/`:
 
 ## Known limitations
 
+- A script has two kinds of rows, once-only and repeated; there is no
+  per-row condition such as "on lap 3" or "every fifth lap".
 - Recording captures touches and keyboard keys only, not mouse, gamepad, or
   pen input.
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
