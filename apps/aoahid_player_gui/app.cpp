@@ -674,7 +674,7 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         (live_fullscreen_ || live_ready())) {
         live_fullscreen_ = !live_fullscreen_;
         if (live_fullscreen_)
-            live_fullscreen_bar_seen_ = ImGui::GetTime();
+            live_fullscreen_bar_seen_ = ImGui::GetTime() + 1.5; // first look lingers longer
         return;
     }
     // The release key lets go of the captured pointer no matter which
@@ -1440,7 +1440,42 @@ void App::draw_connect_card() {
 
 // --- Player ----------------------------------------------------------------
 
+void App::draw_aoa_link_card() {
+    const bool connected = engine_.connected();
+#if defined(_WIN32)
+    constexpr bool windows = true;
+#else
+    constexpr bool windows = false;
+#endif
+    if (!windows && !connected)
+        return;
+
+    ui::begin_card("##aoa_link");
+    caption_row("AOA connection");
+    const Phase phase = engine_.phase();
+    const float width = px(150);
+    ui::align_right(width);
+    ImGui::BeginDisabled(!connected);
+    if (ui::button(phase == Phase::disconnecting ? "Disconnecting...##aoa_link" : "Disconnect AOA",
+                   ImVec2(width, 0), ui::Tone::danger))
+        engine_.disconnect();
+    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Unregisters the HID devices and ends the AOA connection.");
+    if (windows) {
+        gap(2);
+        small_colored(connected ? theme::warning : theme::text_dim,
+                      connected
+                          ? "adb cannot see the phone while AOA is connected on Windows. "
+                            "Press Disconnect AOA before using adb."
+                          : "On Windows, adb and AOA cannot be used at the same time. Connecting "
+                            "makes adb lose the phone until you disconnect.");
+    }
+    ui::end_card();
+}
+
 void App::draw_player() {
+    draw_aoa_link_card();
+    gap(2);
     draw_script_card();
     gap(2);
     draw_transport_card();

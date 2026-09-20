@@ -157,6 +157,9 @@ class App {
     void draw_pen_settings();
     void draw_connect_card();
     void draw_player();
+    // Windows only notice that adb and AOA HID cannot share the phone, with
+    // a Disconnect button so adb can be used again without leaving the tab.
+    void draw_aoa_link_card();
     void draw_script_card();
     void draw_script_picker(float width);
     void draw_transport_card();
@@ -336,8 +339,8 @@ class App {
     int live_ratio_h_{};
     int live_rotation_{};
     bool live_fullscreen_{};
-    // ImGui::GetTime() the full screen control bar was last shown at (mouse
-    // moved, or near the bottom edge); it fades out a little after this.
+    // ImGui::GetTime() the full screen control bar was last shown at (pointer
+    // on its corner handle or on the bar); it fades out a little after this.
     double live_fullscreen_bar_seen_{};
     std::vector<LiveLogEntry> live_log_lines_;
     uint64_t live_log_version_{};

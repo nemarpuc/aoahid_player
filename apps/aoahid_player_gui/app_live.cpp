@@ -679,35 +679,53 @@ void App::draw_live_fullscreen() {
         live_gamepad();
     }
 
-    // The preview fills the whole window; the control bar floats over its
-    // bottom edge instead of reserving a fixed strip below it, so on a large
-    // display the pixels mostly go to the preview, the way a video player's
-    // overlay controls do. It shows while the pointer has moved recently or
-    // sits near the bottom edge, and fades out a little after neither.
+    // The preview fills the whole window and the control bar floats over its
+    // top edge. The phone's bottom edge (navigation bar, gestures, keyboard)
+    // is where taps land, so nothing here reacts to the pointer over the
+    // phone: the bar shows only while the pointer is on the small handle in
+    // the top-right corner or on the bar itself, and for a moment after
+    // entering full screen. A drag, held button or captured pointer never
+    // reveals it, so it cannot appear under a gesture in progress.
     draw_live_surface(ImGui::GetContentRegionAvail());
     const ImVec2 surface_min = ImGui::GetItemRectMin();
     const ImVec2 surface_max = ImGui::GetItemRectMax();
 
-    const ImGuiIO& io = ImGui::GetIO();
-    const bool moved = std::fabs(io.MouseDelta.x) > 0.01f || std::fabs(io.MouseDelta.y) > 0.01f;
-    const float reveal_band = px(96);
-    const bool near_bottom = io.MousePos.y > surface_max.y - reveal_band &&
-                             io.MousePos.x >= surface_min.x && io.MousePos.x <= surface_max.x;
-    if (moved || near_bottom || live_fullscreen_bar_seen_ == 0.0)
+    const float bar_h = ImGui::GetFrameHeight() + px(16);
+    const float handle = px(30);
+    const ImVec2 handle_min(surface_max.x - handle - px(8), surface_min.y + px(8));
+    const ImVec2 handle_max(handle_min.x + handle, handle_min.y + handle);
+    const ImVec2 bar_min(surface_min.x + px(8), surface_min.y + px(8));
+    const ImVec2 bar_max(surface_max.x - px(8), bar_min.y + bar_h);
+
+    const bool gesture = live_touching_ || !live_buttons_.empty() || live_mouse_captured_;
+    // Short fade: while it is still faintly there it also eats clicks.
+    constexpr double linger = 0.9;
+    const bool bar_shown = live_fullscreen_bar_seen_ != 0.0 &&
+                           ImGui::GetTime() - live_fullscreen_bar_seen_ < linger;
+    if (live_fullscreen_bar_seen_ == 0.0 ||
+        (!gesture && (ImGui::IsMouseHoveringRect(handle_min, handle_max, false) ||
+                      (bar_shown && ImGui::IsMouseHoveringRect(bar_min, bar_max, false)))))
         live_fullscreen_bar_seen_ = ImGui::GetTime();
     const double since = ImGui::GetTime() - live_fullscreen_bar_seen_;
-    const float bar_alpha = static_cast<float>(std::clamp(1.4 - since, 0.0, 1.0));
-    if (bar_alpha <= 0.02f)
+    const float bar_alpha = static_cast<float>(std::clamp(linger - since, 0.0, 1.0));
+    if (bar_alpha <= 0.02f) {
+        // A faint handle marks where to point; it takes no input itself.
+        ImDrawList* fg = ImGui::GetForegroundDrawList();
+        const ImVec2 c((handle_min.x + handle_max.x) * 0.5f, (handle_min.y + handle_max.y) * 0.5f);
+        fg->AddCircleFilled(c, handle * 0.5f, IM_COL32(0, 0, 0, 90), 24);
+        for (int dot = -1; dot <= 1; ++dot)
+            fg->AddCircleFilled(ImVec2(c.x + static_cast<float>(dot) * px(6), c.y), px(1.6f),
+                                IM_COL32(255, 255, 255, 150), 8);
         return;
+    }
 
-    const float bar_h = ImGui::GetFrameHeight() + px(16);
-    ImGui::SetCursorScreenPos(ImVec2(surface_min.x + px(8), surface_max.y - bar_h - px(8)));
+    ImGui::SetCursorScreenPos(bar_min);
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, bar_alpha);
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x0E0F13, 210));
     ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(16), px(12)));
     ImGui::BeginChild("##live_full_controls",
-                      ImVec2(surface_max.x - surface_min.x - px(16), bar_h),
+                      ImVec2(bar_max.x - bar_min.x, bar_h),
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
@@ -975,7 +993,7 @@ void App::draw_live_controls() {
     if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
                         "Fill the window with the preview")) {
         live_fullscreen_ = true;
-        live_fullscreen_bar_seen_ = ImGui::GetTime();
+        live_fullscreen_bar_seen_ = ImGui::GetTime() + 1.5; // first look lingers longer
     }
     ImGui::SameLine(0, gap_x);
 
