@@ -139,7 +139,6 @@ Settings App::current_settings() const {
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
     settings.record_coords = record_coords_;
-    settings.record_virtual_size = std::clamp(record_virtual_size_, 2, 65536);
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
     settings.sidebar_width = sidebar_width_;
@@ -188,8 +187,7 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
-    record_coords_ = std::clamp(settings.record_coords, 0, 2);
-    record_virtual_size_ = std::clamp(settings.record_virtual_size, 2, 65536);
+    record_coords_ = std::clamp(settings.record_coords, 0, 1);
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
     sidebar_width_ = settings.sidebar_width;
@@ -581,8 +579,7 @@ void App::start_recording() {
         record_name_.empty() ? std::string() : record_file_name(record_name_));
     options.adb_serial = adb_serial();
     options.input_device = record_input_;
-    options.coords = static_cast<aoap::CoordMode>(std::clamp(record_coords_, 0, 2));
-    options.virtual_size = std::clamp(record_virtual_size_, 2, 65536);
+    options.coords = static_cast<aoap::CoordMode>(std::clamp(record_coords_, 0, 1));
     record_path_ = options.output_path;
     record_saved_ = false;
     record_done_.store(false, std::memory_order_relaxed);
@@ -2330,41 +2327,27 @@ void App::draw_playlist_picker() {
 
 // --- Recorder --------------------------------------------------------------
 
-// The three ways a recording can write touch positions, as selectable rows.
-// Where a touch lands is the same in all of them; only the numbers differ.
+// The two ways a recording can write touch positions, as selectable rows.
+// Where a touch lands is the same in both; only the numbers differ.
 void App::draw_record_coords(const bool locked) {
     struct Choice {
         const char* title;
         const char* detail;
-        const char* badge;
-        bool newer; // a script only this version (or newer) can read
+        const char* example; // a tap in the middle of the screen
     };
     static const Choice choices[] = {
-        {"Raw", "The touch panel's own numbers, as the phone reports them.", "Any version", false},
-        {"Virtual", "Scaled into a fixed square, the same size on every phone.", "Any version",
-         false},
+        {"Raw", "The touch panel's own numbers, as the phone reports them.",
+         "Middle of the screen:  t,0,1,800,1280,16.000"},
         {"Normalized", "Fractions of the screen from 0 to 1, so 0.5 is the middle.",
-         "Newer versions only", true},
-    };
-    const auto tone = [](const ImU32 color, const unsigned alpha) {
-        return ImGui::GetColorU32((color & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT));
+         "Middle of the screen:  t,0,1,0.500000,0.500000,16.000"},
     };
 
     ImGui::BeginDisabled(locked);
     ImDrawList* list = ImGui::GetWindowDrawList();
     const float width = ImGui::GetContentRegionAvail().x;
-    for (int index = 0; index < 3; ++index) {
+    for (int index = 0; index < 2; ++index) {
         const Choice& choice = choices[index];
         const bool selected = record_coords_ == index;
-        std::string example = "Middle of the screen:  t,0,1,";
-        if (index == 0)
-            example += "800,1280";
-        else if (index == 1)
-            example += std::to_string(record_virtual_size_ / 2) + ',' +
-                       std::to_string(record_virtual_size_ / 2);
-        else
-            example += "0.500000,0.500000";
-        example += ",16.000";
 
         ImGui::PushID(index);
         const ImVec2 p0 = ImGui::GetCursorScreenPos();
@@ -2397,48 +2380,15 @@ void App::draw_record_coords(const bool locked) {
         const float text_width = width - px(40) - px(14);
         float y = p0.y + px(12);
         list->AddText(ImVec2(text_x, y), ImGui::GetColorU32(theme::text), choice.title);
-
-        ImGui::PushFont(nullptr, theme::font_small);
-        const ImU32 badge_color = choice.newer ? theme::warning : theme::success;
-        const ImVec2 badge_size = ImGui::CalcTextSize(choice.badge);
-        const ImVec2 badge0(p1.x - px(14) - badge_size.x - px(16), y);
-        const ImVec2 badge1(p1.x - px(14), y + title_h);
-        list->AddRectFilled(badge0, badge1, tone(badge_color, 38), title_h * 0.5f);
-        list->AddText(ImVec2(badge0.x + px(8), y + (title_h - badge_size.y) * 0.5f),
-                      ImGui::GetColorU32(badge_color), choice.badge);
         y += title_h + px(3);
+        ImGui::PushFont(nullptr, theme::font_small);
         ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_dim),
                                  choice.detail, text_width);
         y += small_h + px(2);
         ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_faint),
-                                 example.c_str(), text_width);
+                                 choice.example, text_width);
         ImGui::PopFont();
-        if (hovered && choice.newer)
-            ImGui::SetTooltip("Older versions of this player cannot read this file.\n"
-                              "Use Raw or Virtual if it has to open there too.");
         ImGui::PopID();
-
-        if (index == 1 && selected) {
-            // The size of the virtual square.
-            ImGui::SetCursorPosX(ImGui::GetCursorPosX() + px(40));
-            ImGui::AlignTextToFramePadding();
-            small_dim("Square size");
-            static constexpr int presets[] = {4096, 32768, 65536};
-            for (const int preset : presets) {
-                ImGui::SameLine(0, px(8));
-                const std::string label = std::to_string(preset);
-                if (ui::button(label.c_str(), ImVec2(px(64), 0),
-                               record_virtual_size_ == preset ? ui::Tone::primary
-                                                              : ui::Tone::secondary))
-                    record_virtual_size_ = preset;
-            }
-            ImGui::SameLine(0, px(8));
-            ImGui::SetNextItemWidth(px(92));
-            ImGui::InputInt("##virtual_size", &record_virtual_size_, 0, 0);
-            if (ImGui::IsItemDeactivatedAfterEdit())
-                record_virtual_size_ = std::clamp(record_virtual_size_, 2, 65536);
-            gap(2);
-        }
         ImGui::Dummy(ImVec2(0, px(4)));
     }
     ImGui::EndDisabled();
@@ -2564,11 +2514,8 @@ void App::draw_recorder() {
             format_count(recorder_ ? recorder_->rows() : 0) + " rows captured  ·  " +
             aoap::display_name(record_path_);
         small_dim(rows.c_str());
-        small_dim(record_coords_ == 2   ? "Coordinates: normalized (0 to 1)"
-                  : record_coords_ == 1 ? ("Coordinates: virtual " +
-                                           std::to_string(record_virtual_size_) + " x " +
-                                           std::to_string(record_virtual_size_)).c_str()
-                                        : "Coordinates: raw");
+        small_dim(record_coords_ == 1 ? "Coordinates: normalized (0 to 1)"
+                                      : "Coordinates: raw");
         gap(6);
         if (ui::button("Stop and save", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(12)),
                        ui::Tone::primary))

@@ -197,11 +197,10 @@ button into *Replace and record*. *Stop and save* writes the file into `csv/`,
 and *Open in player* loads it.
 
 *Coordinates* chooses how touch positions are written: **Raw** (the panel's own
-numbers), **Virtual** (scaled into a square of 4096, 32768, 65536, or a size
-you type) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
-in the middle of the screen looks like and whether older versions can read the
-file. Where a touch lands is the same in all three. The choice is remembered
-and is fixed while recording; see [`--coords`](#aoa_record--usage).
+numbers) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
+in the middle of the screen looks like. Where a touch lands is the same in
+both. The choice is remembered and is fixed while recording; see
+[`--coords`](#aoa_record--usage).
 
 The window only redraws when something changes, so an idle window uses no
 CPU. It follows the monitor's scale factor on Windows and X11 and the
@@ -261,12 +260,8 @@ aoa_record [options]
       --coords MODE   How touch coordinates are written (default: raw)
                        raw         the touch panel's own values, with
                                    "# screen WxH" naming its range
-                       virtual[=N] scaled into an N x N space (default
-                                   32768, N from 2 to 65536); older
-                                   versions can play it too
                        normalized  fractions 0..1 of the panel, written with
-                                   "@coords normalized" (needs a version
-                                   that reads script format 2)
+                                   "@coords normalized"
       --echo          Print each captured row while recording
   -h, --help          Show this text
 ```
@@ -279,11 +274,8 @@ resolution is connected:
 
 - `raw` (the default) writes the panel's own values and names its range with
   `# screen WxH`.
-- `virtual` converts them into an N × N space (`# screen NxN`), the same on
-  every phone. `raw` and `virtual` files play in every version.
 - `normalized` writes fractions of the panel (`0.500000` is the middle) under
-  `@format 2` and `@coords normalized`. Older versions cannot read it; it needs
-  version 0.10.0 or newer.
+  `@format 2` and `@coords normalized`.
 
 If the panel's range cannot be read, the recording is written raw and a
 warning says so. Ctrl+C stops; the file is flushed and closed first. A
@@ -339,8 +331,7 @@ their uppercase rows at the top play as before.
 ### Directives
 
 A directive is a line starting with `@`. Names and options ignore case. Files
-without directives are read as before; a file with one needs version 0.10.0 or
-newer.
+without directives are read as before.
 
 | directive | meaning |
 |-----------|---------|
@@ -478,9 +469,11 @@ matching libusb runtime.
 ctest --test-dir build --output-on-failure -C Release
 ```
 
-Unit tests cover CSV parsing, the script timeline and coordinate scaling,
-`adb shell getevent` parsing, HID descriptor bit widths, and the input-state
-transitions used for stop, pause, and seek. They use [doctest](https://github.com/doctest/doctest),
+Unit tests cover CSV parsing (rows, directives, key names, error reports), the
+two-lap script timeline and coordinate scaling, how recordings write
+coordinates, `adb shell getevent` parsing, HID descriptor bit widths, and the
+input-state transitions used for stop, pause, and seek, including the lap
+warnings. They use [doctest](https://github.com/doctest/doctest),
 vendored under `tests/third_party/`. They are built only when this is the
 top-level project; pass `-DBUILD_TESTING=OFF` to skip them.
 
@@ -506,8 +499,8 @@ The main headers in `include/aoahid_player/`:
 - `player.hpp` — playback with pause, seek, speed, loop limit, live offset,
   and a wall-clock stop time, all callable from any thread; `status()` is
   lock-free, and a `PlaybackObserver` sees every row sent.
-- `recorder.hpp` — `adb getevent` recording into a CSV file, with the raw,
-  virtual, and normalized coordinate modes.
+- `recorder.hpp` — `adb getevent` recording into a CSV file, with the raw and
+  normalized coordinate modes.
 - `event_script.hpp` — CSV loading (rows in file order, directives, key names)
   and the two-lap script timeline.
 - `adb.hpp`, `paths.hpp`, `events.hpp` — adb helpers, UTF-8 paths and the

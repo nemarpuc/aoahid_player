@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
-// Covers how a recording writes touch coordinates (raw, virtual, normalized)
-// and the --coords spellings; the adb side of the recorder needs a phone.
+// Covers how a recording writes touch coordinates (raw, normalized) and the
+// --coords spellings; the adb side of the recorder needs a phone.
 #include "doctest.h"
 
 #include "aoahid_player/event_script.hpp"
@@ -26,62 +26,50 @@ std::vector<aoap::EventRecord> sample_rows() {
 
 TEST_CASE("parse_coord_mode reads the command-line spellings") {
     aoap::CoordMode mode = aoap::CoordMode::normalized;
-    int32_t size = 0;
     std::string error;
 
-    REQUIRE(aoap::parse_coord_mode("raw", mode, size, error));
+    REQUIRE(aoap::parse_coord_mode("raw", mode, error));
     CHECK(mode == aoap::CoordMode::raw);
-    REQUIRE(aoap::parse_coord_mode("virtual", mode, size, error));
-    CHECK(mode == aoap::CoordMode::virtual_space);
-    CHECK(size == 32768);
-    REQUIRE(aoap::parse_coord_mode("virtual=4096", mode, size, error));
-    CHECK(size == 4096);
-    REQUIRE(aoap::parse_coord_mode("normalized", mode, size, error));
+    REQUIRE(aoap::parse_coord_mode("normalized", mode, error));
     CHECK(mode == aoap::CoordMode::normalized);
 
-    CHECK_FALSE(aoap::parse_coord_mode("pixel", mode, size, error));
+    CHECK_FALSE(aoap::parse_coord_mode("pixel", mode, error));
     CHECK(error.find("pixel") != std::string::npos);
-    CHECK_FALSE(aoap::parse_coord_mode("virtual=1", mode, size, error));
-    CHECK_FALSE(aoap::parse_coord_mode("virtual=70000", mode, size, error));
-    CHECK_FALSE(aoap::parse_coord_mode("virtual=abc", mode, size, error));
-    CHECK_FALSE(aoap::parse_coord_mode("", mode, size, error));
+    // There is no virtual mode.
+    CHECK_FALSE(aoap::parse_coord_mode("virtual", mode, error));
+    CHECK(error.find("virtual") != std::string::npos);
+    CHECK_FALSE(aoap::parse_coord_mode("virtual=4096", mode, error));
+    CHECK_FALSE(aoap::parse_coord_mode("", mode, error));
 }
 
 TEST_CASE("A recording writes coordinates in the chosen mode") {
     const std::vector<aoap::EventRecord> rows = sample_rows();
     std::string text;
 
-    aoap::RecordFormat raw{aoap::CoordMode::raw, 1080, 2400, 32768};
+    aoap::RecordFormat raw{aoap::CoordMode::raw, 1080, 2400};
     CHECK(aoap::record_header(raw) == "# screen 1080x2400\n");
     aoap::append_recorded_rows(text, rows, raw);
     CHECK(text == "t,0,1,540,1200,16.000\nk,0x04,1,8.000\n");
 
     text.clear();
-    aoap::RecordFormat virtual_space{aoap::CoordMode::virtual_space, 1080, 2400, 32768};
-    CHECK(aoap::record_header(virtual_space) == "# screen 32768x32768\n");
-    aoap::append_recorded_rows(text, rows, virtual_space);
-    CHECK(text == "t,0,1,16384,16384,16.000\nk,0x04,1,8.000\n");
-
-    text.clear();
-    aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400, 32768};
+    aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400};
     CHECK(aoap::record_header(normalized) == "@format 2\n@coords normalized\n");
     aoap::append_recorded_rows(text, rows, normalized);
     CHECK(text == "t,0,1,0.500000,0.500000,16.000\nk,0x04,1,8.000\n");
 
     // The panel's range is unknown: nothing to convert from, so rows stay raw.
     text.clear();
-    aoap::RecordFormat unknown{aoap::CoordMode::raw, 0, 0, 32768};
+    aoap::RecordFormat unknown{aoap::CoordMode::normalized, 0, 0};
     CHECK(aoap::record_header(unknown).empty());
     aoap::append_recorded_rows(text, rows, unknown);
     CHECK(text == "t,0,1,540,1200,16.000\nk,0x04,1,8.000\n");
 }
 
-TEST_CASE("Recordings in every mode play back at the same place") {
+TEST_CASE("Recordings in both modes play back at the same place") {
     const std::vector<aoap::EventRecord> rows = sample_rows();
-    const aoap::CoordMode modes[] = {aoap::CoordMode::raw, aoap::CoordMode::virtual_space,
-                                     aoap::CoordMode::normalized};
+    const aoap::CoordMode modes[] = {aoap::CoordMode::raw, aoap::CoordMode::normalized};
     for (const aoap::CoordMode mode : modes) {
-        const aoap::RecordFormat format{mode, 1080, 2400, 32768};
+        const aoap::RecordFormat format{mode, 1080, 2400};
         std::string text = aoap::record_header(format);
         aoap::append_recorded_rows(text, rows, format);
 
@@ -115,7 +103,7 @@ TEST_CASE("A position slightly past the panel range is kept inside the file's ra
     const std::vector<aoap::EventRecord> rows = {
         {aoap::TouchEvent{0, true, 1085, -3}, false, 1'000'000},
     };
-    aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400, 32768};
+    aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400};
     std::string text = aoap::record_header(normalized);
     aoap::append_recorded_rows(text, rows, normalized);
     CHECK(text.find("t,0,1,1.000000,0.000000,1.000") != std::string::npos);

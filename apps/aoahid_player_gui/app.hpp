@@ -407,8 +407,7 @@ class App {
     int adb_choice_{}; // 0 = automatic, else adb_devices_[choice - 1]
     std::string record_name_;
     std::string record_input_;
-    int record_coords_{0}; // aoap::CoordMode's order: raw, virtual, normalized
-    int record_virtual_size_{aoap::default_virtual_size};
+    int record_coords_{0}; // aoap::CoordMode's order: raw, normalized
     std::unique_ptr<aoap::Recorder> recorder_;
     std::thread record_thread_;
     std::atomic<bool> record_done_{};

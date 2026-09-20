@@ -16,7 +16,6 @@ struct Options {
     std::string adb_serial;   // -s: passed through to `adb -s <serial>`
     std::string input_device; // --input /dev/input/eventN, else every device
     aoap::CoordMode coords{aoap::CoordMode::raw}; // --coords
-    int32_t virtual_size{aoap::default_virtual_size}; // --coords virtual=N
     bool echo{};              // --echo: also print each captured row
     bool help{};              // -h/--help was given: usage was printed, exit 0
 };

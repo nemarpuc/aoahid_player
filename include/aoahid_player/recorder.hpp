@@ -13,27 +13,20 @@
 namespace aoap {
 
 // How a recording writes touch coordinates.
-//   raw           the touch panel's own values, with "# screen WxH" naming
-//                 the panel's range (readable by every version)
-//   virtual_space scaled into a square space of `virtual_size` (also
-//                 readable by every version)
-//   normalized    fractions 0..1 of the panel, under "@coords normalized"
-//                 (needs a version that reads format 2)
-enum class CoordMode : uint8_t { raw, virtual_space, normalized };
+//   raw         the touch panel's own values, with "# screen WxH" naming the
+//               panel's range
+//   normalized  fractions 0..1 of the panel, under "@coords normalized"
+enum class CoordMode : uint8_t { raw, normalized };
 
-inline constexpr int32_t default_virtual_size = 32768;
-
-// The --coords spellings: "raw", "virtual", "virtual=N" (2..65536), and
-// "normalized". On failure `error` says what was wrong.
-bool parse_coord_mode(std::string_view text, CoordMode& mode, int32_t& virtual_size,
-                      std::string& error);
+// The --coords spellings: "raw" and "normalized". On failure `error` says
+// what was wrong.
+bool parse_coord_mode(std::string_view text, CoordMode& mode, std::string& error);
 
 // The mode a recording is actually written in, once the panel's range is known.
 struct RecordFormat {
     CoordMode mode{CoordMode::raw};
     int32_t panel_width{};  // 0: unknown, so rows stay raw
     int32_t panel_height{};
-    int32_t virtual_size{default_virtual_size};
 };
 
 // Lines that name the coordinate space; written after the file's comments and
@@ -49,7 +42,6 @@ struct RecordOptions {
     std::string adb_serial;   // empty: the only device adb sees
     std::string input_device; // /dev/input/eventN on the phone; empty: every device
     CoordMode coords{CoordMode::raw};
-    int32_t virtual_size{default_virtual_size}; // for CoordMode::virtual_space
 };
 
 // Runs `adb shell getevent -lt`, turns completed touch and key frames into

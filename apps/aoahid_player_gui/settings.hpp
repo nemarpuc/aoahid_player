@@ -52,9 +52,8 @@ struct Settings {
     int window_height{};
 
     // The Recorder tab's coordinate mode (aoap::CoordMode's order): 0 raw,
-    // 1 virtual, 2 normalized; and the side of the virtual square.
+    // 1 normalized.
     int record_coords{};
-    int record_virtual_size{32768};
 
     // 0 = Player, 1 = Live, 2 = Playlist, 3 = Recorder (App::Tab's order).
     int tab{};
