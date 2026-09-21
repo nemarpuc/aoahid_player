@@ -13,9 +13,14 @@ FetchContent_Declare(imgui
   URL https://github.com/ocornut/imgui/archive/refs/tags/v1.92.9.tar.gz
   URL_HASH SHA256=af97ed649182c39314320514a672b82008ab462b9293fe23d37b30bfa5d05519
 )
+# The patch keeps keys an input method consumed (Japanese conversion) from
+# also reaching the app on X11. It is not applied to a source directory given
+# through FETCHCONTENT_SOURCE_DIR_GLFW; run cmake/PatchGlfwXim.cmake there
+# (cmake -P, from that directory) for the same effect.
 FetchContent_Declare(glfw
   URL https://github.com/glfw/glfw/releases/download/3.5.1/glfw-3.5.1.zip
   URL_HASH SHA256=ea79bc5feffc254c87291980c2d0bce9acebb68c4983b79f961dcd2cb8a611a0
+  PATCH_COMMAND "${CMAKE_COMMAND}" -P "${PROJECT_SOURCE_DIR}/cmake/PatchGlfwXim.cmake"
 )
 
 set(GLFW_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
