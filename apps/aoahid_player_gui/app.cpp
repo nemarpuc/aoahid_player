@@ -23,6 +23,7 @@
 #include <ctime>
 #include <filesystem>
 #include <string_view>
+#include <utility>
 
 #ifndef AOAHID_PLAYER_VERSION
 #define AOAHID_PLAYER_VERSION "dev"
@@ -141,6 +142,9 @@ Settings App::current_settings() const {
     settings.record_coords = record_coords_;
     settings.live_release_key = live_release_key_;
     settings.live_fullscreen_key = live_fullscreen_key_;
+    settings.player_play_key = player_keys_[0];
+    settings.player_stop_key = player_keys_[1];
+    settings.player_restart_key = player_keys_[2];
     settings.sidebar_width = sidebar_width_;
     settings.sidebar_collapsed = sidebar_collapsed_;
     settings.dark_theme = dark_theme_;
@@ -190,6 +194,9 @@ void App::apply_settings(const Settings& settings) {
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
     live_release_key_ = settings.live_release_key;
     live_fullscreen_key_ = settings.live_fullscreen_key;
+    player_keys_[0] = settings.player_play_key;
+    player_keys_[1] = settings.player_stop_key;
+    player_keys_[2] = settings.player_restart_key;
     sidebar_width_ = settings.sidebar_width;
     sidebar_collapsed_ = settings.sidebar_collapsed;
     // Not re-applied here: main() already set the theme from this same file
@@ -666,6 +673,20 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         }
         return;
     }
+    if (player_key_picking_ != PlayerAction::none) {
+        if (!pressed)
+            return;
+        if (glfw_key == GLFW_KEY_ESCAPE) {
+            player_key_picking_ = PlayerAction::none;
+        } else if (glfw_key != GLFW_KEY_UNKNOWN) {
+            player_key_conflict_ = player_key_conflict(player_key_picking_, glfw_key);
+            if (player_key_conflict_.empty()) {
+                player_keys_[static_cast<int>(player_key_picking_)] = glfw_key;
+                player_key_picking_ = PlayerAction::none;
+            }
+        }
+        return;
+    }
     // Escape always exits full screen first, even while Keyboard forwarding
     // is on, so full screen can never trap input on the phone with no
     // visible way out. It is consumed here rather than also forwarded, so
@@ -684,6 +705,8 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
             live_fullscreen_bar_seen_ = ImGui::GetTime();
         return;
     }
+    if (pressed)
+        pending_player_key_ = glfw_key;
     // The release key lets go of the captured pointer no matter which
     // profiles are forwarding, so it works in mouse-only mode too. Like Esc
     // used to, it is still forwarded to the phone afterwards if Keyboard is
@@ -784,15 +807,28 @@ void App::frame() {
         io.MousePosPrev = off_screen;
     }
     const bool popup_open = ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
-    if (tab_ == Tab::player && !io.WantTextInput && !popup_open) {
-        if (ImGui::IsKeyPressed(ImGuiKey_Space, false))
+    const int pressed_key = std::exchange(pending_player_key_, 0);
+    // The frame after a pick ends is skipped too, so the key that ended it
+    // (Esc cancelling) does not also run its default action.
+    const bool picking_keys = player_key_picking_ != PlayerAction::none || player_key_was_picking_;
+    player_key_was_picking_ = player_key_picking_ != PlayerAction::none;
+    if (tab_ == Tab::player && !io.WantTextInput && !popup_open && !picking_keys) {
+        // A remapped action answers to its one key only; an unset one keeps
+        // its default keys, including the extra Ctrl+S and Backspace.
+        const int play_key = player_keys_[0];
+        const int stop_key = player_keys_[1];
+        const int restart_key = player_keys_[2];
+        if (play_key != 0 ? pressed_key == play_key : ImGui::IsKeyPressed(ImGuiKey_Space, false))
             toggle_playback();
         if (engine_.phase() == Phase::playing &&
-            (ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
-             (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))))
+            (stop_key != 0 ? pressed_key == stop_key
+                           : ImGui::IsKeyPressed(ImGuiKey_Escape, false) ||
+                                 (io.KeyCtrl && ImGui::IsKeyPressed(ImGuiKey_S, false))))
             stop_playback();
-        if (!script_path_.empty() && (ImGui::IsKeyPressed(ImGuiKey_Home, false) ||
-                                      ImGui::IsKeyPressed(ImGuiKey_Backspace, false)))
+        if (!script_path_.empty() &&
+            (restart_key != 0 ? pressed_key == restart_key
+                              : ImGui::IsKeyPressed(ImGuiKey_Home, false) ||
+                                    ImGui::IsKeyPressed(ImGuiKey_Backspace, false)))
             seek({});
         if (engine_.phase() == Phase::playing && io.KeyCtrl) {
             if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow))
@@ -1802,6 +1838,61 @@ void App::draw_script_picker(const float width) {
     ImGui::EndPopup();
 }
 
+int App::player_key(const PlayerAction action) const noexcept {
+    static constexpr int defaults[] = {GLFW_KEY_SPACE, GLFW_KEY_ESCAPE, GLFW_KEY_HOME};
+    const int index = static_cast<int>(action);
+    return player_keys_[index] != 0 ? player_keys_[index] : defaults[index];
+}
+
+std::string App::player_key_conflict(const PlayerAction action, const int key) const {
+    static const char* const names[] = {"Play/Pause", "Stop", "Back to start"};
+    for (int other = 0; other < 3; ++other) {
+        if (other != static_cast<int>(action) && player_key(static_cast<PlayerAction>(other)) == key)
+            return std::string(glfw_key_name(key)) + " is already used by " + names[other] + ".";
+    }
+    // Back to start also answers to Backspace until it is remapped.
+    if (action != PlayerAction::restart && player_keys_[2] == 0 && key == GLFW_KEY_BACKSPACE)
+        return "Backspace is already used by Back to start.";
+    if (is_release_key(key, live_release_key_))
+        return std::string(glfw_key_name(key)) + " is the Live mouse release key.";
+    if (is_fullscreen_key(key, live_fullscreen_key_))
+        return std::string(glfw_key_name(key)) + " is the Live full screen key.";
+    return {};
+}
+
+void App::draw_player_key_setting(const PlayerAction action, const char* const title) {
+    ImGui::PushID(static_cast<int>(action));
+    ui::caption(title);
+    int& configured = player_keys_[static_cast<int>(action)];
+    if (player_key_picking_ == action) {
+        ImGui::PushStyleColor(ImGuiCol_Text, theme::vec(theme::accent_text));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted("Press a key...");
+        ImGui::PopStyleColor();
+        ImGui::SameLine(0, px(10));
+        if (ui::button("Cancel", ImVec2(px(70), 0)))
+            player_key_picking_ = PlayerAction::none;
+        if (!player_key_conflict_.empty())
+            small_colored(theme::warning, player_key_conflict_);
+        else
+            small_dim("Esc cancels.");
+    } else {
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(glfw_key_name(player_key(action)));
+        ImGui::SameLine(0, px(10));
+        if (ui::button("Set...", ImVec2(px(64), 0))) {
+            player_key_picking_ = action;
+            player_key_conflict_.clear();
+        }
+        if (configured != 0) {
+            ImGui::SameLine(0, px(6));
+            if (ui::button("Reset", ImVec2(px(56), 0)))
+                configured = 0;
+        }
+    }
+    ImGui::PopID();
+}
+
 void App::draw_transport_card() {
     ui::begin_card("##transport");
     const Phase phase = engine_.phase();
@@ -1954,6 +2045,15 @@ void App::draw_transport_card() {
             seek({two_laps ? aoap::Lap::first : position.lap, absolute_ns});
     }
 
+    const auto key_hint = [this](const PlayerAction action) -> std::string {
+        const int configured = player_keys_[static_cast<int>(action)];
+        if (configured != 0)
+            return glfw_key_name(configured);
+        return action == PlayerAction::play   ? "Space"
+               : action == PlayerAction::stop ? "Esc or Ctrl+S"
+                                              : "Home or Backspace";
+    };
+
     // Transport buttons, centred.
     gap(2);
     const float small = px(38);
@@ -1966,7 +2066,7 @@ void App::draw_transport_card() {
     ImGui::SetCursorPosY(row_y + (large - small) * 0.5f);
     ImGui::BeginDisabled(!have_script);
     if (ui::icon_button("##restart", ui::Icon::restart, small, ui::Tone::secondary,
-                        "Back to the start (Home)"))
+                        ("Back to the start (" + key_hint(PlayerAction::restart) + ")").c_str()))
         seek({});
     ImGui::EndDisabled();
 
@@ -1977,7 +2077,9 @@ void App::draw_transport_card() {
     const bool pausing = can_toggle && status.state == aoap::PlaybackState::playing;
     ImGui::BeginDisabled(!can_start && !can_toggle);
     if (ui::icon_button("##play", pausing ? ui::Icon::pause : ui::Icon::play, large,
-                        ui::Tone::primary, pausing ? "Pause (Space)" : "Play (Space)"))
+                        ui::Tone::primary,
+                        ((pausing ? "Pause (" : "Play (") + key_hint(PlayerAction::play) + ")")
+                            .c_str()))
         toggle_playback();
     ImGui::EndDisabled();
     if (!can_start && !can_toggle && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -1988,7 +2090,7 @@ void App::draw_transport_card() {
     ImGui::SetCursorPosY(row_y + (large - small) * 0.5f);
     ImGui::BeginDisabled(phase != Phase::playing);
     if (ui::icon_button("##stop", ui::Icon::stop, small, ui::Tone::secondary,
-                        "Stop and release everything (Esc or Ctrl+S)"))
+                        ("Stop and release everything (" + key_hint(PlayerAction::stop) + ")").c_str()))
         stop_playback();
     ImGui::EndDisabled();
     ImGui::SetCursorPosY(row_y + large);
@@ -2055,6 +2157,17 @@ void App::draw_transport_card() {
             ImGui::SetTooltip("Available while playing; it resets at every start.");
         else if (live_offset && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Ctrl+Left/Right also nudges this by 1 ms.");
+        ImGui::EndTable();
+    }
+
+    gap(4);
+    if (ImGui::BeginTable("##keys", 3, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn();
+        draw_player_key_setting(PlayerAction::play, "Play / Pause key");
+        ImGui::TableNextColumn();
+        draw_player_key_setting(PlayerAction::stop, "Stop key");
+        ImGui::TableNextColumn();
+        draw_player_key_setting(PlayerAction::restart, "Back to start key");
         ImGui::EndTable();
     }
     ui::end_card();

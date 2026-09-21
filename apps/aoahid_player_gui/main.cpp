@@ -21,6 +21,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
 #include <exception>
 #include <memory>
 #include <string>
@@ -174,9 +175,37 @@ GLFWmonitor* monitor_for_window(GLFWwindow* window) {
     return glfwGetPrimaryMonitor();
 }
 
+// GLFW's Wayland backend has no input method support, so Japanese (or any
+// IME) text cannot be typed into a native Wayland window. Under a Wayland
+// session the window is opened on X11 (XWayland) instead, where GLFW talks
+// XIM to fcitx5/ibus. Returns false when that is not possible.
+bool prefer_x11_for_ime() {
+#if defined(__linux__)
+    if (std::getenv("WAYLAND_DISPLAY") == nullptr || std::getenv("DISPLAY") == nullptr ||
+        glfwPlatformSupported(GLFW_PLATFORM_X11) != GLFW_TRUE)
+        return false;
+    if (std::getenv("XMODIFIERS") == nullptr) {
+        const char* const ibus = std::getenv("GTK_IM_MODULE");
+        setenv("XMODIFIERS", ibus != nullptr && std::string(ibus) == "ibus" ? "@im=ibus" : "@im=fcitx", 0);
+    }
+    glfwInitHint(GLFW_PLATFORM, GLFW_PLATFORM_X11);
+    return true;
+#else
+    return false;
+#endif
+}
+
 int run() {
     glfwSetErrorCallback(on_glfw_error);
-    if (glfwInit() != GLFW_TRUE) {
+    const bool forced_x11 = prefer_x11_for_ime();
+    bool initialised = glfwInit() == GLFW_TRUE;
+    if (!initialised && forced_x11) {
+        // X11 was not reachable after all; let GLFW pick (native Wayland).
+        glfwInitHint(GLFW_PLATFORM, GLFW_ANY_PLATFORM);
+        g_glfw_error.clear();
+        initialised = glfwInit() == GLFW_TRUE;
+    }
+    if (!initialised) {
         fatal("The window system could not be initialised." +
               (g_glfw_error.empty() ? std::string() : "\n\n" + g_glfw_error));
         return 1;

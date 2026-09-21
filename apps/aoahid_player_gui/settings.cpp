@@ -183,6 +183,12 @@ Settings load_settings(const std::filesystem::path& path) {
             read_int(value, 0, 348, settings.live_release_key);
         else if (key == "live.fullscreen_key")
             read_int(value, 0, 348, settings.live_fullscreen_key);
+        else if (key == "player.play_key")
+            read_int(value, 0, 348, settings.player_play_key);
+        else if (key == "player.stop_key")
+            read_int(value, 0, 348, settings.player_stop_key);
+        else if (key == "player.restart_key")
+            read_int(value, 0, 348, settings.player_restart_key);
         else if (key == "ui.sidebar_width")
             read_float(value, 280.0f, 640.0f, settings.sidebar_width);
         else if (key == "ui.sidebar_collapsed")
@@ -265,6 +271,9 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
+    out << "player.play_key = " << settings.player_play_key << '\n';
+    out << "player.stop_key = " << settings.player_stop_key << '\n';
+    out << "player.restart_key = " << settings.player_restart_key << '\n';
     out << "ui.sidebar_width = " << settings.sidebar_width << '\n';
     out << "ui.sidebar_collapsed = " << (settings.sidebar_collapsed ? 1 : 0) << '\n';
     out << "ui.dark_theme = " << (settings.dark_theme ? 1 : 0) << '\n';

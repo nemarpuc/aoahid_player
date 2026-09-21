@@ -88,7 +88,10 @@ that stops responding is dropped without stopping playback for the others.
   Files outside `csv/` open by path from the bottom of the list, or by
   dropping them on the window. The list rescans whenever the window gets
   focus.
-- Play/pause (also **Space**), stop, and back-to-start buttons. One bar shows
+- Play/pause (also **Space**), stop (**Esc** or **Ctrl+S**), and back-to-start
+  (**Home** or **Backspace**) buttons. Each key can be remapped with the
+  *Set...* buttons under the transport; a remapped action answers to that one
+  key only, and *Reset* restores the defaults. One bar shows
   the whole cycle: the first lap (rows that run only once in purple, repeated
   rows in green, in the order the file writes them), a gap, then the repeat
   lap (green). Click or drag it to seek across both, while playing, paused, or
@@ -201,6 +204,11 @@ numbers) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
 in the middle of the screen looks like. Where a touch lands is the same in
 both. The choice is remembered and is fixed while recording; see
 [`--coords`](#aoa_record--usage).
+
+On a Wayland session the GUI opens through XWayland, because GLFW's native
+Wayland backend has no input method support; that is what lets the script
+search (and every other text field) take Japanese and other IME input via
+fcitx5 or ibus (`XMODIFIERS` is set to `@im=fcitx` when unset).
 
 The window only redraws when something changes, so an idle window uses no
 CPU. It follows the monitor's scale factor on Windows and X11 and the

@@ -80,6 +80,9 @@ class App {
 
   private:
     enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3 };
+    // The Player tab actions whose key can be remapped; the value indexes
+    // player_keys_ and player_key_default().
+    enum class PlayerAction : int { play = 0, stop = 1, restart = 2, none = 3 };
 
     // adb server state, as last observed by an adb call the app made; not
     // polled on its own. `unknown` covers "never checked yet" and "the last
@@ -174,6 +177,14 @@ class App {
     // The "Full screen key" row: shows the configured key, a button to pick
     // a new one, and a note that Escape always exits full screen too.
     void draw_live_fullscreen_key_setting();
+    // One "Set..." row for a Player tab action's key.
+    void draw_player_key_setting(PlayerAction action, const char* title);
+    // The key an action currently answers to: the configured one, else its
+    // default (Space, Escape, Home).
+    [[nodiscard]] int player_key(PlayerAction action) const noexcept;
+    // Why `key` cannot be assigned to `action` (already used by another
+    // action, or by the Live tab), or empty if it can.
+    [[nodiscard]] std::string player_key_conflict(PlayerAction action, int key) const;
     // The Live preview filling the window, with only the input switches and
     // a way out.
     void draw_live_fullscreen();
@@ -337,6 +348,18 @@ class App {
     // True while "Set..." is armed for the full screen key, same idea as
     // live_release_key_picking_.
     bool live_fullscreen_key_picking_{};
+    // Configured GLFW keys for the Player tab's play/pause, stop, and
+    // back-to-start actions; 0 means "not set", which keeps the default
+    // key(s) (see player_key()).
+    int player_keys_[3]{};
+    // The action whose "Set..." is armed; the next key press becomes its key.
+    PlayerAction player_key_picking_{PlayerAction::none};
+    // Shown while picking when the last press could not be assigned.
+    std::string player_key_conflict_;
+    bool player_key_was_picking_{}; // player_key_picking_ was armed last frame
+    // The last key press seen by on_key(), consumed by frame() to run a
+    // remapped action (ImGui's own key state has no GLFW key codes).
+    int pending_player_key_{};
     bool live_touching_{};    // a contact is down
     int32_t live_touch_x_{};  // last contact position, in device coordinates
     int32_t live_touch_y_{};

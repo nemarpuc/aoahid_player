@@ -36,6 +36,12 @@ struct Settings {
     // means "not set", which is treated as F11. Escape always exits full
     // screen too, regardless of this setting.
     int live_fullscreen_key{};
+    // GLFW keys for the Player tab's play/pause, stop, and back-to-start
+    // actions. 0 means "not set": Space, Escape (or Ctrl+S), and Home (or
+    // Backspace) respectively.
+    int player_play_key{};
+    int player_stop_key{};
+    int player_restart_key{};
     // Unscaled width of the sidebar, dragged via the splitter next to it.
     float sidebar_width{392.0f};
     // Whether Devices/Profiles/Connect are collapsed to a slim rail.
