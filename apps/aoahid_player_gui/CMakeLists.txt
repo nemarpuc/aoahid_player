@@ -32,6 +32,23 @@ set(BUILD_SHARED_LIBS OFF)
 FetchContent_MakeAvailable(glfw imgui)
 set(imgui_dir "${imgui_SOURCE_DIR}")
 
+# cpp-httplib backs the optional local control API (see control_api.hpp):
+# header-only, so no HTTPS/compression backend is needed for a plain
+# localhost HTTP server — every optional dependency below stays off so the
+# GUI's own build gains nothing beyond the header itself.
+FetchContent_Declare(httplib
+  URL https://github.com/yhirose/cpp-httplib/archive/refs/tags/v0.57.1.tar.gz
+  URL_HASH SHA256=5c9e56b6638eb415dc451ac57531e84931fcb50e261ca3dd74eec6b484fb4712
+)
+set(HTTPLIB_COMPILE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_INSTALL OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_TEST OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_OPENSSL_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZLIB_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
+FetchContent_MakeAvailable(httplib)
+
 add_library(aoahid_player_imgui STATIC
   "${imgui_dir}/imgui.cpp"
   "${imgui_dir}/imgui_draw.cpp"
@@ -73,6 +90,7 @@ add_executable(aoahid_player_gui WIN32
   app_recorder.cpp
   app_shell.cpp
   activity_log.cpp
+  control_api.cpp
   engine.cpp
   keymap.cpp
   live_image.cpp
@@ -84,7 +102,8 @@ add_executable(aoahid_player_gui WIN32
 )
 target_include_directories(aoahid_player_gui PRIVATE
   "${PROJECT_SOURCE_DIR}/third_party/stb")
-target_link_libraries(aoahid_player_gui PRIVATE aoahid_player_core aoahid_player_imgui)
+target_link_libraries(aoahid_player_gui PRIVATE aoahid_player_core aoahid_player_imgui
+  httplib::httplib)
 target_compile_definitions(aoahid_player_gui PRIVATE
   AOAHID_PLAYER_VERSION="${PROJECT_VERSION}")
 if(MSVC)
@@ -100,6 +119,8 @@ install(FILES "${imgui_dir}/LICENSE.txt"
   DESTINATION third-party RENAME DearImGui-LICENSE.txt COMPONENT runtime)
 install(FILES "${glfw_SOURCE_DIR}/LICENSE.md"
   DESTINATION third-party RENAME GLFW-LICENSE.md COMPONENT runtime)
+install(FILES "${httplib_SOURCE_DIR}/LICENSE"
+  DESTINATION third-party RENAME cpp-httplib-LICENSE.txt COMPONENT runtime)
 install(FILES "${PROJECT_SOURCE_DIR}/third_party/licenses/Roboto-LICENSE.txt"
   DESTINATION third-party COMPONENT runtime)
 install(FILES "${PROJECT_SOURCE_DIR}/third_party/licenses/stb_image-LICENSE.txt"

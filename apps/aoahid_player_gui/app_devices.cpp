@@ -344,6 +344,50 @@ void App::draw_consumer_settings() {
     small_dim(("Fixed set, from the Live tab or the control API: " + keys + ".").c_str());
 }
 
+void App::draw_control_api_card() {
+    ui::begin_card("##control_api");
+    caption_row("Control API");
+    bool enabled = control_api_.running();
+    if (ui::toggle("Enabled##api", &enabled)) {
+        if (enabled) {
+            const std::string error = control_api_.start(api_port_);
+            if (error.empty()) {
+                api_enabled_ = true;
+                log_.message(aoap::Severity::info, "Control API listening on 127.0.0.1:" +
+                                                        std::to_string(api_port_) + ".");
+            } else {
+                log_.message(aoap::Severity::error, error);
+            }
+        } else {
+            control_api_.stop();
+            api_enabled_ = false;
+        }
+    }
+    gap(2);
+    field("Port");
+    ImGui::BeginDisabled(control_api_.running());
+    ImGui::SetNextItemWidth(px(90));
+    if (ImGui::InputInt("##api_port", &api_port_, 0, 0))
+        api_port_ = std::clamp(api_port_, 1024, 65535);
+    ImGui::EndDisabled();
+    if (control_api_.running())
+        ImGui::SetItemTooltip("Turn it off to change the port.");
+    gap(2);
+    if (control_api_.running()) {
+        small_dim(("Listening on 127.0.0.1:" + std::to_string(control_api_.port()) +
+                   ". Any local program can reach it, with no further authentication — see "
+                   "README.md's \"Control API\" section for the routes.")
+                      .c_str());
+    } else {
+        small_dim("Off by default. Turning it on lets any local program drive this app over "
+                  "plain HTTP — play/stop/seek a script, send touch/mouse/keyboard/gamepad/"
+                  "media-key input, read status. Binds 127.0.0.1 only, never a public "
+                  "interface, but nothing more: any program running on this machine could "
+                  "reach it once it is on.");
+    }
+    ui::end_card();
+}
+
 void App::draw_connect_card() {
     ui::begin_card("##connect");
     const Phase phase = engine_.phase();

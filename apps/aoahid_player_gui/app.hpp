@@ -2,6 +2,7 @@
 #pragma once
 
 #include "activity_log.hpp"
+#include "control_api.hpp"
 #include "engine.hpp"
 #include "live_image.hpp"
 #include "playlist.hpp"
@@ -177,6 +178,9 @@ class App {
     void draw_pen_settings();
     void draw_consumer_settings();
     void draw_connect_card();
+    // The local HTTP control API's on/off toggle and port; see
+    // control_api.hpp.
+    void draw_control_api_card();
     void draw_player();
     // Windows only notice that adb and AOA HID cannot share the phone, with
     // a Disconnect button so adb can be used again without leaving the tab.
@@ -281,6 +285,13 @@ class App {
     std::function<void()> wake_;
     ActivityLog log_;
     Engine engine_;
+    ControlApi control_api_{engine_};
+    // Persisted intent: whether the control API should be listening.
+    // control_api_.running() is the actual live state; this is only read
+    // again at the next startup (see the constructor) and written back
+    // whenever draw_control_api_card() changes it.
+    bool api_enabled_{};
+    int api_port_{47821};
     Tab tab_{Tab::player};
 
     // Devices.

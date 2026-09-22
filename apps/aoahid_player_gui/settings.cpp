@@ -175,6 +175,10 @@ Settings load_settings(const std::filesystem::path& path) {
             read_bool(value, settings.use_pen);
         else if (key == "consumer")
             read_bool(value, settings.use_consumer);
+        else if (key == "api.enabled")
+            read_bool(value, settings.api_enabled);
+        else if (key == "api.port")
+            read_int(value, 1024, 65535, settings.api_port);
         else if (key == "pen.mode") {
             if (value == "direct")
                 settings.pen_mode = 0;
@@ -270,6 +274,8 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "consumer = " << (settings.use_consumer ? 1 : 0) << '\n';
+    out << "api.enabled = " << (settings.api_enabled ? 1 : 0) << '\n';
+    out << "api.port = " << settings.api_port << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "player.play_key = " << settings.player_play_key << '\n';
     out << "player.stop_key = " << settings.player_stop_key << '\n';

@@ -222,6 +222,52 @@ The window only redraws when something changes, so an idle window uses no
 CPU. It follows the monitor's scale factor on Windows and X11 and the
 compositor's scale on Wayland.
 
+## Control API
+
+A local HTTP server another program can use to drive the connected phone —
+the same things Live control and the Player tab do, callable over plain
+HTTP. Off by default; turn it on from the sidebar's *Control API* card
+(*Enabled*, and the *Port* it listens on, 47821 by default). It binds
+`127.0.0.1` only, never a public interface, but has no further
+authentication: any program running on this machine can reach it once it is
+on, so turning it on is a deliberate choice, same as opening a debug port.
+
+Every route takes plain query parameters — `curl -X POST
+"http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — whether the request
+is a GET or a POST; there is no request body to build and nothing to parse
+one with. Every route answers `200` with a small JSON object, at least
+`{"ok":true}` or `{"ok":false,"error":"..."}`; a malformed request answers
+`400`, and a route that needs a precondition that is not met (seeking while
+nothing plays, for instance) answers `409`. `GET /` lists the routes as
+plain text.
+
+Touch, mouse, keyboard, gamepad, and media-key routes all forward through
+Live control (see the Live tab, above): call `POST /live/start` once first,
+same as turning the Live tab's own toggle on, or they are silently no-ops.
+The API's own touch contact is the second-to-last one the connection
+declares — one below the Live tab's own (see *Contacts* under *Profiles*,
+above) — so a program using the API and a person using the Live tab can
+both touch the screen at once without colliding.
+
+| Route | Params | Notes |
+|---|---|---|
+| `GET /status` | — | Phase, connected device count, active profiles, `live_active`, and the playback state/position/loops/reports. |
+| `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. |
+| `POST /stop` | — | |
+| `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
+| `POST /seek` | `lap` (`first`/`repeat`), `time_ms` | 409 if nothing is playing. |
+| `POST /live/start` | — | No-op unless connected. |
+| `POST /live/stop` | — | |
+| `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Device coordinates, not a fraction. |
+| `POST /mouse/move` | `dx`, `dy` | Relative, like a physical mouse. |
+| `POST /mouse/button` | `button` (1-based), `down` (default `true`) | |
+| `POST /mouse/wheel` | `delta` | |
+| `POST /key` | `usage` (HID keyboard usage, decimal or `0x..`), `down` (default `true`) | See [Key names](#key-names). |
+| `POST /gamepad/button` | `index` (1-based), `down` (default `true`) | |
+| `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
+| `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
+| `POST /consumer` | `key` (`volume_up`, `volume_down`, `mute`, `play_pause`, `previous_track`, `next_track`, `stop`) | One pulse (press, then release); needs the Media keys profile. |
+
 ## aoa_touch — usage
 
 ```
@@ -419,10 +465,12 @@ ID, `18d1`).
   (Arch/CachyOS: `wayland libxkbcommon libx11 libxrandr libxinerama libxcursor libxi libxext`).
   At run time GLFW loads X11 or Wayland and OpenGL itself, so the GUI runs
   on either.
-- Network access at configure time for the GUI: Dear ImGui 1.92.9 and GLFW
-  3.5.1 are downloaded at pinned, SHA-256-checked releases and linked
-  statically. To build offline, pass
-  `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<dir> -DFETCHCONTENT_SOURCE_DIR_GLFW=<dir>`
+- Network access at configure time for the GUI: Dear ImGui 1.92.9, GLFW
+  3.5.1, and cpp-httplib 0.57.1 (the control API's HTTP server; see
+  [Control API](#control-api)) are downloaded at pinned, SHA-256-checked
+  releases; ImGui and GLFW are linked statically, cpp-httplib is header-only.
+  To build offline, pass
+  `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<dir> -DFETCHCONTENT_SOURCE_DIR_GLFW=<dir> -DFETCHCONTENT_SOURCE_DIR_HTTPLIB=<dir>`
   pointing at local copies of those releases, or `-DAOAHID_PLAYER_BUILD_GUI=OFF`.
 
 ### Build
@@ -555,6 +603,8 @@ its own licence in `third-party/`:
   (LGPL-2.1-or-later, with its corresponding source), as shipped by libaoahid
 - [Dear ImGui](https://github.com/ocornut/imgui) (MIT) and
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
+- [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
+  backing the control API's HTTP server
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored
   for the Live tab's reference image

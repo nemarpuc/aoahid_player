@@ -226,6 +226,8 @@ void App::draw_sidebar() {
     draw_devices_card();
     gap(2);
     draw_profiles_card();
+    gap(2);
+    draw_control_api_card();
     ImGui::EndChild();
     draw_connect_card();
     connect_height_ = ImGui::GetItemRectSize().y;

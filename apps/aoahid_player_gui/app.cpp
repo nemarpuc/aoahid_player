@@ -36,6 +36,13 @@ App::App(std::function<void()> wake)
     saved_settings_ = current_settings();
     engine_.player().set_speed(speed_);
     engine_.player().set_loop_limit(loop_limit_);
+    if (api_enabled_) {
+        const std::string error = control_api_.start(api_port_);
+        if (!error.empty()) {
+            log_.message(aoap::Severity::error, error);
+            api_enabled_ = false;
+        }
+    }
     refresh_scripts();
     refresh_playlists();
     // Picks up where the last run left off when that script is still there;
@@ -135,6 +142,8 @@ Settings App::current_settings() const {
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
     settings.use_consumer = use_consumer_;
+    settings.api_enabled = api_enabled_;
+    settings.api_port = api_port_;
     settings.record_coords = record_coords_;
     settings.live_release_key = live_release_key_;
     settings.player_play_key = player_keys_[0];
@@ -187,6 +196,8 @@ void App::apply_settings(const Settings& settings) {
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
     use_consumer_ = settings.use_consumer;
+    api_enabled_ = settings.api_enabled;
+    api_port_ = settings.api_port;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
     live_release_key_ = settings.live_release_key;
     player_keys_[0] = settings.player_play_key;
