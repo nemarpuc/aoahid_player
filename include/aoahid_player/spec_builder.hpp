@@ -412,7 +412,6 @@ class SpecSet {
         return store(Profile::pen, result, spec, "pen", error);
     }
 
-    }
 };
 
 } // namespace aoap
