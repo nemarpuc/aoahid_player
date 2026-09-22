@@ -184,6 +184,8 @@ void App::draw_profiles_card() {
          std::to_string(pad_buttons_) + " buttons, " + std::to_string(pad_axes_.size()) + " axes"},
         {"Pen##pen", &use_pen_, &App::draw_pen_settings,
          pen_mode_ == 0 ? "on screen" : "tablet"},
+        {"Media keys##consumer", &use_consumer_, &App::draw_consumer_settings,
+         std::to_string(aoap::spec_detail::consumer_table.size()) + " keys"},
     };
     bool first = true;
     for (const Entry& entry : entries) {
@@ -333,6 +335,13 @@ void App::draw_pen_settings() {
     ImGui::Combo("##mode", &pen_mode_, modes, 2);
     small_dim(use_touch_ ? "Uses the touchscreen resolution."
                          : "Uses a 0-32767 surface the phone maps onto its screen.");
+}
+
+void App::draw_consumer_settings() {
+    std::string keys;
+    for (const aoap::spec_detail::ConsumerIdentity& identity : aoap::spec_detail::consumer_table)
+        keys += (keys.empty() ? "" : ", ") + std::string(identity.name);
+    small_dim(("Fixed set, from the Live tab or the control API: " + keys + ".").c_str());
 }
 
 void App::draw_connect_card() {

@@ -61,7 +61,10 @@ is logged.
    once the phone reappears. Tick one or more (a single phone is ticked for
    you).
 2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen. Each one's settings open when it is switched on.
+   keyboard, gamepad, pen, media keys. Each one's settings open when it is
+   switched on. *Media keys* is a fixed set — Volume Up/Down, Mute, Play/
+   Pause, Previous/Next Track, Stop — with no CSV row of its own; it is
+   pressed from the Live tab's buttons or the control API only.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
    the width/height fields to set it by hand instead. *Contacts* (16 by
@@ -119,7 +122,11 @@ and watching what the scripts do. Turn on *Live control*, then choose what to
 forward: *Touch* (drag inside the preview), *Mouse* (motion, buttons, and the
 wheel), *Keyboard*, and *Gamepad* (any controller GLFW recognises). Only
 profiles the connection actually has can be turned on, and touch and mouse
-share the pointer, so turning one on turns the other off. The panel beside the
+share the pointer, so turning one on turns the other off. If the connection
+has the Media keys profile, a row of buttons (Prev, Play/Pause, Next, Stop,
+Vol -, Mute, Vol +) appears further down; unlike the others, these have no
+on/off toggle of their own — each press is a one-shot pulse to the phone,
+sent while Live control is on. The panel beside the
 preview lists what is held and what was sent, including an *Active touches*
 line per finger currently down — Live's own included, called out from the
 rest — since a script can now be playing at the same time (see below); the

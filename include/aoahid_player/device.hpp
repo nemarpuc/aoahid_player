@@ -14,9 +14,11 @@
 namespace aoap {
 
 // The profile families this player drives. The CSV prefixes in README.md map
-// one-to-one onto these; libaoahid's toggle/battery/raw profiles are out of
-// scope for this project.
-enum class Profile : size_t { touch = 0, mouse, key, gamepad, pen, count };
+// one-to-one onto touch/mouse/key/gamepad/pen; consumer (media keys: volume,
+// mute, play/pause, next/previous track, stop) is Live/API only — no CSV row
+// for it, so it never appears in a recorded or scripted script. libaoahid's
+// battery/raw profiles remain out of scope for this project.
+enum class Profile : size_t { touch = 0, mouse, key, gamepad, pen, consumer, count };
 
 constexpr size_t profile_count = static_cast<size_t>(Profile::count);
 constexpr uint32_t profile_bit(Profile profile) noexcept {
@@ -62,6 +64,7 @@ class Device {
     [[nodiscard]] const aoa::keyboard_node_ref& key() const noexcept { return key_; }
     [[nodiscard]] const aoa::gamepad_node_ref& gamepad() const noexcept { return gamepad_; }
     [[nodiscard]] const aoa::pen_node_ref& pen() const noexcept { return pen_; }
+    [[nodiscard]] const aoa::toggle_node_ref& consumer() const noexcept { return consumer_; }
 
     [[nodiscard]] aoahid_device* native_handle() const noexcept { return handle_; }
     [[nodiscard]] const std::string& label() const noexcept { return label_; }
@@ -76,6 +79,7 @@ class Device {
     aoa::keyboard_node_ref key_{};
     aoa::gamepad_node_ref gamepad_{};
     aoa::pen_node_ref pen_{};
+    aoa::toggle_node_ref consumer_{};
 
     std::string label_;
 };

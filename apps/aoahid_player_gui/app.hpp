@@ -175,6 +175,7 @@ class App {
     void draw_key_settings();
     void draw_gamepad_settings();
     void draw_pen_settings();
+    void draw_consumer_settings();
     void draw_connect_card();
     void draw_player();
     // Windows only notice that adb and AOA HID cannot share the phone, with
@@ -252,6 +253,8 @@ class App {
     // already running, the clipboard has no text, or Keyboard live control
     // is not on.
     void live_paste_clipboard();
+    // Sends one media-key pulse (press, then release) to the phone.
+    void live_press_consumer(uint16_t usage);
     void drain_observed();
     void live_log(std::string text, ImU32 color);
     [[nodiscard]] bool live_ready() const;
@@ -309,6 +312,7 @@ class App {
     bool use_key_{};
     bool use_gamepad_{};
     bool use_pen_{};
+    bool use_consumer_{};
     int touch_width_{1080};
     int touch_height_{2400};
     // 16 by default (the maximum) so the Live tab's reserved top slot (see

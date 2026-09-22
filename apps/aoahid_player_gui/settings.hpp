@@ -29,6 +29,7 @@ struct Settings {
                                            AOAHID_AXIS_RZ};
     bool use_pen{};
     int pen_mode{}; // 0 direct screen, 1 indirect tablet
+    bool use_consumer{}; // media keys: volume, mute, play/pause, tracks, stop
     // The GLFW key that releases the captured pointer in Live control's
     // mouse mode. 0 means "not set", which live control treats as Escape.
     int live_release_key{};

@@ -24,9 +24,14 @@ struct GamepadButton{ uint32_t button; bool pressed; };
 struct GamepadAxis  { size_t axis_index; int32_t value; };
 struct GamepadDpad  { bool up, down, right, left; };
 struct PenSample    { bool in_range, tip; int32_t x, y, pressure; };
+// A Consumer-page media key (volume, mute, play/pause, next/previous track,
+// stop). Live/API only: no CSV row prefix exists for this, so it never
+// appears in a loaded or recorded EventScript (see Profile::consumer).
+struct ConsumerEvent{ uint16_t usage; bool down; };
 
 using EventPayload = std::variant<TouchEvent, MouseMove, MouseButton, KeyEvent,
-                                   GamepadButton, GamepadAxis, GamepadDpad, PenSample>;
+                                   GamepadButton, GamepadAxis, GamepadDpad, PenSample,
+                                   ConsumerEvent>;
 
 struct EventRecord {
     EventPayload payload;

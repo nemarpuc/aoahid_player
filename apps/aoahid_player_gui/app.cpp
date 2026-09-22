@@ -134,6 +134,7 @@ Settings App::current_settings() const {
     settings.pad_axes = pad_axes_;
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
+    settings.use_consumer = use_consumer_;
     settings.record_coords = record_coords_;
     settings.live_release_key = live_release_key_;
     settings.player_play_key = player_keys_[0];
@@ -185,6 +186,7 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
+    use_consumer_ = settings.use_consumer;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
     live_release_key_ = settings.live_release_key;
     player_keys_[0] = settings.player_play_key;
@@ -267,6 +269,7 @@ aoap::ProfileSetup App::build_setup() const {
     setup.pen.enabled = use_pen_;
     setup.pen.mode = pen_mode_ == 0 ? AOAHID_PEN_DIRECT_SCREEN : AOAHID_PEN_INDIRECT_TABLET;
     aoap::resolve_pen_surface(setup);
+    setup.consumer.enabled = use_consumer_;
     return setup;
 }
 

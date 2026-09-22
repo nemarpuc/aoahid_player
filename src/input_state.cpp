@@ -73,6 +73,9 @@ void InputState::apply(const EventPayload& payload) {
                 dpad_ = value;
             } else if constexpr (std::is_same_v<T, PenSample>) {
                 pen_ = value;
+            } else if constexpr (std::is_same_v<T, ConsumerEvent>) {
+                if (value.usage < consumer_keys_.size())
+                    consumer_keys_.set(value.usage, value.down);
             }
             // MouseMove is relative and leaves no state behind.
         },
@@ -82,6 +85,7 @@ void InputState::apply(const EventPayload& payload) {
 void InputState::clear() noexcept {
     contacts_.fill({});
     keys_.reset();
+    consumer_keys_.reset();
     mouse_buttons_.clear();
     pad_buttons_.clear();
     axes_.fill(0);
@@ -98,8 +102,8 @@ bool InputState::neutral() const noexcept {
         if (axis != 0)
             return false;
     }
-    return keys_.none() && mouse_buttons_.empty() && pad_buttons_.empty() && dpad_neutral(dpad_) &&
-           !pen_.in_range;
+    return keys_.none() && consumer_keys_.none() && mouse_buttons_.empty() && pad_buttons_.empty() &&
+           dpad_neutral(dpad_) && !pen_.in_range;
 }
 
 void InputState::transition(const InputState& from, const InputState& to,
@@ -123,6 +127,13 @@ void InputState::transition(const InputState& from, const InputState& to,
         const bool b = to.keys_.test(usage);
         if (a != b)
             (b ? presses : releases).push_back(KeyEvent{static_cast<uint16_t>(usage), b});
+    }
+
+    for (size_t usage = 0; usage < from.consumer_keys_.size(); ++usage) {
+        const bool a = from.consumer_keys_.test(usage);
+        const bool b = to.consumer_keys_.test(usage);
+        if (a != b)
+            (b ? presses : releases).push_back(ConsumerEvent{static_cast<uint16_t>(usage), b});
     }
 
     difference<MouseButton>(from.mouse_buttons_, to.mouse_buttons_, false, releases);
@@ -187,7 +198,12 @@ std::string control_name(const EventPayload& payload) {
                 return "the D-pad";
             else if constexpr (std::is_same_v<T, PenSample>)
                 return "the pen";
-            else
+            else if constexpr (std::is_same_v<T, ConsumerEvent>) {
+                char text[24];
+                std::snprintf(text, sizeof text, "media key 0x%02x",
+                              static_cast<unsigned>(value.usage));
+                return text;
+            } else
                 return "an input";
         },
         payload);

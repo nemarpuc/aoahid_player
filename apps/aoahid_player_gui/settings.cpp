@@ -173,6 +173,8 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "pen")
             read_bool(value, settings.use_pen);
+        else if (key == "consumer")
+            read_bool(value, settings.use_consumer);
         else if (key == "pen.mode") {
             if (value == "direct")
                 settings.pen_mode = 0;
@@ -267,6 +269,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "gamepad.axes = " << axes_text(settings.pad_axes) << '\n';
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
+    out << "consumer = " << (settings.use_consumer ? 1 : 0) << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
     out << "player.play_key = " << settings.player_play_key << '\n';
     out << "player.stop_key = " << settings.player_stop_key << '\n';

@@ -41,13 +41,14 @@ TEST_CASE("Releasing everything lifts contacts at their last position") {
     held.apply(aoap::GamepadAxis{1, -500});
     held.apply(aoap::GamepadDpad{true, false, false, false});
     held.apply(aoap::PenSample{true, true, 5, 6, 100});
+    held.apply(aoap::ConsumerEvent{0xE9, true}); // Volume Up
     CHECK_FALSE(held.neutral());
 
     std::vector<EventPayload> releases;
     std::vector<EventPayload> presses;
     InputState::transition(held, InputState{}, releases, presses);
     CHECK(presses.empty());
-    CHECK(releases.size() == 7);
+    CHECK(releases.size() == 8);
 
     const auto* lift = std::get_if<aoap::TouchEvent>(&releases.front());
     REQUIRE(lift != nullptr);
@@ -57,6 +58,21 @@ TEST_CASE("Releasing everything lifts contacts at their last position") {
     CHECK(lift->y == 250);
     CHECK(count_of<aoap::KeyEvent>(releases) == 1);
     CHECK(count_of<aoap::PenSample>(releases) == 1);
+    CHECK(count_of<aoap::ConsumerEvent>(releases) == 1);
+}
+
+TEST_CASE("A Consumer usage and a Keyboard usage with the same number track separately") {
+    InputState held;
+    held.apply(aoap::KeyEvent{0xE2, true});      // some keyboard usage
+    held.apply(aoap::ConsumerEvent{0xE2, true}); // Mute — same numeric value
+    CHECK_FALSE(held.neutral());
+
+    std::vector<EventPayload> releases;
+    std::vector<EventPayload> presses;
+    InputState::transition(held, InputState{}, releases, presses);
+    CHECK(releases.size() == 2);
+    CHECK(count_of<aoap::KeyEvent>(releases) == 1);
+    CHECK(count_of<aoap::ConsumerEvent>(releases) == 1);
 }
 
 TEST_CASE("A transition only sends what differs") {
@@ -88,6 +104,7 @@ TEST_CASE("Out-of-range controls are ignored rather than tracked") {
     state.apply(aoap::TouchEvent{16, true, 1, 1});
     state.apply(aoap::KeyEvent{0x1FF, true});
     state.apply(aoap::GamepadAxis{InputState::max_axes, 5});
+    state.apply(aoap::ConsumerEvent{0x1FF, true});
     CHECK(state.neutral());
 }
 

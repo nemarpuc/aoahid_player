@@ -49,6 +49,14 @@ const char* mouse_button_name(const uint32_t button) {
     }
 }
 
+std::string consumer_key_name(const uint16_t usage) {
+    for (const aoap::spec_detail::ConsumerIdentity& identity : aoap::spec_detail::consumer_table) {
+        if (identity.usage == usage)
+            return std::string(identity.name);
+    }
+    return "Media key";
+}
+
 // Removes `value` from `set`, or adds it when `present`; returns true when the
 // set changed.
 template <typename T>
@@ -256,6 +264,9 @@ void App::drain_observed() {
                     if (set_member(live_pad_, value.button, value.pressed) && value.pressed) {
                         live_log("Pad " + std::to_string(value.button), theme::text);
                     }
+                } else if constexpr (std::is_same_v<T, aoap::ConsumerEvent>) {
+                    if (value.down)
+                        live_log(consumer_key_name(value.usage), theme::accent_text);
                 }
                 // Motion and axis values are shown as they are, not logged.
             },
@@ -386,6 +397,11 @@ void App::live_paste_clipboard() {
         }
         live_paste_active_.store(false, std::memory_order_relaxed);
     });
+}
+
+void App::live_press_consumer(const uint16_t usage) {
+    engine_.live_send(aoap::ConsumerEvent{usage, true});
+    engine_.live_send(aoap::ConsumerEvent{usage, false});
 }
 
 void App::live_gamepad() {
@@ -1056,6 +1072,39 @@ void App::draw_live_controls() {
         ImGui::SetTooltip("Turn on Live control and Keyboard to paste.");
     else
         ImGui::SetItemTooltip("Types the clipboard's text on the phone. Ctrl+Shift+V");
+
+    // Media keys: one-shot buttons (a quick press then release), not a
+    // continuous pointer profile like the others, so there is no on/off
+    // toggle for them — only whether Live control itself is on.
+    if (setup.consumer.enabled) {
+        gap(2);
+        ui::caption("Media keys");
+        ImGui::BeginDisabled(!running);
+        struct MediaButton {
+            const char* label;
+            uint16_t usage;
+        };
+        const MediaButton media_buttons[] = {
+            {"Prev", aoap::spec_detail::consumer_usage_previous_track},
+            {"Play/Pause", aoap::spec_detail::consumer_usage_play_pause},
+            {"Next", aoap::spec_detail::consumer_usage_next_track},
+            {"Stop", aoap::spec_detail::consumer_usage_stop},
+            {"Vol -", aoap::spec_detail::consumer_usage_volume_down},
+            {"Mute", aoap::spec_detail::consumer_usage_mute},
+            {"Vol +", aoap::spec_detail::consumer_usage_volume_up},
+        };
+        bool first_media_button = true;
+        for (const MediaButton& button : media_buttons) {
+            if (!first_media_button)
+                ImGui::SameLine(0, px(6));
+            first_media_button = false;
+            if (ui::button(button.label, ImVec2(px(78), 0)))
+                live_press_consumer(button.usage);
+        }
+        ImGui::EndDisabled();
+        if (!running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Turn on Live control to use the media keys.");
+    }
 
     // Reference image: an optional picture over the preview (a screenshot
     // works well) to line touches up against. Position, size, rotation, and
