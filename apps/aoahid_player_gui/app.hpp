@@ -30,6 +30,16 @@ namespace gui {
 // recorder on the right, the activity log at the bottom. Runs on the UI
 // thread; everything slow happens on the Engine, the recording thread, or a
 // short-lived adb task.
+//
+// One class, split across several .cpp files by what each piece draws or
+// handles — app.cpp keeps only the lifecycle, settings, the frame loop, and
+// the raw input callbacks:
+//   app_shell.cpp     — header, nav rail, sidebar, the activity log panel
+//   app_devices.cpp   — Devices/Profiles cards and their per-profile settings
+//   app_player.cpp    — the Player tab: script picker, transport, keys
+//   app_live.cpp      — the Live tab
+//   app_playlist.cpp  — the Playlist tab
+//   app_recorder.cpp  — the Recorder tab
 class App {
   public:
     explicit App(std::function<void()> wake);

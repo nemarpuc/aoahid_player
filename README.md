@@ -425,6 +425,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/path/to/liba
 cmake --build build --config Release
 ```
 
+On Linux/macOS, `make AOAHID_PREFIX=/path/to/libaoahid` does the same first
+configure and build in one step (`make` alone once configured); `make test`
+and `make run` build first, then run the unit tests or launch the GUI.
+`make help` lists every target. It is a thin wrapper around the commands
+above — nothing it does is unavailable through CMake directly — and it is
+not meant for Windows, which has no `make` by default; use the Visual
+Studio generator there (`windows-release` in `CMakePresets.json`).
+
 Every program lands in `build/out/<config>/`, next to a copy of `csv/` (and,
 on Windows, the libaoahid DLLs), so it runs straight from there. To lay out
 the same folder the release archive contains:

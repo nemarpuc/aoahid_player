@@ -66,7 +66,12 @@ add_custom_command(
 add_executable(aoahid_player_gui WIN32
   main.cpp
   app.cpp
+  app_devices.cpp
   app_live.cpp
+  app_player.cpp
+  app_playlist.cpp
+  app_recorder.cpp
+  app_shell.cpp
   activity_log.cpp
   engine.cpp
   keymap.cpp
