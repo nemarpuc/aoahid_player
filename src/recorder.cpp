@@ -76,13 +76,15 @@ void append_recorded_rows(std::string& text, const std::vector<EventRecord>& row
             [&](const auto& value) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, TouchEvent>) {
-                    if (mode == CoordMode::normalized)
+                    if (mode == CoordMode::normalized) {
+                        const double max_x = std::max(1, format.panel_width - 1);
+                        const double max_y = std::max(1, format.panel_height - 1);
                         append_touch_row_fraction(
                             text, value.finger_id, value.state,
-                            std::clamp(static_cast<double>(value.x) / format.panel_width, 0.0, 1.0),
-                            std::clamp(static_cast<double>(value.y) / format.panel_height, 0.0, 1.0),
+                            std::clamp(static_cast<double>(value.x) / max_x, 0.0, 1.0),
+                            std::clamp(static_cast<double>(value.y) / max_y, 0.0, 1.0),
                             wait_ms);
-                    else
+                    } else
                         append_touch_row(text, value.finger_id, value.state, value.x, value.y,
                                          wait_ms);
                 } else if constexpr (std::is_same_v<T, KeyEvent>) {

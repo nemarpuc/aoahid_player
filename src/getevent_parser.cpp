@@ -357,7 +357,7 @@ bool parse_touch_range(const std::string_view text, const std::string_view devic
         long maximum = 0;
         if (!field_after(line, "min ", minimum) || !field_after(line, "max ", maximum))
             continue;
-        if (minimum != 0 || maximum < 1 || maximum > 65535)
+        if (minimum != 0 || maximum < 1)
             continue;
         (is_x ? max_x : max_y) = maximum;
         if (max_x > 0 && max_y > 0) {

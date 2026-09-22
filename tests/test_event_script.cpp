@@ -282,8 +282,8 @@ TEST_CASE("scale_script maps touch and pen rows onto the connected surfaces") {
     CHECK(moved.x == 540);  // the middle stays the middle
     CHECK(moved.y == 2399); // the last coordinate stays inside the surface
     const auto& pen = std::get<aoap::PenSample>(scaled.rows[2].payload);
-    CHECK(pen.x == 32760);
-    CHECK(pen.y == 8192);
+    CHECK(pen.x == 32767);
+    CHECK(pen.y == 8194);
     CHECK(std::get<aoap::KeyEvent>(scaled.rows[3].payload).usage == 0x04);
     CHECK(scaled.rows[1].wait_ns == 1'000'000); // timing untouched
     CHECK(scaled.screen_width == 1080);

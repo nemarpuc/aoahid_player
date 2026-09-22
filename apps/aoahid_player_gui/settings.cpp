@@ -134,9 +134,9 @@ Settings load_settings(const std::filesystem::path& path) {
         if (key == "touch")
             read_bool(value, settings.use_touch);
         else if (key == "touch.width")
-            read_int(value, 1, 65536, settings.touch_width);
+            read_int(value, 1, INT32_MAX, settings.touch_width);
         else if (key == "touch.height")
-            read_int(value, 1, 65536, settings.touch_height);
+            read_int(value, 1, INT32_MAX, settings.touch_height);
         else if (key == "touch.contacts")
             read_int(value, 1, 16, settings.touch_contacts);
         else if (key == "mouse")
@@ -224,9 +224,9 @@ Settings load_settings(const std::filesystem::path& path) {
         else if (key == "live.gamepad")
             read_bool(value, settings.live_gamepad);
         else if (key == "live.ratio_w")
-            read_int(value, 0, 65536, settings.live_ratio_w);
+            read_int(value, 0, 1000000000, settings.live_ratio_w);
         else if (key == "live.ratio_h")
-            read_int(value, 0, 65536, settings.live_ratio_h);
+            read_int(value, 0, 1000000000, settings.live_ratio_h);
         else if (key == "live.rotation")
             read_int(value, 0, 3, settings.live_rotation);
         else if (key == "live_image.path")

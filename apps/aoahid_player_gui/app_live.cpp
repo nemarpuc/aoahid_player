@@ -20,7 +20,10 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
-#include <iterator>
+#include <algorithm>
+#include <atomic>
+
+extern std::atomic<int> g_fps_limit;
 
 namespace gui {
 namespace {
@@ -280,12 +283,12 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
             std::clamp((io.MousePos.x - surface_min.x) / surface_size.x, 0.0f, 1.0f),
             std::clamp((io.MousePos.y - surface_min.y) / surface_size.y, 0.0f, 1.0f));
         const ImVec2 device = live_to_device(preview);
+        const int32_t max_x = std::max(1, setup.touch.width - 1);
+        const int32_t max_y = std::max(1, setup.touch.height - 1);
         const int32_t x = std::clamp(
-            static_cast<int32_t>(device.x * static_cast<float>(setup.touch.width)), 0,
-            setup.touch.width - 1);
+            static_cast<int32_t>(std::lround(device.x * static_cast<float>(max_x))), 0, max_x);
         const int32_t y = std::clamp(
-            static_cast<int32_t>(device.y * static_cast<float>(setup.touch.height)), 0,
-            setup.touch.height - 1);
+            static_cast<int32_t>(std::lround(device.y * static_cast<float>(max_y))), 0, max_y);
         const bool down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
         if (down != live_touching_)
             engine_.live_send(aoap::TouchEvent{live_finger(), down, x, y});
@@ -485,6 +488,10 @@ void App::live_gamepad() {
 void App::draw_live() {
     drain_observed();
 
+    if (!engine_.live_active() && live_ready()) {
+        live_enable(true);
+    }
+
     const bool running = engine_.live_active();
     if (running) {
         live_keyboard();
@@ -532,7 +539,7 @@ void App::draw_live_surface(const ImVec2 size) {
     // edge to edge, with no gray chrome eating into the one thing full
     // screen exists to maximize.
     const ImVec2 area = ImGui::GetContentRegionAvail();
-    const float bezel = live_fullscreen_ ? 0.0f : px(12);
+    const float bezel = 0.0f;
     const float margin = px(10) + bezel;
     float width = area.x - margin * 2;
     float height = width / aspect;
@@ -546,24 +553,9 @@ void App::draw_live_surface(const ImVec2 size) {
     live_phone_min_ = p0;
     live_phone_max_ = p1;
     ImDrawList* list = ImGui::GetWindowDrawList();
-    if (!live_fullscreen_) {
-        const ImVec2 b0(p0.x - bezel, p0.y - bezel);
-        const ImVec2 b1(p1.x + bezel, p1.y + bezel);
-        list->AddRectFilled(b0, b1, ImGui::GetColorU32(theme::surface_hi), px(22));
-        list->AddRect(b0, b1, ImGui::GetColorU32(theme::border_strong), px(22), px(1.5f));
-        // A speaker/camera notch on the bezel's top edge. Fixed there rather
-        // than tracking live_rotation_: the preview rectangle itself already
-        // turns landscape at a quarter turn (see live_preview_aspect()), so
-        // a notch on whichever edge is drawn "up" looks right either way.
-        const float notch_width = std::min(px(46.0f), width * 0.3f);
-        const float notch_height = px(5.0f);
-        const float notch_cx = (b0.x + b1.x) * 0.5f;
-        const float notch_cy = b0.y + bezel * 0.5f;
-        list->AddRectFilled(ImVec2(notch_cx - notch_width * 0.5f, notch_cy - notch_height * 0.5f),
-                            ImVec2(notch_cx + notch_width * 0.5f, notch_cy + notch_height * 0.5f),
-                            ImGui::GetColorU32(theme::rgb(0x000000)), notch_height * 0.5f);
-    }
-    list->AddRect(p0, p1, ImGui::GetColorU32(theme::border_strong), px(10), px(1.5f));
+
+    // A simple, clean white border
+    list->AddRect(p0, p1, ImGui::GetColorU32(IM_COL32(255, 255, 255, 200)), 0.0f, px(1.5f));
 
     const bool running = engine_.live_active();
     // The whole surface takes the pointer while live control is on.
@@ -590,23 +582,32 @@ void App::draw_live_surface(const ImVec2 size) {
 
     live_image_.draw(list, p0, ImVec2(width, height));
 
-    // The live contact.
-    if (live_touching_ && setup.touch.enabled && setup.touch.width > 0) {
-        const ImVec2 device(
-            static_cast<float>(live_touch_x_) / static_cast<float>(setup.touch.width),
-            static_cast<float>(live_touch_y_) / static_cast<float>(setup.touch.height));
-        const ImVec2 preview = live_to_preview(device);
-        const ImVec2 c(p0.x + preview.x * width, p0.y + preview.y * height);
-        const float radius = px(18);
-        list->AddCircleFilled(c, radius, ImGui::GetColorU32(theme::accent_soft), 32);
-        list->AddCircle(c, radius, ImGui::GetColorU32(theme::accent), 32, px(2));
-        list->AddCircleFilled(c, px(4), ImGui::GetColorU32(IM_COL32(255, 255, 255, 230)), 16);
-        char text[48];
-        std::snprintf(text, sizeof text, "%d, %d", live_touch_x_, live_touch_y_);
-        ImGui::PushFont(nullptr, theme::font_small);
-        list->AddText(ImVec2(c.x + radius + px(6), c.y - ImGui::GetFontSize() * 0.5f),
-                      ImGui::GetColorU32(theme::text), text);
-        ImGui::PopFont();
+    // Draw all active contacts, distinguishing the user's live touch from the script's automated touches.
+    if (setup.touch.enabled && setup.touch.width > 0 && !touch_contacts_active_.empty()) {
+        for (const TouchContact& contact : touch_contacts_active_) {
+            const int32_t max_x = std::max(1, setup.touch.width - 1);
+            const int32_t max_y = std::max(1, setup.touch.height - 1);
+            const ImVec2 device(
+                static_cast<float>(contact.x) / static_cast<float>(max_x),
+                static_cast<float>(contact.y) / static_cast<float>(max_y));
+            const ImVec2 preview = live_to_preview(device);
+            const ImVec2 c(p0.x + preview.x * width, p0.y + preview.y * height);
+            const bool is_live = (contact.finger_id == live_finger());
+            const ImU32 color_line = ImGui::GetColorU32(is_live ? theme::accent : theme::accent2);
+
+            // Draw horizontal and vertical intersecting lines instead of a circle, similar to Android's pointer location
+            list->AddLine(ImVec2(p0.x, c.y), ImVec2(p0.x + width, c.y), color_line, px(1.0f));
+            list->AddLine(ImVec2(c.x, p0.y), ImVec2(c.x, p0.y + height), color_line, px(1.0f));
+
+            char text[64];
+            std::snprintf(text, sizeof text, "#%d: %d, %d%s", 
+                          contact.finger_id, contact.x, contact.y, 
+                          is_live ? " (Live)" : "");
+            ImGui::PushFont(nullptr, theme::font_small);
+            list->AddText(ImVec2(c.x + px(6), c.y - ImGui::GetFontSize() - px(4)),
+                          ImGui::GetColorU32(theme::text), text);
+            ImGui::PopFont();
+        }
     }
 
     // Held keys ride along the bottom of the phone, where they do not cover
@@ -732,11 +733,7 @@ void App::draw_live_fullscreen() {
 void App::draw_live_fullscreen_switches(const float width) {
     const aoap::ProfileSetup setup = engine_.connected_setup();
     const uint32_t available = engine_.connected_profiles();
-    bool on = engine_.live_active();
-    ImGui::BeginDisabled(!live_ready());
-    if (ui::toggle("Live control", &on))
-        live_enable(on);
-    ImGui::EndDisabled();
+
 
     struct Entry {
         const char* label;
@@ -917,12 +914,7 @@ void App::draw_live_controls() {
     const uint32_t available = engine_.connected_profiles();
     const bool running = engine_.live_active();
 
-    // Live control on or off.
-    bool on = running;
-    ImGui::BeginDisabled(!live_ready());
-    if (ui::toggle("Live control", &on))
-        live_enable(on);
-    ImGui::EndDisabled();
+
 
     // What is forwarded; only what the connection actually has.
     struct Entry {
@@ -936,9 +928,12 @@ void App::draw_live_controls() {
         {"Keyboard##live", &live_.key, aoap::Profile::key},
         {"Gamepad##live", &live_.gamepad, aoap::Profile::gamepad},
     };
+    bool first_entry = true;
     for (const Entry& entry : entries) {
         const bool present = (available & aoap::profile_bit(entry.profile)) != 0U;
-        ImGui::SameLine(0, px(18));
+        if (!first_entry)
+            ImGui::SameLine(0, px(18));
+        first_entry = false;
         ImGui::BeginDisabled(!present);
         if (ui::toggle(entry.label, entry.flag) && *entry.flag) {
             // Touch and mouse share the pointer, so turning one on turns the
@@ -954,6 +949,14 @@ void App::draw_live_controls() {
         if (!present && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("This profile is not part of the connection.");
     }
+    
+    gap(4);
+    int current_fps = ::g_fps_limit.load(std::memory_order_relaxed);
+    ImGui::SetNextItemWidth(px(160));
+    if (ImGui::SliderInt("FPS Limit", &current_fps, 0, 1024, current_fps == 0 ? "Unlimited" : "%d fps")) {
+        ::g_fps_limit.store(current_fps, std::memory_order_relaxed);
+    }
+    ImGui::SetItemTooltip("Set the maximum frame rate for the GUI. 0 means unlimited.");
 
     // Orientation and shape.
     const float rotate_width = px(96);
@@ -988,7 +991,9 @@ void App::draw_live_controls() {
     }
     ImGui::SetNextItemWidth(ratio_width);
     if (ImGui::InputInt("##ratio_w", &shown_w, 0, 0)) {
-        live_ratio_w_ = std::clamp(shown_w, 1, 65536);
+        // Matches the touch profile's own ceiling (see spec_builder.hpp's
+        // validate_setup), since "following" can set this from touch.width.
+        live_ratio_w_ = std::clamp(shown_w, 1, INT32_MAX);
         live_ratio_h_ = live_ratio_h_ > 0 ? live_ratio_h_ : shown_h;
     }
     ImGui::SetItemTooltip("Preview width, in the same units as the height.");
@@ -998,7 +1003,7 @@ void App::draw_live_controls() {
     ImGui::SameLine(0, px(4));
     ImGui::SetNextItemWidth(ratio_width);
     if (ImGui::InputInt("##ratio_h", &shown_h, 0, 0)) {
-        live_ratio_h_ = std::clamp(shown_h, 1, 65536);
+        live_ratio_h_ = std::clamp(shown_h, 1, INT32_MAX);
         live_ratio_w_ = live_ratio_w_ > 0 ? live_ratio_w_ : shown_w;
     }
     ImGui::SetItemTooltip("Preview height. Touch positions come from the connected "

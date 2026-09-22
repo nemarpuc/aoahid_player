@@ -35,7 +35,8 @@ bool parse_resolution(const std::string_view text, int32_t& width, int32_t& heig
     if (!parse_size_t(text.substr(0, separator), parsed_width) ||
         !parse_size_t(text.substr(separator + 1), parsed_height))
         return false;
-    if (parsed_width == 0 || parsed_height == 0 || parsed_width > 65536 || parsed_height > 65536)
+    if (parsed_width == 0 || parsed_height == 0 || parsed_width > INT32_MAX ||
+        parsed_height > INT32_MAX)
         return false;
     width = static_cast<int32_t>(parsed_width);
     height = static_cast<int32_t>(parsed_height);
@@ -90,7 +91,7 @@ void print_usage(const char* program) {
         "\n"
         "Profile setup (all explicit; there are no presets):\n"
         "  --touch-res WxH          Touch surface resolution, e.g. 1080x1920\n"
-        "  --touch-max-contacts N   Max simultaneous touch contacts (1-16)\n"
+        "  --touch-max-contacts N   Max simultaneous touch contacts (1-16, default 16)\n"
         "  --gamepad-buttons N      Number of gamepad buttons\n"
         "  --gamepad-axes LIST      Comma-separated axis roles, e.g. x,y,rx,ry\n"
         "                           (x y z rx ry rz slider dial wheel rudder\n"
@@ -119,6 +120,7 @@ void print_usage(const char* program) {
 
 std::optional<Options> parse(const int argc, char** argv) {
     Options options;
+    options.profiles.touch.max_contacts = 16;
     std::vector<std::string> pieces;
 
     bool have_touch_res = false;
@@ -336,8 +338,7 @@ std::optional<Options> parse(const int argc, char** argv) {
     // -A supplies the resolution, so it also requests the touch profile.
     if (have_touch_res || have_touch_contacts || options.auto_resolution) {
         options.profiles.touch.enabled = true;
-        if (!require(have_touch_res || options.auto_resolution, "--touch-res or -A", "touch") ||
-            !require(have_touch_contacts, "--touch-max-contacts", "touch"))
+        if (!require(have_touch_res || options.auto_resolution, "--touch-res or -A", "touch"))
             return std::nullopt;
     }
     if (have_gamepad_buttons || have_gamepad_axes || have_gamepad_bits || have_gamepad_dpad) {

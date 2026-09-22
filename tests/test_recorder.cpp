@@ -55,7 +55,7 @@ TEST_CASE("A recording writes coordinates in the chosen mode") {
     aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400};
     CHECK(aoap::record_header(normalized) == "@format 2\n@coords normalized\n");
     aoap::append_recorded_rows(text, rows, normalized);
-    CHECK(text == "t,0,1,0.500000,0.500000,16.000\nk,0x04,1,8.000\n");
+    CHECK(text == "t,0,1,0.500463,0.500208,16.000\nk,0x04,1,8.000\n");
 
     // The panel's range is unknown: nothing to convert from, so rows stay raw.
     text.clear();
@@ -94,7 +94,7 @@ TEST_CASE("Recordings in both modes play back at the same place") {
 
         aoap::EventScript other;
         REQUIRE(aoap::scale_script(script, 4096, 4096, 0, 0, other));
-        CHECK(std::get<aoap::TouchEvent>(other.rows[0].payload).x == 2048);
+        CHECK(std::get<aoap::TouchEvent>(other.rows[0].payload).x == 2049);
         CHECK(std::get<aoap::TouchEvent>(other.rows[0].payload).y == 2048);
     }
 }

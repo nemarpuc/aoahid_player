@@ -102,7 +102,9 @@ bool parse_wait_ns(std::string_view text, int64_t& out) noexcept {
     return true;
 }
 
-// "0.5" -> a position in the 65536-wide normalized space; 1.0 stays inside it.
+// "0.5" -> an index into the 65536-wide normalized space (0..65535); 1.0
+// lands exactly on the highest index, matching scale_coordinate's index
+// convention.
 bool parse_fraction(std::string_view text, int32_t& out) noexcept {
     if (text.empty())
         return false;
@@ -113,8 +115,8 @@ bool parse_fraction(std::string_view text, int32_t& out) noexcept {
     if (end == buffer.c_str() || *end != '\0' || errno == ERANGE || !(value >= 0.0) ||
         value > 1.0)
         return false;
-    out = static_cast<int32_t>(std::min<int64_t>(
-        std::llround(value * static_cast<double>(normalized_space)), normalized_space - 1));
+    out = static_cast<int32_t>(std::clamp<int64_t>(
+        std::llround(value * static_cast<double>(normalized_space - 1)), 0, normalized_space - 1));
     return true;
 }
 
@@ -350,9 +352,15 @@ bool parse_screen_directive(std::string_view comment, int32_t& width, int32_t& h
     return parse_size(comment.substr(keyword.size()), width, height);
 }
 
+// Coordinates are indices (0..count-1), so the highest index in `from`,
+// not `from` itself, must land on the highest index in `to`.
 int32_t scale_coordinate(const int32_t value, const int32_t from, const int32_t to) {
-    const int64_t scaled = (static_cast<int64_t>(value) * to + from / 2) / from;
-    return static_cast<int32_t>(std::clamp<int64_t>(scaled, 0, to - 1));
+    const int64_t from_max = from - 1;
+    const int64_t to_max = to - 1;
+    if (from_max <= 0 || to_max <= 0)
+        return 0;
+    const int64_t scaled = (static_cast<int64_t>(value) * to_max + from_max / 2) / from_max;
+    return static_cast<int32_t>(std::clamp<int64_t>(scaled, 0, to_max));
 }
 
 } // namespace

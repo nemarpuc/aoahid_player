@@ -222,16 +222,15 @@ void App::draw_touch_settings() {
     const float number = px(66);
     ImGui::SetNextItemWidth(number);
     if (ImGui::InputInt("##width", &touch_width_, 0, 0))
-        touch_width_ = std::clamp(touch_width_, 1, 65536);
+        touch_width_ = std::clamp(touch_width_, 1, INT32_MAX);
     ImGui::SameLine(0, px(6));
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("x");
     ImGui::SameLine(0, px(6));
     ImGui::SetNextItemWidth(number);
     if (ImGui::InputInt("##height", &touch_height_, 0, 0))
-        touch_height_ = std::clamp(touch_height_, 1, 65536);
-    ImGui::SetItemTooltip("Read automatically at startup with adb (wm size). An override size "
-                          "wins; type here to set it by hand instead.");
+        touch_height_ = std::clamp(touch_height_, 1, INT32_MAX);
+    ImGui::SetItemTooltip("Read automatically at startup with adb (wm size).");
 
     field("Contacts");
     ui::slider_int("##contacts", &touch_contacts_, 1, 16, " fingers");

@@ -166,10 +166,15 @@ inline bool validate_setup(const ProfileSetup& setup, std::string& error) {
         error = "Choose at least one profile to connect.";
         return false;
     }
-    const auto size_ok = [](const int32_t value) { return value > 0 && value <= 65536; };
+    // The int32_t width/height already tops out at INT32_MAX (2147483647), not
+    // 2^32: a HID Logical Maximum item is always signed (HID 1.11 6.2.2.7),
+    // matching both aoahid_integer_field.logical_maximum (int32_t) and the
+    // Linux kernel's struct input_absinfo.maximum (__s32) that the eventual
+    // ABS_MT_POSITION_X/Y range lands in.
+    const auto size_ok = [](const int32_t value) { return value > 0; };
     if (setup.touch.enabled) {
         if (!size_ok(setup.touch.width) || !size_ok(setup.touch.height)) {
-            error = "Set the touchscreen resolution (width and height, 1-65536).";
+            error = "Set the touchscreen resolution (width and height, 1-2147483647).";
             return false;
         }
         if (setup.touch.max_contacts < 1 || setup.touch.max_contacts > 16) {

@@ -740,12 +740,12 @@ void App::on_cursor(const double x, const double y) {
                 std::clamp((static_cast<float>(x) - live_phone_min_.x) / size.x, 0.0f, 1.0f),
                 std::clamp((static_cast<float>(y) - live_phone_min_.y) / size.y, 0.0f, 1.0f));
             const ImVec2 device = live_to_device(preview);
+            const int32_t max_x = std::max(1, setup.touch.width - 1);
+            const int32_t max_y = std::max(1, setup.touch.height - 1);
             const int32_t tx = std::clamp(
-                static_cast<int32_t>(device.x * static_cast<float>(setup.touch.width)), 0,
-                setup.touch.width - 1);
+                static_cast<int32_t>(std::lround(device.x * static_cast<float>(max_x))), 0, max_x);
             const int32_t ty = std::clamp(
-                static_cast<int32_t>(device.y * static_cast<float>(setup.touch.height)), 0,
-                setup.touch.height - 1);
+                static_cast<int32_t>(std::lround(device.y * static_cast<float>(max_y))), 0, max_y);
             if (tx != live_touch_x_ || ty != live_touch_y_) {
                 live_touch_x_ = tx;
                 live_touch_y_ = ty;

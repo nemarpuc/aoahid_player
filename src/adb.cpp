@@ -3,11 +3,37 @@
 
 #include "aoahid_player/process.hpp"
 
+#include <cerrno>
+#include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <sstream>
 
 namespace aoap {
 namespace {
+
+// The number after `label` in `adb shell wm size`'s "Physical size: WxH" /
+// "Override size: WxH" lines.
+bool parse_wm_size(const std::string& text, const std::string_view label, int32_t& width,
+                   int32_t& height) {
+    const size_t at = text.find(label);
+    if (at == std::string::npos)
+        return false;
+    const char* begin = text.c_str() + at + label.size();
+    errno = 0;
+    char* mid = nullptr;
+    const long w = std::strtol(begin, &mid, 10);
+    if (mid == begin || *mid != 'x' || errno != 0)
+        return false;
+    errno = 0;
+    char* end = nullptr;
+    const long h = std::strtol(mid + 1, &end, 10);
+    if (end == mid + 1 || errno != 0 || w <= 0 || h <= 0 || w > INT32_MAX || h > INT32_MAX)
+        return false;
+    width = static_cast<int32_t>(w);
+    height = static_cast<int32_t>(h);
+    return true;
+}
 
 std::string first_line(const std::string& text) {
     std::istringstream stream(text);
@@ -89,36 +115,12 @@ bool adb_screen_size(const std::string& serial, int32_t& width, int32_t& height,
     const CommandResult result = run_command(adb_command(serial, {"shell", "wm", "size"}));
     if (!check(result, error))
         return false;
-    int physical_w = 0;
-    int physical_h = 0;
-    int override_w = 0;
-    int override_h = 0;
-    std::istringstream stream(result.output);
-    std::string line;
-    while (std::getline(stream, line)) {
-        int w = 0;
-        int h = 0;
-        if (std::sscanf(line.c_str(), " Override size: %dx%d", &w, &h) == 2) {
-            override_w = w;
-            override_h = h;
-        } else if (std::sscanf(line.c_str(), " Physical size: %dx%d", &w, &h) == 2) {
-            physical_w = w;
-            physical_h = h;
-        }
-    }
-    // sscanf cannot report overflow, so the result is range-checked here.
-    const auto plausible = [](const int value) { return value > 0 && value <= 65536; };
-    if (plausible(override_w) && plausible(override_h)) {
-        width = override_w;
-        height = override_h;
+
+    if (parse_wm_size(result.output, "Override size:", width, height) ||
+        parse_wm_size(result.output, "Physical size:", width, height))
         return true;
-    }
-    if (plausible(physical_w) && plausible(physical_h)) {
-        width = physical_w;
-        height = physical_h;
-        return true;
-    }
-    error = "adb did not report a screen size.";
+
+    error = "Could not read the screen size from `adb shell wm size`.";
     return false;
 }
 

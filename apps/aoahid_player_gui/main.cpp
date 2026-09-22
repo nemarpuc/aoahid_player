@@ -35,11 +35,13 @@
 #include <windows.h>
 #endif
 
+#include <atomic>
+std::atomic<int> g_fps_limit{120};
+
 namespace {
 
 constexpr double tick_seconds = 1.0 / 30.0;      // redraw rate while something animates
 constexpr double hover_tick_window = 1.0;        // keep ticking briefly for tooltips
-constexpr int64_t wayland_frame_ns = 8'333'333;  // frame cap where vsync is not used
 
 std::string g_glfw_error;
 gui::App* g_app = nullptr;
@@ -281,10 +283,10 @@ int run() {
     }
     glfwMakeContextCurrent(window);
 
-    // Wayland may block a vsync'd swap for as long as the window is hidden, so
-    // there the frame rate is capped by hand instead.
+    // Disable vsync on all platforms to allow 120fps rendering for lower visual latency;
+    // the frame rate is capped by hand instead.
     const bool wayland = glfwGetPlatform() == GLFW_PLATFORM_WAYLAND;
-    glfwSwapInterval(wayland ? 0 : 1);
+    glfwSwapInterval(0);
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -410,10 +412,14 @@ int run() {
             glfwGetWindowSize(window, &win_width, &win_height);
             app->set_window_geometry(win_x, win_y, win_width, win_height);
         }
-        if (wayland) {
-            const int64_t since = aoap::Timing::now_ns() - last_frame;
-            if (since < wayland_frame_ns)
-                std::this_thread::sleep_for(std::chrono::nanoseconds(wayland_frame_ns - since));
+        {
+            const int fps = g_fps_limit.load(std::memory_order_relaxed);
+            if (fps > 0) {
+                const int64_t target_frame_ns = 1'000'000'000 / fps;
+                const int64_t since = aoap::Timing::now_ns() - last_frame;
+                if (since < target_frame_ns)
+                    std::this_thread::sleep_for(std::chrono::nanoseconds(target_frame_ns - since));
+            }
         }
         if (g_scale_changed.exchange(false)) {
             scale = window_scale(window);
