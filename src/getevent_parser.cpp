@@ -16,6 +16,7 @@ struct KeyMapping {
 };
 
 // Linux input-event-codes.h keycodes to HID Usage Table 1.7 section 10
+constexpr std::array<KeyMapping, 113> key_table{{
     {"KEY_ESC", 1, 0x29},          {"KEY_1", 2, 0x1E},
     {"KEY_2", 3, 0x1F},            {"KEY_3", 4, 0x20},
     {"KEY_4", 5, 0x21},            {"KEY_5", 6, 0x22},
