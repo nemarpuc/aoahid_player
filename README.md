@@ -61,10 +61,8 @@ is logged.
    once the phone reappears. Tick one or more (a single phone is ticked for
    you).
 2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen, media keys, system control. Each one's settings open when it is
-   switched on. *Media keys* and *System Control* are fixed sets — Volume Up/Down, Mute, Play/
-   Pause, Previous/Next Track, Stop; and Power, Sleep, Wake Up — with no CSV rows of their own; they are
-   pressed from the Live tab's buttons or the control API only.
+   keyboard, gamepad, pen. Each one's settings open when it is
+   switched on.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
    the width/height fields to set it by hand instead. *Contacts* (16 by
@@ -122,11 +120,6 @@ and watching what the scripts do. Turn on *Live control*, then choose what to
 forward: *Touch* (drag inside the preview), *Mouse* (motion, buttons, and the
 wheel), *Keyboard*, and *Gamepad* (any controller GLFW recognises). Only
 profiles the connection actually has can be turned on, and touch and mouse
-share the pointer, so turning one on turns the other off. If the connection
-has the Media keys profile, a row of buttons (Prev, Play/Pause, Next, Stop,
-Vol -, Mute, Vol +) appears further down; unlike the others, these have no
-on/off toggle of their own — each press is a one-shot pulse to the phone,
-sent while Live control is on. The panel beside the
 preview lists what is held and what was sent, including an *Active touches*
 line per finger currently down — Live's own included, called out from the
 rest — since a script can now be playing at the same time (see below); the
@@ -268,8 +261,6 @@ both touch the screen at once without colliding.
 | `POST /gamepad/button` | `index` (1-based), `down` (default `true`) | |
 | `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
-| `POST /consumer` | `key` (`volume_up`, `volume_down`, `mute`, `play_pause`, `previous_track`, `next_track`, `stop`) | One pulse (press, then release); needs the Media keys profile. |
-| `POST /system` | `key` (`power`, `sleep`, `wake_up`) | One pulse (press, then release); needs the System Control profile. |
 
 ## aoa_touch — usage
 
@@ -593,8 +584,6 @@ The main headers in `include/aoahid_player/`:
   pen input.
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
   `ABS_MT_TRACKING_ID`); the older Type A `SYN_MT_REPORT` form is not parsed.
-- Only keys on the HID Keyboard/Keypad page are recorded. Consumer-page keys
-  such as `KEY_VOLUMEUP` are counted and reported, not written.
 - libaoahid's toggle, battery, and raw profiles are not exposed.
 
 ## License

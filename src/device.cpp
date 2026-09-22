@@ -77,10 +77,6 @@ const char* profile_name(const Profile profile) noexcept {
         return "gamepad";
     case Profile::pen:
         return "pen";
-    case Profile::consumer:
-        return "consumer";
-    case Profile::system:
-        return "system";
     default:
         return "unknown";
     }
@@ -98,10 +94,6 @@ const char* profile_title(const Profile profile) noexcept {
         return "Gamepad";
     case Profile::pen:
         return "Pen";
-    case Profile::consumer:
-        return "Media keys";
-    case Profile::system:
-        return "Power/Sleep/Wake";
     default:
         return "Unknown";
     }
@@ -217,11 +209,7 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     case Profile::pen:
         bound = aoa::bind(opened_node, pen_);
         break;
-    case Profile::consumer:
-        bound = aoa::bind(opened_node, consumer_);
         break;
-    case Profile::system:
-        bound = aoa::bind(opened_node, system_);
         break;
     default:
         bound = AOAHID_ERR_PARAM;

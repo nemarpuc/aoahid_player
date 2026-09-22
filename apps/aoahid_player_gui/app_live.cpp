@@ -50,22 +50,6 @@ const char* mouse_button_name(const uint32_t button) {
     }
 }
 
-std::string consumer_key_name(const uint16_t usage) {
-    for (const aoap::spec_detail::ConsumerIdentity& identity : aoap::spec_detail::consumer_table) {
-        if (identity.usage == usage)
-            return std::string(identity.name);
-    }
-    return "Media key";
-}
-
-std::string system_key_name(const uint16_t usage) {
-    for (const aoap::spec_detail::SystemIdentity& identity : aoap::spec_detail::system_table) {
-        if (identity.usage == usage)
-            return std::string(identity.name);
-    }
-    return "System key";
-}
-
 // Removes `value` from `set`, or adds it when `present`; returns true when the
 // set changed.
 template <typename T>
@@ -273,12 +257,6 @@ void App::drain_observed() {
                     if (set_member(live_pad_, value.button, value.pressed) && value.pressed) {
                         live_log("Pad " + std::to_string(value.button), theme::text);
                     }
-                } else if constexpr (std::is_same_v<T, aoap::ConsumerEvent>) {
-                    if (value.down)
-                        live_log(consumer_key_name(value.usage), theme::accent_text);
-                } else if constexpr (std::is_same_v<T, aoap::SystemEvent>) {
-                    if (value.down)
-                        live_log(system_key_name(value.usage), theme::accent_text);
                 }
                 // Motion and axis values are shown as they are, not logged.
             },
@@ -409,45 +387,6 @@ void App::live_paste_clipboard() {
         }
         live_paste_active_.store(false, std::memory_order_relaxed);
     });
-}
-
-void App::live_press_consumer(const uint16_t usage) {
-    engine_.live_send(aoap::ConsumerEvent{usage, true});
-    engine_.live_send(aoap::ConsumerEvent{usage, false});
-}
-
-void App::live_press_system(const uint16_t usage) {
-    engine_.live_send(aoap::SystemEvent{usage, true});
-    engine_.live_send(aoap::SystemEvent{usage, false});
-}
-
-void App::draw_live_key_row(const char* const caption, const char* const* const labels,
-                            const uint16_t* const usages, const size_t count,
-                            void (App::*const press)(uint16_t)) {
-    const bool running = engine_.live_active();
-    ui::caption(caption);
-    ImGui::BeginDisabled(!running);
-    // Wraps to a new line whenever the container is too narrow for every
-    // button on one row (the full screen menu is much narrower than the
-    // normal Live tab card), based on the width available where this row
-    // starts.
-    const float button_width = px(78);
-    const float max_width = ImGui::GetContentRegionAvail().x;
-    float line_width = 0.0f;
-    for (size_t index = 0; index < count; ++index) {
-        const float next_width = line_width + (line_width > 0.0f ? px(6) : 0.0f) + button_width;
-        if (line_width > 0.0f && next_width <= max_width) {
-            ImGui::SameLine(0, px(6));
-            line_width = next_width;
-        } else {
-            line_width = button_width;
-        }
-        if (ui::button(labels[index], ImVec2(button_width, 0)))
-            (this->*press)(usages[index]);
-    }
-    ImGui::EndDisabled();
-    if (!running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip("Turn on Live control to use these keys.");
 }
 
 void App::live_gamepad() {
@@ -824,32 +763,6 @@ void App::draw_live_fullscreen_switches(const float width) {
         ImGui::EndDisabled();
     }
 
-    if (setup.consumer.enabled) {
-        gap(2);
-        static const char* const labels[] = {"Prev", "Play/Pause", "Next", "Stop",
-                                              "Vol -", "Mute",      "Vol +"};
-        static const uint16_t usages[] = {
-            aoap::spec_detail::consumer_usage_previous_track,
-            aoap::spec_detail::consumer_usage_play_pause,
-            aoap::spec_detail::consumer_usage_next_track,
-            aoap::spec_detail::consumer_usage_stop,
-            aoap::spec_detail::consumer_usage_volume_down,
-            aoap::spec_detail::consumer_usage_mute,
-            aoap::spec_detail::consumer_usage_volume_up,
-        };
-        draw_live_key_row("Media keys", labels, usages, std::size(labels),
-                          &App::live_press_consumer);
-    }
-    if (setup.system.enabled) {
-        gap(2);
-        static const char* const labels[] = {"Power", "Sleep", "Wake Up"};
-        static const uint16_t usages[] = {
-            aoap::spec_detail::system_usage_power_down,
-            aoap::spec_detail::system_usage_sleep,
-            aoap::spec_detail::system_usage_wake_up,
-        };
-        draw_live_key_row("Power", labels, usages, std::size(labels), &App::live_press_system);
-    }
 
     gap(2);
     if (ui::button("Exit full screen", ImVec2(width, 0)))
@@ -1112,37 +1025,6 @@ void App::draw_live_controls() {
         ImGui::SetTooltip("Turn on Live control and Keyboard to paste.");
     else
         ImGui::SetItemTooltip("Types the clipboard's text on the phone. Ctrl+Shift+V");
-
-    // Media keys, and power/sleep/wake: one-shot buttons (a quick press
-    // then release), not a continuous pointer profile like the others, so
-    // there is no on/off toggle for them — only whether Live control
-    // itself is on (see draw_live_key_row()).
-    if (setup.consumer.enabled) {
-        gap(2);
-        static const char* const labels[] = {"Prev", "Play/Pause", "Next", "Stop",
-                                              "Vol -", "Mute",      "Vol +"};
-        static const uint16_t usages[] = {
-            aoap::spec_detail::consumer_usage_previous_track,
-            aoap::spec_detail::consumer_usage_play_pause,
-            aoap::spec_detail::consumer_usage_next_track,
-            aoap::spec_detail::consumer_usage_stop,
-            aoap::spec_detail::consumer_usage_volume_down,
-            aoap::spec_detail::consumer_usage_mute,
-            aoap::spec_detail::consumer_usage_volume_up,
-        };
-        draw_live_key_row("Media keys", labels, usages, std::size(labels),
-                          &App::live_press_consumer);
-    }
-    if (setup.system.enabled) {
-        gap(2);
-        static const char* const labels[] = {"Power", "Sleep", "Wake Up"};
-        static const uint16_t usages[] = {
-            aoap::spec_detail::system_usage_power_down,
-            aoap::spec_detail::system_usage_sleep,
-            aoap::spec_detail::system_usage_wake_up,
-        };
-        draw_live_key_row("Power", labels, usages, std::size(labels), &App::live_press_system);
-    }
 
     // Reference image: an optional picture over the preview (a screenshot
     // works well) to line touches up against. Position, size, rotation, and

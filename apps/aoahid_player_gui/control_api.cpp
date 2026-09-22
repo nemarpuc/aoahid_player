@@ -194,36 +194,6 @@ std::string resolve_script_path(const std::string& script) {
     return aoap::path_utf8(given);
 }
 
-// One HUT usage per name (see aoap::spec_detail::consumer_table); nullptr
-// for an unknown name.
-const aoap::spec_detail::ConsumerIdentity* find_consumer_key(const std::string& name) {
-    for (const aoap::spec_detail::ConsumerIdentity& identity : aoap::spec_detail::consumer_table) {
-        std::string slug;
-        slug.reserve(identity.name.size());
-        for (const char c : identity.name)
-            slug += (c == ' ' || c == '/')
-                        ? '_'
-                        : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (slug == name)
-            return &identity;
-    }
-    return nullptr;
-}
-
-const aoap::spec_detail::SystemIdentity* find_system_key(const std::string& name) {
-    for (const aoap::spec_detail::SystemIdentity& identity : aoap::spec_detail::system_table) {
-        std::string slug;
-        slug.reserve(identity.name.size());
-        for (const char c : identity.name)
-            slug += (c == ' ' || c == '/')
-                        ? '_'
-                        : static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
-        if (slug == name)
-            return &identity;
-    }
-    return nullptr;
-}
-
 } // namespace
 
 ControlApi::ControlApi(Engine& engine) : engine_(engine) {}
@@ -462,35 +432,6 @@ void ControlApi::register_routes() {
                                             parse_bool(req.get_param_value("down"), false),
                                             parse_bool(req.get_param_value("right"), false),
                                             parse_bool(req.get_param_value("left"), false)});
-        res.set_content(json_ok(), "application/json");
-    });
-    svr.Post("/consumer", [this](const Req& req, Res& res) {
-        const std::string key = req.get_param_value("key");
-        const aoap::spec_detail::ConsumerIdentity* identity = find_consumer_key(key);
-        if (identity == nullptr) {
-            res.status = 400;
-            res.set_content(
-                json_error("Unknown \"key\"; use volume_up, volume_down, mute, play_pause, "
-                           "previous_track, next_track, or stop."),
-                "application/json");
-            return;
-        }
-        engine_.live_send(aoap::ConsumerEvent{identity->usage, true});
-        engine_.live_send(aoap::ConsumerEvent{identity->usage, false});
-        res.set_content(json_ok(), "application/json");
-    });
-    svr.Post("/system", [this](const Req& req, Res& res) {
-        const std::string key = req.get_param_value("key");
-        const aoap::spec_detail::SystemIdentity* identity = find_system_key(key);
-        if (identity == nullptr) {
-            res.status = 400;
-            res.set_content(
-                json_error("Unknown \"key\"; use power, sleep, or wake_up."),
-                "application/json");
-            return;
-        }
-        engine_.live_send(aoap::SystemEvent{identity->usage, true});
-        engine_.live_send(aoap::SystemEvent{identity->usage, false});
         res.set_content(json_ok(), "application/json");
     });
 }

@@ -141,8 +141,6 @@ Settings App::current_settings() const {
     settings.pad_axes = pad_axes_;
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
-    settings.use_consumer = use_consumer_;
-    settings.use_system = use_system_;
     settings.api_enabled = api_enabled_;
     settings.api_port = api_port_;
     settings.record_coords = record_coords_;
@@ -196,8 +194,6 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
-    use_consumer_ = settings.use_consumer;
-    use_system_ = settings.use_system;
     api_enabled_ = settings.api_enabled;
     api_port_ = settings.api_port;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
@@ -282,8 +278,6 @@ aoap::ProfileSetup App::build_setup() const {
     setup.pen.enabled = use_pen_;
     setup.pen.mode = pen_mode_ == 0 ? AOAHID_PEN_DIRECT_SCREEN : AOAHID_PEN_INDIRECT_TABLET;
     aoap::resolve_pen_surface(setup);
-    setup.consumer.enabled = use_consumer_;
-    setup.system.enabled = use_system_;
     return setup;
 }
 

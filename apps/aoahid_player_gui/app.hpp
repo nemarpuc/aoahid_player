@@ -176,8 +176,6 @@ class App {
     void draw_key_settings();
     void draw_gamepad_settings();
     void draw_pen_settings();
-    void draw_consumer_settings();
-    void draw_system_settings();
     void draw_connect_card();
     // The local HTTP control API's on/off toggle and port; see
     // control_api.hpp.
@@ -258,17 +256,6 @@ class App {
     // already running, the clipboard has no text, or Keyboard live control
     // is not on.
     void live_paste_clipboard();
-    // Sends one media-key pulse (press, then release) to the phone.
-    void live_press_consumer(uint16_t usage);
-    // Same idea, for a System Control key (power/sleep/wake).
-    void live_press_system(uint16_t usage);
-    // One row of one-shot key buttons — media keys or power/sleep/wake —
-    // disabled while Live control is off, since there is no per-profile
-    // forwarding toggle for a one-shot button the way there is for touch,
-    // mouse, keyboard, or gamepad. Shared by the normal Live tab view and
-    // the full screen side menu.
-    void draw_live_key_row(const char* caption, const char* const* labels,
-                           const uint16_t* usages, size_t count, void (App::*press)(uint16_t));
     void drain_observed();
     void live_log(std::string text, ImU32 color);
     [[nodiscard]] bool live_ready() const;
@@ -333,8 +320,6 @@ class App {
     bool use_key_{};
     bool use_gamepad_{};
     bool use_pen_{};
-    bool use_consumer_{};
-    bool use_system_{};
     int touch_width_{1080};
     int touch_height_{2400};
     // 16 by default (the maximum) so the Live tab's reserved top slot (see

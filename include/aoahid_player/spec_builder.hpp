@@ -53,30 +53,12 @@ struct PenSetup {
     int32_t pressure_maximum{4095};
 };
 
-// Media keys (Consumer page): volume up/down, mute, play/pause, next/
-// previous track, stop. A fixed set — see spec_detail::consumer_usages —
-// rather than a caller-chosen range like the keyboard profile, since these
-// are Live/API buttons, not something a CSV script declares a range for.
-struct ConsumerSetup {
-    bool enabled{};
-};
-
-// Power Down, Sleep, Wake Up (System Control page): a second, independent
-// fixed set from ConsumerSetup — see spec_detail::system_table — since HUT
-// System Control is a different Application Collection from Consumer
-// Control and libaoahid speaks one per Spec/Node.
-struct SystemSetup {
-    bool enabled{};
-};
-
 struct ProfileSetup {
     TouchSetup touch;
     MouseSetup mouse;
     KeySetup key;
     GamepadSetup gamepad;
     PenSetup pen;
-    ConsumerSetup consumer;
-    SystemSetup system;
 };
 
 namespace spec_detail {
@@ -151,52 +133,6 @@ inline bool axis_is_unipolar(const aoahid_axis_role role) noexcept {
            role == AOAHID_AXIS_SIMULATION_THROTTLE;
 }
 
-// HUT 0x0C (Consumer) usages this player exposes, with the Linux evdev
-// mapping libaoahid requires as evidence (drivers/hid/hid-input.c's
-// consumer-page table) and the HUT-defined report semantic for each:
-// Volume Increment/Decrement are Re-trigger Controls (repeat while held on a
-// physical remote); the rest are One Shot Controls.
-inline constexpr uint16_t consumer_usage_volume_up = 0xE9;
-inline constexpr uint16_t consumer_usage_volume_down = 0xEA;
-inline constexpr uint16_t consumer_usage_mute = 0xE2;
-inline constexpr uint16_t consumer_usage_play_pause = 0xCD;
-inline constexpr uint16_t consumer_usage_next_track = 0xB5;
-inline constexpr uint16_t consumer_usage_previous_track = 0xB6;
-inline constexpr uint16_t consumer_usage_stop = 0xB7;
-
-struct ConsumerIdentity {
-    std::string_view name; // "Volume Up", ...
-    uint16_t usage;
-    aoahid_usage_semantic semantic;
-    const char* linux_code;
-};
-
-inline constexpr std::array<ConsumerIdentity, 7> consumer_table{{
-    {"Volume Up", consumer_usage_volume_up, AOAHID_USAGE_RETRIGGER, "KEY_VOLUMEUP"},
-    {"Volume Down", consumer_usage_volume_down, AOAHID_USAGE_RETRIGGER, "KEY_VOLUMEDOWN"},
-    {"Mute", consumer_usage_mute, AOAHID_USAGE_ONE_SHOT, "KEY_MUTE"},
-    {"Play/Pause", consumer_usage_play_pause, AOAHID_USAGE_ONE_SHOT, "KEY_PLAYPAUSE"},
-    {"Previous Track", consumer_usage_previous_track, AOAHID_USAGE_ONE_SHOT, "KEY_PREVIOUSSONG"},
-    {"Next Track", consumer_usage_next_track, AOAHID_USAGE_ONE_SHOT, "KEY_NEXTSONG"},
-    {"Stop", consumer_usage_stop, AOAHID_USAGE_ONE_SHOT, "KEY_STOPCD"},
-}};
-
-// HUT 0x01/0x80 (System Control) usages this player exposes, same shape and
-// reasoning as consumer_table; all three are One Shot Controls.
-inline constexpr uint16_t system_usage_power_down = 0x81;
-inline constexpr uint16_t system_usage_sleep = 0x82;
-inline constexpr uint16_t system_usage_wake_up = 0x83;
-
-// Reuses ConsumerIdentity's shape: name/usage/semantic/evidence is exactly
-// what a toggle_node_ref usage needs, regardless of which HUT page it is on.
-using SystemIdentity = ConsumerIdentity;
-
-inline constexpr std::array<SystemIdentity, 3> system_table{{
-    {"Power", system_usage_power_down, AOAHID_USAGE_ONE_SHOT, "KEY_POWER"},
-    {"Sleep", system_usage_sleep, AOAHID_USAGE_ONE_SHOT, "KEY_SLEEP"},
-    {"Wake Up", system_usage_wake_up, AOAHID_USAGE_ONE_SHOT, "KEY_WAKEUP"},
-}};
-
 } // namespace spec_detail
 
 inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
@@ -211,10 +147,6 @@ inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
         mask |= profile_bit(Profile::gamepad);
     if (setup.pen.enabled)
         mask |= profile_bit(Profile::pen);
-    if (setup.consumer.enabled)
-        mask |= profile_bit(Profile::consumer);
-    if (setup.system.enabled)
-        mask |= profile_bit(Profile::system);
     return mask;
 }
 
@@ -340,10 +272,6 @@ class SpecSet {
         if (setup.gamepad.enabled && !build_gamepad(setup.gamepad, error))
             return false;
         if (setup.pen.enabled && !build_pen(setup.pen, error))
-            return false;
-        if (setup.consumer.enabled && !build_consumer(setup.consumer, error))
-            return false;
-        if (setup.system.enabled && !build_system(setup.system, error))
             return false;
         return true;
     }
@@ -484,62 +412,6 @@ class SpecSet {
         return store(Profile::pen, result, spec, "pen", error);
     }
 
-    bool build_consumer(const ConsumerSetup&, std::string& error) {
-        using namespace spec_detail;
-        std::array<uint16_t, consumer_table.size()> usages{};
-        std::array<aoahid_usage_semantic, consumer_table.size()> semantics{};
-        std::array<const char*, consumer_table.size()> linux_types{};
-        std::array<const char*, consumer_table.size()> linux_codes{};
-        for (size_t index = 0; index < consumer_table.size(); ++index) {
-            const ConsumerIdentity& identity = consumer_table[index];
-            usages[index] = identity.usage;
-            semantics[index] = identity.semantic;
-            linux_types[index] = "EV_KEY";
-            linux_codes[index] = identity.linux_code;
-        }
-
-        aoahid_toggle_options options{};
-        options.struct_size = static_cast<uint32_t>(sizeof(options));
-        options.application_page = 0x0C; // Consumer
-        options.application_usage = 0x01; // Consumer Control
-        options.field_page = 0x0C;
-        options.allowed_usages = usages.data();
-        options.allowed_usage_count = usages.size();
-        options.usage_semantics = semantics.data();
-        options.expected_linux_event_types = linux_types.data();
-        options.expected_linux_codes = linux_codes.data();
-        aoahid_spec* spec = nullptr;
-        const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
-        return store(Profile::consumer, result, spec, "media key", error);
-    }
-
-    bool build_system(const SystemSetup&, std::string& error) {
-        using namespace spec_detail;
-        std::array<uint16_t, system_table.size()> usages{};
-        std::array<aoahid_usage_semantic, system_table.size()> semantics{};
-        std::array<const char*, system_table.size()> linux_types{};
-        std::array<const char*, system_table.size()> linux_codes{};
-        for (size_t index = 0; index < system_table.size(); ++index) {
-            const SystemIdentity& identity = system_table[index];
-            usages[index] = identity.usage;
-            semantics[index] = identity.semantic;
-            linux_types[index] = "EV_KEY";
-            linux_codes[index] = identity.linux_code;
-        }
-
-        aoahid_toggle_options options{};
-        options.struct_size = static_cast<uint32_t>(sizeof(options));
-        options.application_page = 0x01; // Generic Desktop
-        options.application_usage = 0x80; // System Control
-        options.field_page = 0x01;
-        options.allowed_usages = usages.data();
-        options.allowed_usage_count = usages.size();
-        options.usage_semantics = semantics.data();
-        options.expected_linux_event_types = linux_types.data();
-        options.expected_linux_codes = linux_codes.data();
-        aoahid_spec* spec = nullptr;
-        const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
-        return store(Profile::system, result, spec, "system control", error);
     }
 };
 
