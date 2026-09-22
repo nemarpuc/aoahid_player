@@ -414,7 +414,7 @@ void App::draw_connect_card() {
     ui::end_card();
 }
 
-// --- Player ----------------------------------------------------------------
+// --- Recorder ---------------------------------------------------------------
 
 void App::draw_aoa_link_card() {
     const bool connected = engine_.connected();

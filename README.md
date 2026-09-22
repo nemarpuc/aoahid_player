@@ -79,11 +79,6 @@ that stops responding is dropped without stopping playback for the others.
 
 **Player tab**
 
-- The *AOA connection* card at the top has a **Disconnect AOA** button, so
-  disconnecting never means finding the sidebar. On Windows adb and AOA
-  cannot be used at the same time (the phone drops off adb while it is
-  connected), and the card says so; on other systems it appears only while
-  connected.
 - The *Script* box shows the loaded script. Click it (or press **Ctrl+F**) to
   open the script list: type to search (words match anywhere in the name,
   case-insensitively), move with **Up/Down**, open with **Enter** or a click,
@@ -195,6 +190,12 @@ optional limit in minutes on the whole run. Playlists are saved as
 
 **Recorder tab**
 
+The *AOA connection* card at the top has a **Disconnect AOA** button, so
+disconnecting never means finding the sidebar — recording reads the phone
+over adb, and on Windows adb and AOA cannot be used at the same time (the
+phone drops off adb while AOA is connected), so the card says so there; on
+other systems it appears only while connected.
+
 Choose the phone (automatic works when adb sees only one) and optionally limit
 it to one `/dev/input/eventN`. Type the *File name* before you start (`.csv` is
 added; blank gives `record-<date>-<time>`). Names with characters Windows or
@@ -247,11 +248,11 @@ both touch the screen at once without colliding.
 | Route | Params | Notes |
 |---|---|---|
 | `GET /status` | — | Phase, connected device count, active profiles, `live_active`, and the playback state/position/loops/reports. |
-| `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. |
+| `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing). |
 | `POST /stop` | — | |
 | `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
 | `POST /seek` | `lap` (`first`/`repeat`), `time_ms` | 409 if nothing is playing. |
-| `POST /live/start` | — | No-op unless connected. |
+| `POST /live/start` | — | 409 if not connected. |
 | `POST /live/stop` | — | |
 | `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Device coordinates, not a fraction. |
 | `POST /mouse/move` | `dx`, `dy` | Relative, like a physical mouse. |

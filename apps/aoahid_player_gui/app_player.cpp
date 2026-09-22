@@ -33,8 +33,6 @@ namespace gui {
 using namespace detail;
 
 void App::draw_player() {
-    draw_aoa_link_card();
-    gap(2);
     draw_script_card();
     gap(2);
     draw_transport_card();

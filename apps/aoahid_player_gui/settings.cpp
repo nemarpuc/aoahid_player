@@ -224,9 +224,9 @@ Settings load_settings(const std::filesystem::path& path) {
         else if (key == "live.gamepad")
             read_bool(value, settings.live_gamepad);
         else if (key == "live.ratio_w")
-            read_int(value, 0, 1000000000, settings.live_ratio_w);
+            read_int(value, 0, INT32_MAX, settings.live_ratio_w);
         else if (key == "live.ratio_h")
-            read_int(value, 0, 1000000000, settings.live_ratio_h);
+            read_int(value, 0, INT32_MAX, settings.live_ratio_h);
         else if (key == "live.rotation")
             read_int(value, 0, 3, settings.live_rotation);
         else if (key == "live_image.path")

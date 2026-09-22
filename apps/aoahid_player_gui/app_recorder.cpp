@@ -105,6 +105,11 @@ void App::draw_record_coords(const bool locked) {
 void App::draw_recorder() {
     const bool active = recording();
 
+    // Recording reads the phone over adb; on Windows that needs AOA
+    // disconnected first (see draw_aoa_link_card()'s own comment).
+    draw_aoa_link_card();
+    gap(2);
+
     ui::begin_card("##phone");
     caption_row("Phone");
     gap(2);

@@ -286,6 +286,15 @@ void ControlApi::register_routes() {
 
     // --- Playback ------------------------------------------------------
     svr.Post("/play", [this](const Req& req, Res& res) {
+        // Engine::play() itself silently no-ops outside Phase::connected, so
+        // this checks first — otherwise a caller sees "ok" for a script that
+        // never started (not connected, still connecting, or already playing).
+        if (engine_.phase() != Engine::Phase::connected) {
+            res.status = 409;
+            res.set_content(json_error("Not connected (or already playing)."),
+                            "application/json");
+            return;
+        }
         const std::string script_param = req.get_param_value("script");
         if (script_param.empty()) {
             res.status = 400;
@@ -340,6 +349,14 @@ void ControlApi::register_routes() {
 
     // --- Live control ----------------------------------------------------
     svr.Post("/live/start", [this](const Req&, Res& res) {
+        // Same reasoning as /play: Engine::live_start() no-ops outside
+        // Phase::connected/playing, so check first rather than report "ok"
+        // for input that will not actually reach the device.
+        if (!engine_.connected()) {
+            res.status = 409;
+            res.set_content(json_error("Not connected."), "application/json");
+            return;
+        }
         engine_.live_start();
         res.set_content(json_ok(), "application/json");
     });

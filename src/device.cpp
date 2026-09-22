@@ -209,8 +209,6 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     case Profile::pen:
         bound = aoa::bind(opened_node, pen_);
         break;
-        break;
-        break;
     default:
         bound = AOAHID_ERR_PARAM;
         break;
