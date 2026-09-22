@@ -3,6 +3,7 @@
 
 #include "aoahid_player/event_script.hpp"
 #include "aoahid_player/events.hpp"
+#include "aoahid_player/input_state.hpp"
 #include "aoahid_player/player.hpp"
 #include "aoahid_player/session.hpp"
 
@@ -51,13 +52,15 @@ struct PlaylistProgress {
 // effect immediately.
 class Engine final : private aoap::PlaybackObserver {
   public:
+    // "live" is not a Phase of its own: Live control is an orthogonal
+    // on/off state (see live_active()) that can run alongside `connected`
+    // or `playing`, so it keeps forwarding input while a script plays.
     enum class Phase : uint8_t {
         idle,
         refreshing,
         connecting,
         connected,
         playing,
-        live,
         disconnecting
     };
 
@@ -80,18 +83,23 @@ class Engine final : private aoap::PlaybackObserver {
 
     // Live control: input from the preview goes straight to the devices, and
     // everything it pressed is released when it ends. live_send() may be
-    // called for every pointer move; bursts are folded while a report drains.
+    // called for every pointer move; bursts are folded while a report
+    // drains. Works while connected, whether or not a script is playing —
+    // see live_active().
     void live_start();
     void live_stop();
     void live_send(const aoap::EventPayload& payload);
     void live_scroll(int32_t wheel);
+    [[nodiscard]] bool live_active() const noexcept {
+        return live_active_.load(std::memory_order_acquire);
+    }
 
     [[nodiscard]] aoap::Player& player() noexcept { return player_; }
     [[nodiscard]] const aoap::Player& player() const noexcept { return player_; }
     [[nodiscard]] Phase phase() const noexcept { return phase_.load(std::memory_order_acquire); }
     [[nodiscard]] bool connected() const noexcept {
         const Phase value = phase();
-        return value == Phase::connected || value == Phase::playing || value == Phase::live;
+        return value == Phase::connected || value == Phase::playing;
     }
     [[nodiscard]] bool busy() const noexcept {
         const Phase value = phase();
@@ -148,6 +156,20 @@ class Engine final : private aoap::PlaybackObserver {
     void sent(const aoap::EventPayload& payload) noexcept override;
     void observe(const Observed& event) noexcept;
 
+    // Live control's own application of one event, independent of whatever
+    // Player is doing with the same DeviceGroup (script rows use Player's
+    // own send()/settle(), not this). Worker thread only.
+    void apply_live_one(const aoap::EventPayload& payload);
+    // Drains whatever live_send()/live_scroll() queued since the last call,
+    // or — once live_active_ has gone false — releases whatever Live was
+    // still holding. Quick to call when there is nothing to do, so it is
+    // safe as Player's live pump (see Player::set_live_pump()) as well as
+    // run_live()'s own loop. Worker thread only.
+    void pump_live();
+    // Releases everything live_held_ is holding, unconditionally. Worker
+    // thread only.
+    void release_live();
+
     aoap::EventSink& sink_;
     std::function<void()> wake_;
     aoap::Session session_;
@@ -163,11 +185,18 @@ class Engine final : private aoap::PlaybackObserver {
     aoap::ProfileSetup setup_;
     PlaylistProgress progress_;
     std::vector<LiveItem> live_inbox_;
-    bool live_stop_{};
+    bool live_stop_{}; // exits run_live()'s own loop; see live_stop()
+    aoap::InputState live_held_; // what Live currently has pressed; worker thread only
 
     std::atomic<Phase> phase_{Phase::idle};
     std::atomic<uint32_t> profiles_{};
     std::atomic<uint64_t> setup_version_{};
+    // Whether Live control is on; orthogonal to Phase so it can keep
+    // forwarding input while Phase::playing runs (see pump_live()).
+    std::atomic<bool> live_active_{};
+    // Set by live_send()/live_scroll(), cleared once pump_live() has drained
+    // the inbox; lets it skip locking mutex_ when there is nothing queued.
+    std::atomic<bool> live_pending_{};
 
     // Single-producer (worker) single-consumer (UI) ring of sent events.
     static constexpr size_t ring_size = 4096;

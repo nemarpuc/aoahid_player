@@ -116,11 +116,6 @@ bool is_release_key(const int key, const int configured_key) noexcept {
     return key == (configured_key != 0 ? configured_key : GLFW_KEY_ESCAPE);
 }
 
-bool is_fullscreen_key(const int key, const int configured_key) noexcept {
-    // 0 means "not set yet"; F11 is the default.
-    return key == (configured_key != 0 ? configured_key : GLFW_KEY_F11);
-}
-
 const char* hid_usage_name(const uint16_t usage) noexcept {
     static const char* const letters[26] = {"A", "B", "C", "D", "E", "F", "G", "H", "I",
                                             "J", "K", "L", "M", "N", "O", "P", "Q", "R",

@@ -3,6 +3,7 @@
 
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 
@@ -69,6 +70,18 @@ class Player {
     void load(std::shared_ptr<const EventScript> script);
     void set_observer(PlaybackObserver* observer) noexcept { observer_ = observer; }
     [[nodiscard]] bool loaded() const noexcept { return script_ != nullptr; }
+
+    // Lets an owner interleave another input source into the same
+    // DeviceGroup while a script plays, without this class knowing anything
+    // about where that input comes from (the GUI's Live tab, in practice).
+    // Invoked on run()'s own thread — between rows, and at every early wake
+    // (see wake_live()) — so it must be quick and must not block. Set before
+    // run() is called; null (the default) costs nothing.
+    void set_live_pump(std::function<void()> pump) noexcept { live_pump_ = std::move(pump); }
+    // Wakes run()'s wait immediately, e.g. right after queuing work for the
+    // live pump, so it is not held up by the next script deadline. Safe from
+    // any thread; a no-op while run() is not waiting.
+    void wake_live() noexcept;
 
     // Plays from `start` and returns once playback has stopped and every
     // control it pressed has been released.
@@ -138,6 +151,7 @@ class Player {
     DeviceGroup& group_;
     EventSink* sink_;
     PlaybackObserver* observer_{};
+    std::function<void()> live_pump_;
 
     // Playback thread only.
     std::shared_ptr<const EventScript> script_;

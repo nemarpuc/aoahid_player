@@ -64,7 +64,10 @@ is logged.
    keyboard, gamepad, pen. Each one's settings open when it is switched on.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
-   the width/height fields to set it by hand instead.
+   the width/height fields to set it by hand instead. *Contacts* (16 by
+   default, the maximum) is how many simultaneous fingers the touchscreen
+   declares; the Live tab always uses the last one for its own pointer (see
+   *Live tab*, below), so a script gets one fewer than this to itself.
 3. *Connect* starts the AOA handshake on the ticked devices right away —
    it does not touch adb or rescan, so it stays fast how ever many devices
    are ticked.
@@ -117,25 +120,29 @@ forward: *Touch* (drag inside the preview), *Mouse* (motion, buttons, and the
 wheel), *Keyboard*, and *Gamepad* (any controller GLFW recognises). Only
 profiles the connection actually has can be turned on, and touch and mouse
 share the pointer, so turning one on turns the other off. The panel beside the
-preview lists what is held and what was sent; contacts appear on the preview
-with their coordinates, held keys along its bottom. *Rotate* turns the
-preview a quarter turn at a time for landscape use, and the two numbers
-beside it set its shape as width:height; both default to the connected
-touchscreen, and *Reset* returns to it. Neither changes where a touch
-lands: the pointer's position inside the preview is taken as a fraction,
-turned back into the phone's own orientation, and only then scaled to the
-connected resolution. The expand button switches the preview to a real,
-OS-level full screen window (not just this window's own layout filling its
-still-windowed frame) with just the preview and the input switches; *Exit
-full screen*, **Esc**, or the configurable *Full screen key* (**F11** by
-default, set below the preview in the normal view) always returns, even
-while Keyboard is being forwarded, and a label on the preview spells out
-which key to press for as long as full screen is on. The preview shows why
-Live control is unavailable right now (no device connected, or a script loaded and playing)
-under itself, in both the normal and the full-screen view, instead of just a
-disabled toggle. Live control stays off while a script is playing — playing
-a script and forwarding Live input are two uses of the same connection that
-cannot run together — and comes back on its own once the player stops.
+preview lists what is held and what was sent, including an *Active touches*
+line per finger currently down — Live's own included, called out from the
+rest — since a script can now be playing at the same time (see below); the
+same list also appears on the Player tab while a script plays. The Live
+finger itself appears on the preview with its coordinates, held keys along
+its bottom. *Rotate* turns the preview a quarter
+turn at a time for landscape use, and the two numbers beside it set its shape
+as width:height; both default to the connected touchscreen, and *Reset*
+returns to it. Neither changes where a touch lands: the pointer's position
+inside the preview is taken as a fraction, turned back into the phone's own
+orientation, and only then scaled to the connected resolution. The expand
+button switches the preview to a real, OS-level full screen window (not just
+this window's own layout filling its still-windowed frame) with just the
+preview and the input switches; *Exit full screen* in the side panel (hover
+the edge to bring it up) or, outside Mouse mode, a right-click always returns
+— there is no keyboard shortcut for full screen any more, so it never
+conflicts with a key a script or the target app needs. The preview shows why
+Live control is unavailable right now (no device connected) under itself, in
+both the normal and the full-screen view, instead of just a disabled toggle.
+Live control now keeps running while a script plays, instead of turning off
+when playback starts: its touch contact is always the last one the connection
+declares (see *Contacts* under *Profiles*, above), so it never collides with
+whichever ones the script itself is using.
 
 Mouse mode sends relative motion, so clicking inside the preview captures
 the pointer: the cursor disappears and stops being bounded by the screen
@@ -156,12 +163,6 @@ normal. While captured, the release key is also spelled out directly on the
 preview itself ("Press Esc to release the pointer", or whichever key was
 chosen), including in full screen, so it stays visible without looking away
 from the phone.
-
-*Full screen key*, also below the preview, is the same idea for full screen
-itself: **F11** by default, or any other key — useful if F11 needs to reach
-the target app instead. Unlike the mouse release key, Escape always exits
-full screen as well no matter what this is set to, so full screen can never
-end up with no way out.
 
 Keyboard forwarding recognises the extra keys a JIS (Japanese) keyboard has
 that a US layout does not — Henkan, Muhenkan, Kana, Zenkaku/Hankaku, and Ro —
@@ -506,7 +507,9 @@ The main headers in `include/aoahid_player/`:
   `ProfileSetup`.
 - `player.hpp` — playback with pause, seek, speed, loop limit, live offset,
   and a wall-clock stop time, all callable from any thread; `status()` is
-  lock-free, and a `PlaybackObserver` sees every row sent.
+  lock-free, and a `PlaybackObserver` sees every row sent. `set_live_pump()`
+  lets another input source (the GUI's Live tab) interleave into the same
+  `DeviceGroup` while a script plays; `wake_live()` wakes it promptly.
 - `recorder.hpp` — `adb getevent` recording into a CSV file, with the raw and
   normalized coordinate modes.
 - `event_script.hpp` — CSV loading (rows in file order, directives, key names)

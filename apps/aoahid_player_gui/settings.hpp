@@ -15,7 +15,7 @@ struct Settings {
     bool use_touch{true};
     int touch_width{1080};
     int touch_height{2400};
-    int touch_contacts{10};
+    int touch_contacts{16};
     bool use_mouse{};
     int mouse_buttons{5};
     bool use_key{};
@@ -32,10 +32,6 @@ struct Settings {
     // The GLFW key that releases the captured pointer in Live control's
     // mouse mode. 0 means "not set", which live control treats as Escape.
     int live_release_key{};
-    // The GLFW key that toggles the Live tab's real full screen mode. 0
-    // means "not set", which is treated as F11. Escape always exits full
-    // screen too, regardless of this setting.
-    int live_fullscreen_key{};
     // GLFW keys for the Player tab's play/pause, stop, and back-to-start
     // actions. 0 means "not set": Space, Escape (or Ctrl+S), and Home (or
     // Backspace) respectively.

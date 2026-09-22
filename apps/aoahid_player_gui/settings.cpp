@@ -181,8 +181,6 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "live.release_key")
             read_int(value, 0, 348, settings.live_release_key);
-        else if (key == "live.fullscreen_key")
-            read_int(value, 0, 348, settings.live_fullscreen_key);
         else if (key == "player.play_key")
             read_int(value, 0, 348, settings.player_play_key);
         else if (key == "player.stop_key")
@@ -270,7 +268,6 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
-    out << "live.fullscreen_key = " << settings.live_fullscreen_key << '\n';
     out << "player.play_key = " << settings.player_play_key << '\n';
     out << "player.stop_key = " << settings.player_stop_key << '\n';
     out << "player.restart_key = " << settings.player_restart_key << '\n';

@@ -104,15 +104,15 @@ bool App::recording() const { return record_thread_.joinable(); }
 bool App::settings_locked() const { return engine_.phase() != Phase::idle; }
 
 bool App::animating() const {
-    const Phase phase = engine_.phase();
     if (engine_.busy() || recording() || startup_prep_task_.valid() || retry_task_.valid() ||
         adb_task_.valid() || ui::animations_active())
         return true;
-    if (phase == Phase::playing)
-        return engine_.player().status().state != aoap::PlaybackState::paused ||
-               engine_.playlist_progress().ends_at_ns != 0;
+    if (engine_.phase() == Phase::playing &&
+        (engine_.player().status().state != aoap::PlaybackState::paused ||
+         engine_.playlist_progress().ends_at_ns != 0))
+        return true;
     // Live control polls the gamepad and shows what the phone is doing.
-    return phase == Phase::live;
+    return engine_.live_active();
 }
 
 std::string App::adb_serial() const {
@@ -141,7 +141,6 @@ Settings App::current_settings() const {
     settings.pen_mode = pen_mode_;
     settings.record_coords = record_coords_;
     settings.live_release_key = live_release_key_;
-    settings.live_fullscreen_key = live_fullscreen_key_;
     settings.player_play_key = player_keys_[0];
     settings.player_stop_key = player_keys_[1];
     settings.player_restart_key = player_keys_[2];
@@ -193,7 +192,6 @@ void App::apply_settings(const Settings& settings) {
     pen_mode_ = settings.pen_mode;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
     live_release_key_ = settings.live_release_key;
-    live_fullscreen_key_ = settings.live_fullscreen_key;
     player_keys_[0] = settings.player_play_key;
     player_keys_[1] = settings.player_stop_key;
     player_keys_[2] = settings.player_restart_key;
@@ -289,7 +287,10 @@ void App::poll() {
             selected_.insert(devices_.front().key);
     }
 
-    engine_.set_observing(tab_ == Tab::live);
+    // The Player tab also observes now, so its active-touches list (see
+    // draw_transport_card()) stays current even when the Live tab is not
+    // the one on screen.
+    engine_.set_observing(tab_ == Tab::live || tab_ == Tab::player);
     const Phase phase = engine_.phase();
     if (phase != last_phase_) {
         if (last_phase_ == Phase::playing)
@@ -665,14 +666,6 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         }
         return;
     }
-    if (live_fullscreen_key_picking_) {
-        // Same idea as the release-key picker above.
-        if (pressed) {
-            live_fullscreen_key_picking_ = false;
-            live_fullscreen_key_ = glfw_key == GLFW_KEY_ESCAPE ? 0 : glfw_key;
-        }
-        return;
-    }
     if (player_key_picking_ != PlayerAction::none) {
         if (!pressed)
             return;
@@ -687,35 +680,17 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
         }
         return;
     }
-    // Escape always exits full screen first, even while Keyboard forwarding
-    // is on, so full screen can never trap input on the phone with no
-    // visible way out. It is consumed here rather than also forwarded, so
-    // the phone never sees the same press full screen just reacted to.
-    if (pressed && live_fullscreen_ && glfw_key == GLFW_KEY_ESCAPE) {
-        live_fullscreen_ = false;
-        return;
-    }
-    // The configurable full screen key toggles it from anywhere; entering
-    // requires the same readiness as the on-screen button, but exiting
-    // always works so a stale readiness check can never strand the window.
-    if (pressed && is_fullscreen_key(glfw_key, live_fullscreen_key_) &&
-        (live_fullscreen_ || live_ready())) {
-        live_fullscreen_ = !live_fullscreen_;
-        if (live_fullscreen_)
-            live_fullscreen_bar_seen_ = ImGui::GetTime();
-        return;
-    }
     if (pressed)
         pending_player_key_ = glfw_key;
     // The release key lets go of the captured pointer no matter which
     // profiles are forwarding, so it works in mouse-only mode too. Like Esc
     // used to, it is still forwarded to the phone afterwards if Keyboard is
     // also on — releasing the capture does not consume the press.
-    if (pressed && live_mouse_captured_ && engine_.phase() == Engine::Phase::live &&
+    if (pressed && live_mouse_captured_ && engine_.live_active() &&
         is_release_key(glfw_key, live_release_key_))
         live_capture_pointer(false);
 
-    if (!live_.key || engine_.phase() != Engine::Phase::live)
+    if (!live_.key || !engine_.live_active())
         return;
     if (is_release_key(glfw_key, live_release_key_) || ImGui::GetIO().WantTextInput)
         return;
@@ -742,6 +717,34 @@ void App::on_key(const int glfw_key, const int scancode, const bool pressed) {
 }
 
 void App::on_cursor(const double x, const double y) {
+    // Touch mode: while a contact is down, its position is sent straight
+    // from the window system's callback instead of waiting for the next
+    // rendered frame (live_pointer() only starts and ends the contact) — the
+    // same reasoning as mouse mode's relative motion below, and what fixed
+    // its own drag feel. Scoped to the Live tab like live_pointer() itself:
+    // live_phone_min_/max_ are only kept current by draw_live_surface(),
+    // which only runs while that tab (fullscreen included, since it never
+    // leaves Tab::live) is the one being drawn.
+    if (live_touching_ && live_.touch && engine_.live_active() && tab_ == Tab::live) {
+        const aoap::ProfileSetup setup = engine_.connected_setup();
+        const ImVec2 size(live_phone_max_.x - live_phone_min_.x,
+                          live_phone_max_.y - live_phone_min_.y);
+        if (setup.touch.enabled && size.x > 0.0f && size.y > 0.0f) {
+            const ImVec2 preview(
+                std::clamp((static_cast<float>(x) - live_phone_min_.x) / size.x, 0.0f, 1.0f),
+                std::clamp((static_cast<float>(y) - live_phone_min_.y) / size.y, 0.0f, 1.0f));
+            const ImVec2 device = live_to_device(preview);
+            const int32_t tx = std::clamp(
+                static_cast<int32_t>(device.x * static_cast<float>(setup.touch.width)), 0,
+                setup.touch.width - 1);
+            const int32_t ty = std::clamp(
+                static_cast<int32_t>(device.y * static_cast<float>(setup.touch.height)), 0,
+                setup.touch.height - 1);
+            if (tx != live_touch_x_ || ty != live_touch_y_)
+                engine_.live_send(aoap::TouchEvent{live_finger(), true, tx, ty});
+        }
+    }
+
     // Only needed while the pointer is captured (see live_pointer() and
     // frame()); otherwise ImGui's own io.MouseDelta is used as before, so
     // this stays a no-op the rest of the time and adds no per-frame cost.
@@ -837,7 +840,7 @@ void App::frame() {
                 engine_.player().adjust_offset_ns(ns_per_ms);
         }
     }
-    const bool forwarding_keys = engine_.phase() == Phase::live && live_.key;
+    const bool forwarding_keys = engine_.live_active() && live_.key;
     // The pointer capture's own release key, and full screen's own Escape
     // and configurable toggle key, are all handled in on_key(), straight
     // from the window system, so they work whichever key is configured and
@@ -925,8 +928,7 @@ App::ConnectionStatus App::connection_status() const {
     case Phase::connecting:
         return {"Connecting", theme::accent, true};
     case Phase::connected:
-    case Phase::playing:
-    case Phase::live: {
+    case Phase::playing: {
         const size_t count = engine_.device_status().size();
         return {std::to_string(count) + (count == 1 ? " device" : " devices") + " connected",
                 theme::success, false};
@@ -1347,6 +1349,8 @@ void App::draw_touch_settings() {
 
     field("Contacts");
     ui::slider_int("##contacts", &touch_contacts_, 1, 16, " fingers");
+    ImGui::SetItemTooltip("The Live tab always uses the last one (see the Live tab's active "
+                          "touches list), so a script gets one fewer than this to itself.");
 }
 
 void App::draw_mouse_settings() {
@@ -1458,7 +1462,6 @@ void App::draw_connect_card() {
         break;
     case Phase::connected:
     case Phase::playing:
-    case Phase::live:
         if (ui::button("Disconnect", size, ui::Tone::danger))
             engine_.disconnect();
         break;
@@ -1855,8 +1858,6 @@ std::string App::player_key_conflict(const PlayerAction action, const int key) c
         return "Backspace is already used by Back to start.";
     if (is_release_key(key, live_release_key_))
         return std::string(glfw_key_name(key)) + " is the Live mouse release key.";
-    if (is_fullscreen_key(key, live_fullscreen_key_))
-        return std::string(glfw_key_name(key)) + " is the Live full screen key.";
     return {};
 }
 
@@ -2095,6 +2096,18 @@ void App::draw_transport_card() {
     ImGui::EndDisabled();
     ImGui::SetCursorPosY(row_y + large);
     thin_rule(2.0f, 2.0f);
+
+    // Active touches: every contact currently down, including Live's own
+    // reserved finger (see live_finger()), since playback and Live control
+    // can now run at once.
+    if (engine_.connected_setup().touch.enabled && !touch_contacts_active_.empty()) {
+        gap(1);
+        ImGui::PushFont(nullptr, theme::font_small);
+        draw_touch_contacts();
+        ImGui::PopFont();
+        gap(1);
+        thin_rule(2.0f, 2.0f);
+    }
 
     // Speed, loop limit, live offset.
     if (ImGui::BeginTable("##settings", 3, ImGuiTableFlags_SizingStretchSame)) {

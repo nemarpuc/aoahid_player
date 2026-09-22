@@ -22,6 +22,10 @@ std::string plural(const uint64_t count, const char* one, const char* many) {
 Engine::Engine(aoap::EventSink& sink, std::function<void()> wake)
     : sink_(sink), wake_(std::move(wake)), session_(&sink), player_(session_.group(), &sink) {
     player_.set_observer(this);
+    // Wired once, unconditionally: pump_live() itself is a cheap no-op
+    // whenever Live control is off and nothing is left to release, so a
+    // script that never turns Live on pays only one relaxed load per wake.
+    player_.set_live_pump([this] { pump_live(); });
     live_inbox_.reserve(256);
     worker_ = std::thread([this] { loop(); });
 }
@@ -78,6 +82,7 @@ void Engine::connect(std::vector<size_t> selection, aoap::ProfileSetup setup) {
 void Engine::disconnect() {
     if (!connected())
         return;
+    live_active_.store(false, std::memory_order_release);
     {
         const std::lock_guard lock(mutex_);
         queue_.erase(std::remove_if(queue_.begin(), queue_.end(),
@@ -88,28 +93,29 @@ void Engine::disconnect() {
                                     }),
                      queue_.end());
         playlist_abort_ = true;
+        live_stop_ = true; // exits run_live() if it is the one currently running
         if (running_play_)
             player_.stop();
     }
+    ready_.notify_one();
+    player_.wake_live();
     push(Command{Command::Kind::disconnect, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::disconnecting);
 }
 
 void Engine::play(std::shared_ptr<const aoap::EventScript> script, std::string name,
                   const aoap::PlaybackPosition start, const int64_t loops) {
-    const Phase now = phase();
-    if ((now != Phase::connected && now != Phase::live) || !script)
+    // Live control, if on, keeps running alongside playback (see
+    // pump_live()); it is not stopped here.
+    if (phase() != Phase::connected || !script)
         return;
-    live_stop();
     push(Command{Command::Kind::play, {}, {}, std::move(script), std::move(name), start, loops,
                  {}, 0},
          Phase::playing);
 }
 
 void Engine::play_playlist(std::vector<PlaylistStep> steps, const int64_t time_limit_ns) {
-    const Phase now = phase();
-    if ((now != Phase::connected && now != Phase::live) || steps.empty())
+    if (phase() != Phase::connected || steps.empty())
         return;
-    live_stop();
     {
         const std::lock_guard lock(mutex_);
         playlist_abort_ = false;
@@ -135,37 +141,45 @@ void Engine::stop() {
 }
 
 void Engine::live_start() {
-    if (phase() != Phase::connected)
+    const Phase now = phase();
+    if (now != Phase::connected && now != Phase::playing)
         return;
     {
         const std::lock_guard lock(mutex_);
         live_stop_ = false;
         live_inbox_.clear();
     }
-    push(Command{Command::Kind::live, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::live);
+    live_active_.store(true, std::memory_order_release);
+    if (now != Phase::connected) {
+        // Playback already owns the worker thread; its own live pump (see
+        // Player::set_live_pump()) picks up live_inbox_ from here, so there
+        // is nothing to queue.
+        player_.wake_live();
+        return;
+    }
+    push(Command{Command::Kind::live, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::connected);
 }
 
 void Engine::live_stop() {
+    live_active_.store(false, std::memory_order_release);
     {
         const std::lock_guard lock(mutex_);
-        live_stop_ = true;
+        live_stop_ = true; // exits run_live() if it is the one currently running
         const auto queued = std::find_if(queue_.begin(), queue_.end(), [](const Command& c) {
             return c.kind == Command::Kind::live;
         });
-        if (queued != queue_.end()) {
-            queue_.erase(queued);
-            if (phase_.load(std::memory_order_relaxed) == Phase::live)
-                phase_.store(Phase::connected, std::memory_order_release);
-        }
+        if (queued != queue_.end())
+            queue_.erase(queued); // never started; nothing was pressed yet
     }
     ready_.notify_one();
+    player_.wake_live(); // in case a script is running and its pump is waiting
 }
 
 void Engine::live_send(const aoap::EventPayload& payload) {
+    if (!live_active_.load(std::memory_order_relaxed))
+        return;
     {
         const std::lock_guard lock(mutex_);
-        if (phase_.load(std::memory_order_relaxed) != Phase::live)
-            return;
         // Bursts are folded while the worker is busy with a report: moves add
         // up, and the latest contact position or axis value wins. Edges
         // (presses, releases, touch down and up) always keep their order.
@@ -175,7 +189,9 @@ void Engine::live_send(const aoap::EventPayload& payload) {
                 if (auto* previous = std::get_if<aoap::MouseMove>(&last)) {
                     previous->dx += move->dx;
                     previous->dy += move->dy;
+                    live_pending_.store(true, std::memory_order_release);
                     ready_.notify_one();
+                    player_.wake_live();
                     return;
                 }
             } else if (const auto* touch = std::get_if<aoap::TouchEvent>(&payload)) {
@@ -183,14 +199,18 @@ void Engine::live_send(const aoap::EventPayload& payload) {
                 if (previous != nullptr && touch->state && previous->state &&
                     previous->finger_id == touch->finger_id) {
                     *previous = *touch;
+                    live_pending_.store(true, std::memory_order_release);
                     ready_.notify_one();
+                    player_.wake_live();
                     return;
                 }
             } else if (const auto* axis = std::get_if<aoap::GamepadAxis>(&payload)) {
                 auto* previous = std::get_if<aoap::GamepadAxis>(&last);
                 if (previous != nullptr && previous->axis_index == axis->axis_index) {
                     previous->value = axis->value;
+                    live_pending_.store(true, std::memory_order_release);
                     ready_.notify_one();
+                    player_.wake_live();
                     return;
                 }
             }
@@ -199,16 +219,16 @@ void Engine::live_send(const aoap::EventPayload& payload) {
             return;
         live_inbox_.push_back(LiveItem{false, payload, 0});
     }
+    live_pending_.store(true, std::memory_order_release);
     ready_.notify_one();
+    player_.wake_live();
 }
 
 void Engine::live_scroll(const int32_t wheel) {
-    if (wheel == 0)
+    if (wheel == 0 || !live_active_.load(std::memory_order_relaxed))
         return;
     {
         const std::lock_guard lock(mutex_);
-        if (phase_.load(std::memory_order_relaxed) != Phase::live)
-            return;
         if (!live_inbox_.empty() && live_inbox_.back().wheel) {
             live_inbox_.back().wheel_delta += wheel;
         } else {
@@ -217,7 +237,9 @@ void Engine::live_scroll(const int32_t wheel) {
             live_inbox_.push_back(LiveItem{true, aoap::MouseMove{0, 0}, wheel});
         }
     }
+    live_pending_.store(true, std::memory_order_release);
     ready_.notify_one();
+    player_.wake_live();
 }
 
 std::vector<aoap::DeviceEntry> Engine::devices() const {
@@ -316,24 +338,74 @@ void Engine::loop() {
 }
 
 // After a run, the phase goes back to connected unless a queued command has
-// already claimed it (a disconnect, another play).
+// already claimed it (a disconnect, another play). If Live control is still
+// on, it lost the worker thread's low-latency wait the moment playback
+// preempted it (see run_live()), so a fresh live command resumes it.
 void Engine::finish_run() {
     {
         const std::lock_guard lock(mutex_);
-        if (queue_.empty())
+        if (queue_.empty()) {
             phase_.store(Phase::connected, std::memory_order_release);
+            if (live_active_.load(std::memory_order_relaxed)) {
+                live_stop_ = false;
+                queue_.push_back(Command{Command::Kind::live, {}, {}, {}, {}, {}, 0, {}, 0});
+            }
+        }
     }
+    ready_.notify_one();
     if (wake_)
         wake_();
 }
 
-void Engine::run_live() {
+void Engine::apply_live_one(const aoap::EventPayload& payload) {
     aoap::DeviceGroup& group = session_.group();
-    aoap::InputState held;
-    std::vector<LiveItem> batch;
-    batch.reserve(256);
+    aoahid_result result = group.apply(payload);
+    if (result == AOAHID_ERR_BUSY) {
+        // The opposite edge of the same control is still unreported.
+        group.flush();
+        result = group.apply(payload);
+    }
+    if (result == AOAHID_OK) {
+        live_held_.apply(payload);
+        sent(payload);
+    }
+}
 
-    const auto apply = [&](const LiveItem& item) {
+void Engine::release_live() {
+    std::vector<aoap::EventPayload> releases;
+    std::vector<aoap::EventPayload> presses;
+    aoap::InputState::transition(live_held_, aoap::InputState{}, releases, presses);
+    if (releases.empty())
+        return;
+    // Releases in their own report.
+    for (const aoap::EventPayload& payload : releases)
+        apply_live_one(payload);
+    session_.group().flush();
+}
+
+// Reusable on any thread that currently owns the DeviceGroup: run_live()'s
+// own loop when nothing else is running, and Player's live pump (see
+// Player::set_live_pump()) while a script plays. Cheap to call when there is
+// nothing to do — one relaxed load — so both call it liberally.
+void Engine::pump_live() {
+    if (!live_active_.load(std::memory_order_acquire)) {
+        // Just turned off (or never on): release whatever is still held,
+        // exactly once — neutral() is false only until this runs.
+        if (!live_held_.neutral())
+            release_live();
+        return;
+    }
+    if (!live_pending_.exchange(false, std::memory_order_acq_rel))
+        return; // nothing queued since the last drain
+    std::vector<LiveItem> batch;
+    {
+        const std::lock_guard lock(mutex_);
+        batch.swap(live_inbox_);
+    }
+    if (batch.empty())
+        return;
+    aoap::DeviceGroup& group = session_.group();
+    for (const LiveItem& item : batch) {
         if (item.wheel) {
             aoahid_result result = group.scroll(item.wheel_delta);
             if (result == AOAHID_ERR_BUSY) {
@@ -343,50 +415,50 @@ void Engine::run_live() {
             if (result == AOAHID_OK)
                 observe(Observed{Observed::Kind::wheel, aoap::MouseMove{0, 0}, item.wheel_delta,
                                  aoap::Timing::now_ns()});
-            return;
+            continue;
         }
-        aoahid_result result = group.apply(item.payload);
-        if (result == AOAHID_ERR_BUSY) {
-            // The opposite edge of the same control is still unreported.
-            group.flush();
-            result = group.apply(item.payload);
-        }
-        if (result == AOAHID_OK) {
-            held.apply(item.payload);
-            sent(item.payload);
-        }
-    };
+        apply_live_one(item.payload);
+    }
+    // One report per burst; while it drains, new input folds in the inbox.
+    group.flush();
+}
 
+void Engine::run_live() {
+    aoap::DeviceGroup& group = session_.group();
+    bool stopped = false;
     while (true) {
         {
             std::unique_lock lock(mutex_);
-            ready_.wait(lock,
-                        [&] { return live_stop_ || !queue_.empty() || !live_inbox_.empty(); });
-            if (live_stop_ || !queue_.empty())
-                break; // stopped, or a play or disconnect takes over
-            batch.swap(live_inbox_);
+            ready_.wait(lock, [&] {
+                return live_stop_ || !queue_.empty() ||
+                       live_pending_.load(std::memory_order_relaxed);
+            });
+            if (live_stop_ || !queue_.empty()) {
+                // Captured under the same lock as the check above, not by
+                // looking at what ended up queued: a live_start() racing
+                // right after this (a fast toggle off/on) always resets
+                // live_stop_ before it queues its own fresh live command,
+                // so reading it here — rather than peeking at queue_'s
+                // front afterward — cannot mistake that restart for a stop.
+                stopped = live_stop_;
+                break; // stopped, or a play/playlist/disconnect takes over
+            }
         }
-        for (const LiveItem& item : batch)
-            apply(item);
-        batch.clear();
-        // One report per burst; while it drains, new input folds in the inbox.
-        group.flush();
+        pump_live();
         if (group.active_count() == 0) {
             note(aoap::Severity::error, "Every device stopped responding; live control stopped.");
+            stopped = true;
             break;
         }
     }
 
-    // Release everything live control pressed, releases in their own report.
-    std::vector<aoap::EventPayload> releases;
-    std::vector<aoap::EventPayload> presses;
-    aoap::InputState::transition(held, aoap::InputState{}, releases, presses);
-    for (const aoap::EventPayload& payload : releases)
-        apply(LiveItem{false, payload, 0});
-    group.flush();
-    {
-        const std::lock_guard lock(mutex_);
-        live_inbox_.clear();
+    // A play or playlist command taking over (queue_ became non-empty
+    // without live_stop_) keeps Live running through it — its own live pump
+    // inherits live_held_/live_inbox_ as they are; a genuine stop releases
+    // everything Live pressed.
+    if (stopped) {
+        live_active_.store(false, std::memory_order_release);
+        release_live();
     }
 }
 

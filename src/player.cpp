@@ -79,6 +79,8 @@ void Player::set_speed(const double speed) noexcept {
     post(request_retime);
 }
 
+void Player::wake_live() noexcept { wake_.notify(); }
+
 void Player::set_loop_limit(const int64_t loops) noexcept {
     loop_limit_.store(std::max<int64_t>(loops, 0), std::memory_order_relaxed);
 }
@@ -325,6 +327,8 @@ Player::Outcome Player::hold_paused() {
     publish(PlaybackState::paused, pause_position_);
 
     while (true) {
+        if (live_pump_)
+            live_pump_();
         const uint32_t seen = wake_.epoch();
         const uint32_t pending = requests_.exchange(0U, std::memory_order_acq_rel);
         if ((pending & request_stop) != 0U) {
@@ -359,6 +363,8 @@ Player::Outcome Player::hold_paused() {
 
 Player::Outcome Player::wait_to(const int64_t script_time) {
     while (true) {
+        if (live_pump_)
+            live_pump_();
         const uint32_t seen = wake_.epoch();
         if (requests_.load(std::memory_order_acquire) != 0U) {
             const Outcome outcome = service();
@@ -430,6 +436,8 @@ void Player::run(const PlaybackPosition start) {
     jump(start);
 
     while (true) {
+        if (live_pump_)
+            live_pump_();
         if (requests_.load(std::memory_order_relaxed) != 0U) {
             const Outcome outcome = service();
             if (outcome == Outcome::stop)

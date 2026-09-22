@@ -30,8 +30,6 @@ using Phase = Engine::Phase;
 
 constexpr size_t live_log_limit = 200;
 constexpr int64_t live_wheel_hold_ns = 700'000'000; // how long a scroll stays on screen
-// The contact slot live touches use; script playback owns the others.
-constexpr int live_finger = 0;
 
 // Also used by the log panel.
 const char* mouse_button_name(const uint32_t button) {
@@ -78,22 +76,14 @@ std::string join_names(const std::vector<uint16_t>& usages) {
     return text;
 }
 
-// Why Live control cannot be used right now, shown under the preview so it
-// is never just a disabled toggle with no explanation. Playing a script does
-// not "stop" the player in any lasting sense — it is only that loading a
-// script's events for playback and forwarding Live input are two uses of the
-// same connection that cannot run at once — hence the wording below.
-const char* live_unavailable_reason(const Engine::Phase phase, const bool connected) {
-    switch (phase) {
-    case Phase::playing:
-        return "Live control is unavailable while a script is loaded and playing. Stop the "
-               "player (not the connection) to use the phone from here.";
-    case Phase::connected:
-    case Phase::live:
-        return connected ? "Turn on Live control below to use the phone from here." : "";
-    default:
-        return "Connect a device to use live control.";
-    }
+// Why Live control is not on right now, shown under the preview so it is
+// never just a disabled toggle with no explanation. Live control works
+// alongside script playback (see Engine::live_active()), so the only reason
+// it might not be on yet is that nobody has turned it on, or there is no
+// connection to turn it on for.
+const char* live_unavailable_reason(const bool connected) {
+    return connected ? "Turn on Live control below to use the phone from here."
+                      : "Connect a device to use live control.";
 }
 
 } // namespace
@@ -126,6 +116,11 @@ ImVec2 App::live_to_preview(const ImVec2 device) const noexcept {
     }
 }
 
+int App::live_finger() const noexcept {
+    const uint32_t contacts = engine_.connected_setup().touch.max_contacts;
+    return contacts > 0 ? static_cast<int>(contacts) - 1 : 0;
+}
+
 float App::live_preview_aspect() const noexcept {
     // Connected: the screen in use. Not yet: the settings that would be used,
     // so the preview already has the right shape while setting up.
@@ -146,10 +141,7 @@ float App::live_preview_aspect() const noexcept {
     return (live_rotation_ & 1) != 0 ? height / width : width / height;
 }
 
-bool App::live_ready() const {
-    const Phase phase = engine_.phase();
-    return phase == Phase::connected || phase == Phase::live;
-}
+bool App::live_ready() const { return engine_.connected(); }
 
 void App::live_log(std::string text, const ImU32 color) {
     live_log_lines_.push_back(LiveLogEntry{std::move(text), color, aoap::Timing::now_ns()});
@@ -160,7 +152,7 @@ void App::live_log(std::string text, const ImU32 color) {
 
 void App::live_enable(const bool on) {
     if (on) {
-        if (engine_.phase() != Phase::connected)
+        if (!engine_.connected())
             return;
         engine_.set_observing(true);
         engine_.live_start();
@@ -226,9 +218,27 @@ void App::drain_observed() {
             [&](const auto& value) {
                 using T = std::decay_t<decltype(value)>;
                 if constexpr (std::is_same_v<T, aoap::TouchEvent>) {
-                    live_touching_ = value.state;
-                    live_touch_x_ = value.x;
-                    live_touch_y_ = value.y;
+                    // The dot drawn on the preview is Live's own contact
+                    // only; a script's other fingers (now possibly moving at
+                    // the same time — see Engine::live_active()) show up in
+                    // the active-touches list below instead.
+                    if (value.finger_id == live_finger()) {
+                        live_touching_ = value.state;
+                        live_touch_x_ = value.x;
+                        live_touch_y_ = value.y;
+                    }
+                    const auto found = std::find_if(
+                        touch_contacts_active_.begin(), touch_contacts_active_.end(),
+                        [&](const TouchContact& c) { return c.finger_id == value.finger_id; });
+                    if (value.state) {
+                        if (found != touch_contacts_active_.end())
+                            *found = TouchContact{value.finger_id, value.x, value.y};
+                        else
+                            touch_contacts_active_.push_back(
+                                TouchContact{value.finger_id, value.x, value.y});
+                    } else if (found != touch_contacts_active_.end()) {
+                        touch_contacts_active_.erase(found);
+                    }
                 } else if constexpr (std::is_same_v<T, aoap::MouseMove>) {
                     live_move_sent_x_ = value.dx;
                     live_move_sent_y_ = value.dy;
@@ -254,16 +264,17 @@ void App::drain_observed() {
 }
 
 void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
-    if (engine_.phase() != Phase::live || surface_size.x <= 0.0f || surface_size.y <= 0.0f)
+    if (!engine_.live_active() || surface_size.x <= 0.0f || surface_size.y <= 0.0f)
         return;
     const ImGuiIO& io = ImGui::GetIO();
     const aoap::ProfileSetup setup = engine_.connected_setup();
 
     if (live_.touch && setup.touch.enabled) {
-        // The pointer is a single finger. Where it sits inside the preview is
-        // kept as a fraction, turned back into the phone's own orientation,
-        // and only then scaled to the touchscreen's coordinates, so the
-        // preview's shape never changes where a touch lands.
+        // Only the press/release edge is sent from here; while a contact
+        // stays down, on_cursor() sends its updated position straight from
+        // the window system's callback instead of waiting for this
+        // once-per-frame pass (see its comment — the same reasoning as mouse
+        // mode's relative motion below).
         const ImVec2 preview(
             std::clamp((io.MousePos.x - surface_min.x) / surface_size.x, 0.0f, 1.0f),
             std::clamp((io.MousePos.y - surface_min.y) / surface_size.y, 0.0f, 1.0f));
@@ -275,8 +286,8 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
             static_cast<int32_t>(device.y * static_cast<float>(setup.touch.height)), 0,
             setup.touch.height - 1);
         const bool down = ImGui::IsMouseDown(ImGuiMouseButton_Left);
-        if (down != live_touching_ || (down && (x != live_touch_x_ || y != live_touch_y_)))
-            engine_.live_send(aoap::TouchEvent{live_finger, down, x, y});
+        if (down != live_touching_)
+            engine_.live_send(aoap::TouchEvent{live_finger(), down, x, y});
         return;
     }
 
@@ -321,7 +332,7 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
 }
 
 void App::live_keyboard() {
-    if (engine_.phase() != Phase::live || !live_.key)
+    if (!engine_.live_active() || !live_.key)
         return;
     const aoap::ProfileSetup setup = engine_.connected_setup();
     if (!setup.key.enabled)
@@ -336,7 +347,7 @@ void App::live_keyboard() {
 }
 
 void App::live_paste_clipboard() {
-    if (engine_.phase() != Phase::live || !live_.key)
+    if (!engine_.live_active() || !live_.key)
         return;
     if (!engine_.connected_setup().key.enabled)
         return;
@@ -378,7 +389,7 @@ void App::live_paste_clipboard() {
 }
 
 void App::live_gamepad() {
-    if (engine_.phase() != Phase::live || !live_.gamepad)
+    if (!engine_.live_active() || !live_.gamepad)
         return;
     const aoap::ProfileSetup setup = engine_.connected_setup();
     if (!setup.gamepad.enabled)
@@ -473,7 +484,7 @@ void App::live_gamepad() {
 void App::draw_live() {
     drain_observed();
 
-    const bool running = engine_.phase() == Phase::live;
+    const bool running = engine_.live_active();
     if (running) {
         live_keyboard();
         live_gamepad();
@@ -553,7 +564,7 @@ void App::draw_live_surface(const ImVec2 size) {
     }
     list->AddRect(p0, p1, ImGui::GetColorU32(theme::border_strong), px(10), px(1.5f));
 
-    const bool running = engine_.phase() == Phase::live;
+    const bool running = engine_.live_active();
     // The whole surface takes the pointer while live control is on.
     ImGui::SetCursorScreenPos(p0);
     ImGui::InvisibleButton("##surface", ImVec2(width, height),
@@ -629,7 +640,7 @@ void App::draw_live_surface(const ImVec2 size) {
     }
 
     if (!running) {
-        const char* hint = live_unavailable_reason(engine_.phase(), engine_.connected());
+        const char* hint = live_unavailable_reason(engine_.connected());
         if (hint[0] != '\0') {
             ImGui::PushFont(nullptr, theme::font_small);
             const float wrap_width = std::max(width - px(40), px(120));
@@ -665,13 +676,14 @@ void App::draw_live_surface(const ImVec2 size) {
     // The way out of full screen itself, always shown while it is active —
     // full screen replaces the window chrome and the controls bar below can
     // scroll out of view, so this is the one place guaranteed to be on
-    // screen no matter what else is happening.
+    // screen no matter what else is happening. There is no keyboard way out
+    // any more; the side panel (hover the edge) always has the button, and
+    // touch mode also has the right-click menu.
     if (live_fullscreen_) {
         char text[96];
-        std::snprintf(text, sizeof text, "Esc or %s exits full screen%s",
-                     glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_
-                                                             : GLFW_KEY_F11),
-                     live_.mouse ? "" : ". Right-click for controls");
+        std::snprintf(text, sizeof text, "%s",
+                     live_.mouse ? "Hover the edge for full screen controls"
+                                 : "Right-click, or hover the edge, for full screen controls");
         ImGui::PushFont(nullptr, theme::font_small);
         const ImVec2 text_size = ImGui::CalcTextSize(text);
         const float pad_x = px(10);
@@ -688,7 +700,7 @@ void App::draw_live_surface(const ImVec2 size) {
 
 void App::draw_live_fullscreen() {
     drain_observed();
-    if (engine_.phase() == Phase::live) {
+    if (engine_.live_active()) {
         live_keyboard();
         live_gamepad();
     }
@@ -751,7 +763,7 @@ void App::draw_live_fullscreen() {
 
 void App::draw_live_fullscreen_switches(const float width) {
     const uint32_t available = engine_.connected_profiles();
-    bool on = engine_.phase() == Phase::live;
+    bool on = engine_.live_active();
     ImGui::BeginDisabled(!live_ready());
     if (ui::toggle("Live control", &on))
         live_enable(on);
@@ -784,10 +796,6 @@ void App::draw_live_fullscreen_switches(const float width) {
 
     if (ui::button("Exit full screen", ImVec2(width, 0)))
         live_fullscreen_ = false;
-    ImGui::SetItemTooltip(
-        "Esc always exits full screen too, even while Keyboard is on. %s does as well "
-        "(set below, in the normal view).",
-        glfw_key_name(live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11));
 }
 
 void App::draw_live_log(const ImVec2 size) {
@@ -813,10 +821,8 @@ void App::draw_live_log(const ImVec2 size) {
     // What is held right now, then what happened, newest at the bottom.
     const aoap::ProfileSetup setup = engine_.connected_setup();
     ImGui::PushFont(nullptr, theme::font_small);
-    if (live_touching_ && setup.touch.enabled) {
-        ImGui::TextColored(theme::vec(theme::accent_text), "Touch %d, %d", live_touch_x_,
-                           live_touch_y_);
-    }
+    if (setup.touch.enabled)
+        draw_touch_contacts();
     if (!live_buttons_.empty()) {
         std::string text;
         for (const uint32_t button : live_buttons_)
@@ -874,6 +880,24 @@ void App::draw_live_log(const ImVec2 size) {
     ImGui::EndChild();
 }
 
+void App::draw_touch_contacts() {
+    if (touch_contacts_active_.empty())
+        return;
+    std::vector<TouchContact> sorted = touch_contacts_active_;
+    std::sort(sorted.begin(), sorted.end(), [](const TouchContact& a, const TouchContact& b) {
+        return a.finger_id < b.finger_id;
+    });
+    const int live = live_finger();
+    for (const TouchContact& contact : sorted) {
+        // Live's own contact is called out, since it is the one this tab's
+        // pointer drives directly; the rest come from playback (see
+        // Engine::live_active() — both can now be down at once).
+        ImGui::TextColored(theme::vec(contact.finger_id == live ? theme::accent_text : theme::text),
+                           "Touch #%d  %d, %d%s", contact.finger_id, contact.x, contact.y,
+                           contact.finger_id == live ? "  (Live)" : "");
+    }
+}
+
 void App::draw_live_release_key_setting() {
     ui::caption("Mouse release key");
     const int effective_key = live_release_key_ != 0 ? live_release_key_ : GLFW_KEY_ESCAPE;
@@ -916,46 +940,11 @@ void App::draw_live_release_key_setting() {
     }
 }
 
-void App::draw_live_fullscreen_key_setting() {
-    ui::caption("Full screen key");
-    const int effective_key = live_fullscreen_key_ != 0 ? live_fullscreen_key_ : GLFW_KEY_F11;
-    const float set_width = px(120);
-
-    if (live_fullscreen_key_picking_) {
-        ImGui::PushStyleColor(ImGuiCol_Text, theme::vec(theme::accent_text));
-        ImGui::AlignTextToFramePadding();
-        ImGui::TextUnformatted("Press any key...");
-        ImGui::PopStyleColor();
-        ImGui::SameLine(0, px(10));
-        if (ui::button("Cancel", ImVec2(set_width, 0)))
-            live_fullscreen_key_picking_ = false;
-        gap(1);
-        small_dim("Press the key that should toggle full screen, or Esc to cancel without "
-                  "changing it.");
-        return;
-    }
-
-    ImGui::AlignTextToFramePadding();
-    ImGui::Text("%s", glfw_key_name(effective_key));
-    ImGui::SameLine(0, px(10));
-    if (ui::button("Set...", ImVec2(set_width, 0)))
-        live_fullscreen_key_picking_ = true;
-    if (live_fullscreen_key_ != 0) {
-        ImGui::SameLine(0, px(6));
-        if (ui::button("Reset to F11", ImVec2(px(96), 0)))
-            live_fullscreen_key_ = 0;
-    }
-    gap(1);
-    small_dim("Toggles the Live preview's real full screen (fills the whole screen, not "
-              "just this window). Escape always exits full screen too, no matter what "
-              "this is set to.");
-}
-
 void App::draw_live_controls() {
     ui::begin_card("##live_controls");
     const aoap::ProfileSetup setup = engine_.connected_setup();
     const uint32_t available = engine_.connected_profiles();
-    const bool running = engine_.phase() == Phase::live;
+    const bool running = engine_.live_active();
 
     // Live control on or off.
     bool on = running;
@@ -1112,9 +1101,6 @@ void App::draw_live_controls() {
     // so it never collides with a key the script or the target app needs.
     gap(2);
     draw_live_release_key_setting();
-
-    gap(2);
-    draw_live_fullscreen_key_setting();
 
     gap(2);
     if (running) {

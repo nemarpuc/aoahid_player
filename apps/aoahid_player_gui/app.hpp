@@ -103,6 +103,13 @@ class App {
         ImU32 color;
         int64_t time_ns;
     };
+    // One active touch contact, whoever is driving it — a script row during
+    // playback or the Live tab's own reserved finger (see live_finger()) —
+    // for the "active touches" list shown on both the Live and Player tabs.
+    struct TouchContact {
+        int finger_id;
+        int32_t x, y;
+    };
 
     struct AdbList {
         bool ok{};
@@ -169,14 +176,16 @@ class App {
     void draw_live();
     void draw_live_surface(ImVec2 size);
     void draw_live_log(ImVec2 size);
+    // The "active touches" list: every contact currently down, Live's own
+    // included — shown on the Live tab's log panel and on the Player tab
+    // while a script plays, so multi-finger playback and Live's own touch
+    // (which now runs alongside it) are both visible in detail.
+    void draw_touch_contacts();
     void draw_live_controls();
     // The "Mouse release key" row: shows the configured key, a button to
     // pick a new one, and a note that only that exact key releases the
     // captured pointer once changed.
     void draw_live_release_key_setting();
-    // The "Full screen key" row: shows the configured key, a button to pick
-    // a new one, and a note that Escape always exits full screen too.
-    void draw_live_fullscreen_key_setting();
     // One "Set..." row for a Player tab action's key.
     void draw_player_key_setting(PlayerAction action, const char* title);
     // The key an action currently answers to: the configured one, else its
@@ -221,6 +230,10 @@ class App {
     // Preview fractions to device fractions and back, following the rotation.
     [[nodiscard]] ImVec2 live_to_device(ImVec2 preview) const noexcept;
     [[nodiscard]] ImVec2 live_to_preview(ImVec2 device) const noexcept;
+    // The touch contact slot the Live tab's pointer uses: always the last
+    // declared contact, so it never collides with the lower-numbered slots a
+    // script uses, and Live can keep touching while a script plays.
+    [[nodiscard]] int live_finger() const noexcept;
     // The shape the preview is drawn at, after the rotation.
     [[nodiscard]] float live_preview_aspect() const noexcept;
     void live_keyboard();
@@ -288,7 +301,9 @@ class App {
     bool use_pen_{};
     int touch_width_{1080};
     int touch_height_{2400};
-    int touch_contacts_{10};
+    // 16 by default (the maximum) so the Live tab's reserved top slot (see
+    // live_finger()) is always available alongside whatever a script uses.
+    int touch_contacts_{16};
     int mouse_buttons_{5};
     int key_min_{0x04};
     int key_max_{0x65};
@@ -341,13 +356,6 @@ class App {
     // True while "Set release key" is armed: the next key press this frame
     // is captured as the new live_release_key_ instead of being forwarded.
     bool live_release_key_picking_{};
-    // The GLFW key that toggles real full screen; 0 means "not set", which
-    // is treated as F11. Escape always exits full screen as well, no matter
-    // what this is set to (see on_key()).
-    int live_fullscreen_key_{};
-    // True while "Set..." is armed for the full screen key, same idea as
-    // live_release_key_picking_.
-    bool live_fullscreen_key_picking_{};
     // Configured GLFW keys for the Player tab's play/pause, stop, and
     // back-to-start actions; 0 means "not set", which keeps the default
     // key(s) (see player_key()).
@@ -360,9 +368,13 @@ class App {
     // The last key press seen by on_key(), consumed by frame() to run a
     // remapped action (ImGui's own key state has no GLFW key codes).
     int pending_player_key_{};
-    bool live_touching_{};    // a contact is down
-    int32_t live_touch_x_{};  // last contact position, in device coordinates
+    bool live_touching_{};    // the Live tab's own contact is down
+    int32_t live_touch_x_{};  // its last position, in device coordinates
     int32_t live_touch_y_{};
+    // Every touch contact currently down, Live's own included, keyed by
+    // finger_id; fed by drain_observed() (see Engine::set_observing()) and
+    // shown on both the Live and Player tabs (see draw_touch_contacts()).
+    std::vector<TouchContact> touch_contacts_active_;
     // The preview's shape, as a width:height ratio; 0 follows the connected
     // touchscreen. `live_rotation_` is how many quarter turns clockwise the
     // phone is shown at, for landscape use.
