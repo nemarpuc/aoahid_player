@@ -20,6 +20,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
+#include <iterator>
 
 namespace gui {
 namespace {
@@ -55,6 +56,14 @@ std::string consumer_key_name(const uint16_t usage) {
             return std::string(identity.name);
     }
     return "Media key";
+}
+
+std::string system_key_name(const uint16_t usage) {
+    for (const aoap::spec_detail::SystemIdentity& identity : aoap::spec_detail::system_table) {
+        if (identity.usage == usage)
+            return std::string(identity.name);
+    }
+    return "System key";
 }
 
 // Removes `value` from `set`, or adds it when `present`; returns true when the
@@ -267,6 +276,9 @@ void App::drain_observed() {
                 } else if constexpr (std::is_same_v<T, aoap::ConsumerEvent>) {
                     if (value.down)
                         live_log(consumer_key_name(value.usage), theme::accent_text);
+                } else if constexpr (std::is_same_v<T, aoap::SystemEvent>) {
+                    if (value.down)
+                        live_log(system_key_name(value.usage), theme::accent_text);
                 }
                 // Motion and axis values are shown as they are, not logged.
             },
@@ -402,6 +414,40 @@ void App::live_paste_clipboard() {
 void App::live_press_consumer(const uint16_t usage) {
     engine_.live_send(aoap::ConsumerEvent{usage, true});
     engine_.live_send(aoap::ConsumerEvent{usage, false});
+}
+
+void App::live_press_system(const uint16_t usage) {
+    engine_.live_send(aoap::SystemEvent{usage, true});
+    engine_.live_send(aoap::SystemEvent{usage, false});
+}
+
+void App::draw_live_key_row(const char* const caption, const char* const* const labels,
+                            const uint16_t* const usages, const size_t count,
+                            void (App::*const press)(uint16_t)) {
+    const bool running = engine_.live_active();
+    ui::caption(caption);
+    ImGui::BeginDisabled(!running);
+    // Wraps to a new line whenever the container is too narrow for every
+    // button on one row (the full screen menu is much narrower than the
+    // normal Live tab card), based on the width available where this row
+    // starts.
+    const float button_width = px(78);
+    const float max_width = ImGui::GetContentRegionAvail().x;
+    float line_width = 0.0f;
+    for (size_t index = 0; index < count; ++index) {
+        const float next_width = line_width + (line_width > 0.0f ? px(6) : 0.0f) + button_width;
+        if (line_width > 0.0f && next_width <= max_width) {
+            ImGui::SameLine(0, px(6));
+            line_width = next_width;
+        } else {
+            line_width = button_width;
+        }
+        if (ui::button(labels[index], ImVec2(button_width, 0)))
+            (this->*press)(usages[index]);
+    }
+    ImGui::EndDisabled();
+    if (!running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Turn on Live control to use these keys.");
 }
 
 void App::live_gamepad() {
@@ -693,13 +739,15 @@ void App::draw_live_surface(const ImVec2 size) {
     // full screen replaces the window chrome and the controls bar below can
     // scroll out of view, so this is the one place guaranteed to be on
     // screen no matter what else is happening. There is no keyboard way out
-    // any more; the side panel (hover the edge) always has the button, and
-    // touch mode also has the right-click menu.
+    // any more, and no side panel either (see draw_live_fullscreen()) — a
+    // right-click is the only way, and mouse mode's own right button is not
+    // taken until the pointer is actually captured.
     if (live_fullscreen_) {
         char text[96];
         std::snprintf(text, sizeof text, "%s",
-                     live_.mouse ? "Hover the edge for full screen controls"
-                                 : "Right-click, or hover the edge, for full screen controls");
+                     live_mouse_captured_ ? "Release the pointer, then right-click, for "
+                                            "full screen controls"
+                                          : "Right-click for full screen controls");
         ImGui::PushFont(nullptr, theme::font_small);
         const ImVec2 text_size = ImGui::CalcTextSize(text);
         const float pad_x = px(10);
@@ -721,17 +769,17 @@ void App::draw_live_fullscreen() {
         live_gamepad();
     }
 
-    // The preview fills the whole window. The controls never sit on the phone,
-    // so a tap anywhere on it always reaches the phone: they live in the side
-    // margin the phone leaves (shown while the pointer is in that margin), and
-    // in a right-click menu that works even when there is no margin. Touch
-    // mode only uses the left button; in mouse mode the right button belongs
-    // to the phone, so the menu is off there.
+    // The preview fills the whole window. The controls never sit on the
+    // phone, so a tap anywhere on it always reaches the phone: they live in
+    // a right-click menu instead — the only way to reach them, so it never
+    // pops up on its own the way a hover-triggered panel would. Mouse
+    // mode's own right button is not taken until the pointer is actually
+    // captured, so the menu still works right up to that point.
     draw_live_surface(ImGui::GetContentRegionAvail());
     const ImVec2 surface_min = ImGui::GetItemRectMin();
     const ImVec2 surface_max = ImGui::GetItemRectMax();
 
-    if (!live_.mouse && !live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
+    if (!live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Right) &&
         ImGui::IsMouseHoveringRect(surface_min, surface_max))
         ImGui::OpenPopup("##live_full_menu");
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
@@ -740,44 +788,10 @@ void App::draw_live_fullscreen() {
         ImGui::EndPopup();
     }
     ImGui::PopStyleVar();
-
-    const float panel_w = px(176);
-    const float left = live_phone_min_.x - surface_min.x;
-    const float right = surface_max.x - live_phone_max_.x;
-    const bool on_right = right >= left;
-    const float margin = on_right ? right : left;
-    if (margin < panel_w + px(16))
-        return;
-
-    const float column_x = on_right ? live_phone_max_.x : surface_min.x;
-    const bool gesture = live_touching_ || !live_buttons_.empty();
-    const bool hovered = ImGui::IsMouseHoveringRect(
-        ImVec2(column_x, surface_min.y), ImVec2(column_x + margin, surface_max.y), false);
-    if ((hovered && !gesture) || live_fullscreen_bar_seen_ == 0.0)
-        live_fullscreen_bar_seen_ = ImGui::GetTime();
-    const double since = ImGui::GetTime() - live_fullscreen_bar_seen_;
-    const float alpha = static_cast<float>(std::clamp(1.4 - since, 0.0, 1.0));
-    if (alpha <= 0.02f)
-        return;
-
-    const float panel_h = ImGui::GetFrameHeightWithSpacing() * 6 + px(28);
-    ImGui::SetCursorScreenPos(
-        ImVec2(column_x + (margin - panel_w) * 0.5f,
-               std::max(surface_min.y, (surface_min.y + surface_max.y - panel_h) * 0.5f)));
-    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, alpha);
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x0E0F13, 210));
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
-    ImGui::BeginChild("##live_full_controls", ImVec2(panel_w, panel_h),
-                      ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
-    ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
-    draw_live_fullscreen_switches(panel_w - px(28));
-    ImGui::EndChild();
-    ImGui::PopStyleVar(); // Alpha
 }
 
 void App::draw_live_fullscreen_switches(const float width) {
+    const aoap::ProfileSetup setup = engine_.connected_setup();
     const uint32_t available = engine_.connected_profiles();
     bool on = engine_.live_active();
     ImGui::BeginDisabled(!live_ready());
@@ -810,6 +824,34 @@ void App::draw_live_fullscreen_switches(const float width) {
         ImGui::EndDisabled();
     }
 
+    if (setup.consumer.enabled) {
+        gap(2);
+        static const char* const labels[] = {"Prev", "Play/Pause", "Next", "Stop",
+                                              "Vol -", "Mute",      "Vol +"};
+        static const uint16_t usages[] = {
+            aoap::spec_detail::consumer_usage_previous_track,
+            aoap::spec_detail::consumer_usage_play_pause,
+            aoap::spec_detail::consumer_usage_next_track,
+            aoap::spec_detail::consumer_usage_stop,
+            aoap::spec_detail::consumer_usage_volume_down,
+            aoap::spec_detail::consumer_usage_mute,
+            aoap::spec_detail::consumer_usage_volume_up,
+        };
+        draw_live_key_row("Media keys", labels, usages, std::size(labels),
+                          &App::live_press_consumer);
+    }
+    if (setup.system.enabled) {
+        gap(2);
+        static const char* const labels[] = {"Power", "Sleep", "Wake Up"};
+        static const uint16_t usages[] = {
+            aoap::spec_detail::system_usage_power_down,
+            aoap::spec_detail::system_usage_sleep,
+            aoap::spec_detail::system_usage_wake_up,
+        };
+        draw_live_key_row("Power", labels, usages, std::size(labels), &App::live_press_system);
+    }
+
+    gap(2);
     if (ui::button("Exit full screen", ImVec2(width, 0)))
         live_fullscreen_ = false;
 }
@@ -1010,10 +1052,8 @@ void App::draw_live_controls() {
     ui::align_right(full_width + rotate_width + ratio_width * 2 + reset_width + px(14) +
                     gap_x * 5);
     if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
-                        "Fill the window with the preview")) {
+                        "Fill the window with the preview"))
         live_fullscreen_ = true;
-        live_fullscreen_bar_seen_ = ImGui::GetTime();
-    }
     ImGui::SameLine(0, gap_x);
 
     char turn[32];
@@ -1073,37 +1113,35 @@ void App::draw_live_controls() {
     else
         ImGui::SetItemTooltip("Types the clipboard's text on the phone. Ctrl+Shift+V");
 
-    // Media keys: one-shot buttons (a quick press then release), not a
-    // continuous pointer profile like the others, so there is no on/off
-    // toggle for them — only whether Live control itself is on.
+    // Media keys, and power/sleep/wake: one-shot buttons (a quick press
+    // then release), not a continuous pointer profile like the others, so
+    // there is no on/off toggle for them — only whether Live control
+    // itself is on (see draw_live_key_row()).
     if (setup.consumer.enabled) {
         gap(2);
-        ui::caption("Media keys");
-        ImGui::BeginDisabled(!running);
-        struct MediaButton {
-            const char* label;
-            uint16_t usage;
+        static const char* const labels[] = {"Prev", "Play/Pause", "Next", "Stop",
+                                              "Vol -", "Mute",      "Vol +"};
+        static const uint16_t usages[] = {
+            aoap::spec_detail::consumer_usage_previous_track,
+            aoap::spec_detail::consumer_usage_play_pause,
+            aoap::spec_detail::consumer_usage_next_track,
+            aoap::spec_detail::consumer_usage_stop,
+            aoap::spec_detail::consumer_usage_volume_down,
+            aoap::spec_detail::consumer_usage_mute,
+            aoap::spec_detail::consumer_usage_volume_up,
         };
-        const MediaButton media_buttons[] = {
-            {"Prev", aoap::spec_detail::consumer_usage_previous_track},
-            {"Play/Pause", aoap::spec_detail::consumer_usage_play_pause},
-            {"Next", aoap::spec_detail::consumer_usage_next_track},
-            {"Stop", aoap::spec_detail::consumer_usage_stop},
-            {"Vol -", aoap::spec_detail::consumer_usage_volume_down},
-            {"Mute", aoap::spec_detail::consumer_usage_mute},
-            {"Vol +", aoap::spec_detail::consumer_usage_volume_up},
+        draw_live_key_row("Media keys", labels, usages, std::size(labels),
+                          &App::live_press_consumer);
+    }
+    if (setup.system.enabled) {
+        gap(2);
+        static const char* const labels[] = {"Power", "Sleep", "Wake Up"};
+        static const uint16_t usages[] = {
+            aoap::spec_detail::system_usage_power_down,
+            aoap::spec_detail::system_usage_sleep,
+            aoap::spec_detail::system_usage_wake_up,
         };
-        bool first_media_button = true;
-        for (const MediaButton& button : media_buttons) {
-            if (!first_media_button)
-                ImGui::SameLine(0, px(6));
-            first_media_button = false;
-            if (ui::button(button.label, ImVec2(px(78), 0)))
-                live_press_consumer(button.usage);
-        }
-        ImGui::EndDisabled();
-        if (!running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Turn on Live control to use the media keys.");
+        draw_live_key_row("Power", labels, usages, std::size(labels), &App::live_press_system);
     }
 
     // Reference image: an optional picture over the preview (a screenshot

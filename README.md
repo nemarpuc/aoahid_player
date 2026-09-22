@@ -61,9 +61,9 @@ is logged.
    once the phone reappears. Tick one or more (a single phone is ticked for
    you).
 2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen, media keys. Each one's settings open when it is
-   switched on. *Media keys* is a fixed set — Volume Up/Down, Mute, Play/
-   Pause, Previous/Next Track, Stop — with no CSV row of its own; it is
+   keyboard, gamepad, pen, media keys, system control. Each one's settings open when it is
+   switched on. *Media keys* and *System Control* are fixed sets — Volume Up/Down, Mute, Play/
+   Pause, Previous/Next Track, Stop; and Power, Sleep, Wake Up — with no CSV rows of their own; they are
    pressed from the Live tab's buttons or the control API only.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
@@ -140,9 +140,11 @@ inside the preview is taken as a fraction, turned back into the phone's own
 orientation, and only then scaled to the connected resolution. The expand
 button switches the preview to a real, OS-level full screen window (not just
 this window's own layout filling its still-windowed frame) with just the
-preview and the input switches; *Exit full screen* in the side panel (hover
-the edge to bring it up) or, outside Mouse mode, a right-click always returns
-— there is no keyboard shortcut for full screen any more, so it never
+preview and the input switches, reached by right-clicking the preview —
+the only way in, so nothing pops up on its own; Mouse mode's own right
+button is not taken until the pointer is actually captured, so the menu
+still works right up to that point. *Exit full screen* is in that menu.
+There is no keyboard shortcut for full screen any more, so it never
 conflicts with a key a script or the target app needs. The preview shows why
 Live control is unavailable right now (no device connected) under itself, in
 both the normal and the full-screen view, instead of just a disabled toggle.
@@ -267,6 +269,7 @@ both touch the screen at once without colliding.
 | `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
 | `POST /consumer` | `key` (`volume_up`, `volume_down`, `mute`, `play_pause`, `previous_track`, `next_track`, `stop`) | One pulse (press, then release); needs the Media keys profile. |
+| `POST /system` | `key` (`power`, `sleep`, `wake_up`) | One pulse (press, then release); needs the System Control profile. |
 
 ## aoa_touch — usage
 

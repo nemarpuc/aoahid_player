@@ -20,6 +20,8 @@ Profile profile_of(const EventPayload& payload) noexcept {
                 return Profile::pen;
             else if constexpr (std::is_same_v<T, ConsumerEvent>)
                 return Profile::consumer;
+            else if constexpr (std::is_same_v<T, SystemEvent>)
+                return Profile::system;
             else
                 return Profile::gamepad;
         },
@@ -52,6 +54,8 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
                 return device.gamepad().dpad(value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, ConsumerEvent>) {
                 return device.consumer().set(value.usage, value.down);
+            } else if constexpr (std::is_same_v<T, SystemEvent>) {
+                return device.system().set(value.usage, value.down);
             } else {
                 aoahid_pen_sample sample{};
                 sample.in_range = value.in_range ? 1U : 0U;

@@ -186,6 +186,8 @@ void App::draw_profiles_card() {
          pen_mode_ == 0 ? "on screen" : "tablet"},
         {"Media keys##consumer", &use_consumer_, &App::draw_consumer_settings,
          std::to_string(aoap::spec_detail::consumer_table.size()) + " keys"},
+        {"Power/Sleep/Wake##system", &use_system_, &App::draw_system_settings,
+         std::to_string(aoap::spec_detail::system_table.size()) + " keys"},
     };
     bool first = true;
     for (const Entry& entry : entries) {
@@ -340,6 +342,13 @@ void App::draw_pen_settings() {
 void App::draw_consumer_settings() {
     std::string keys;
     for (const aoap::spec_detail::ConsumerIdentity& identity : aoap::spec_detail::consumer_table)
+        keys += (keys.empty() ? "" : ", ") + std::string(identity.name);
+    small_dim(("Fixed set, from the Live tab or the control API: " + keys + ".").c_str());
+}
+
+void App::draw_system_settings() {
+    std::string keys;
+    for (const aoap::spec_detail::SystemIdentity& identity : aoap::spec_detail::system_table)
         keys += (keys.empty() ? "" : ", ") + std::string(identity.name);
     small_dim(("Fixed set, from the Live tab or the control API: " + keys + ".").c_str());
 }

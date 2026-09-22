@@ -61,6 +61,14 @@ struct ConsumerSetup {
     bool enabled{};
 };
 
+// Power Down, Sleep, Wake Up (System Control page): a second, independent
+// fixed set from ConsumerSetup — see spec_detail::system_table — since HUT
+// System Control is a different Application Collection from Consumer
+// Control and libaoahid speaks one per Spec/Node.
+struct SystemSetup {
+    bool enabled{};
+};
+
 struct ProfileSetup {
     TouchSetup touch;
     MouseSetup mouse;
@@ -68,6 +76,7 @@ struct ProfileSetup {
     GamepadSetup gamepad;
     PenSetup pen;
     ConsumerSetup consumer;
+    SystemSetup system;
 };
 
 namespace spec_detail {
@@ -172,6 +181,22 @@ inline constexpr std::array<ConsumerIdentity, 7> consumer_table{{
     {"Stop", consumer_usage_stop, AOAHID_USAGE_ONE_SHOT, "KEY_STOPCD"},
 }};
 
+// HUT 0x01/0x80 (System Control) usages this player exposes, same shape and
+// reasoning as consumer_table; all three are One Shot Controls.
+inline constexpr uint16_t system_usage_power_down = 0x81;
+inline constexpr uint16_t system_usage_sleep = 0x82;
+inline constexpr uint16_t system_usage_wake_up = 0x83;
+
+// Reuses ConsumerIdentity's shape: name/usage/semantic/evidence is exactly
+// what a toggle_node_ref usage needs, regardless of which HUT page it is on.
+using SystemIdentity = ConsumerIdentity;
+
+inline constexpr std::array<SystemIdentity, 3> system_table{{
+    {"Power", system_usage_power_down, AOAHID_USAGE_ONE_SHOT, "KEY_POWER"},
+    {"Sleep", system_usage_sleep, AOAHID_USAGE_ONE_SHOT, "KEY_SLEEP"},
+    {"Wake Up", system_usage_wake_up, AOAHID_USAGE_ONE_SHOT, "KEY_WAKEUP"},
+}};
+
 } // namespace spec_detail
 
 inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
@@ -188,6 +213,8 @@ inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
         mask |= profile_bit(Profile::pen);
     if (setup.consumer.enabled)
         mask |= profile_bit(Profile::consumer);
+    if (setup.system.enabled)
+        mask |= profile_bit(Profile::system);
     return mask;
 }
 
@@ -315,6 +342,8 @@ class SpecSet {
         if (setup.pen.enabled && !build_pen(setup.pen, error))
             return false;
         if (setup.consumer.enabled && !build_consumer(setup.consumer, error))
+            return false;
+        if (setup.system.enabled && !build_system(setup.system, error))
             return false;
         return true;
     }
@@ -482,6 +511,35 @@ class SpecSet {
         aoahid_spec* spec = nullptr;
         const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
         return store(Profile::consumer, result, spec, "media key", error);
+    }
+
+    bool build_system(const SystemSetup&, std::string& error) {
+        using namespace spec_detail;
+        std::array<uint16_t, system_table.size()> usages{};
+        std::array<aoahid_usage_semantic, system_table.size()> semantics{};
+        std::array<const char*, system_table.size()> linux_types{};
+        std::array<const char*, system_table.size()> linux_codes{};
+        for (size_t index = 0; index < system_table.size(); ++index) {
+            const SystemIdentity& identity = system_table[index];
+            usages[index] = identity.usage;
+            semantics[index] = identity.semantic;
+            linux_types[index] = "EV_KEY";
+            linux_codes[index] = identity.linux_code;
+        }
+
+        aoahid_toggle_options options{};
+        options.struct_size = static_cast<uint32_t>(sizeof(options));
+        options.application_page = 0x01; // Generic Desktop
+        options.application_usage = 0x80; // System Control
+        options.field_page = 0x01;
+        options.allowed_usages = usages.data();
+        options.allowed_usage_count = usages.size();
+        options.usage_semantics = semantics.data();
+        options.expected_linux_event_types = linux_types.data();
+        options.expected_linux_codes = linux_codes.data();
+        aoahid_spec* spec = nullptr;
+        const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
+        return store(Profile::system, result, spec, "system control", error);
     }
 };
 

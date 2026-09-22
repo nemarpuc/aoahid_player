@@ -142,6 +142,7 @@ Settings App::current_settings() const {
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
     settings.use_consumer = use_consumer_;
+    settings.use_system = use_system_;
     settings.api_enabled = api_enabled_;
     settings.api_port = api_port_;
     settings.record_coords = record_coords_;
@@ -196,6 +197,7 @@ void App::apply_settings(const Settings& settings) {
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
     use_consumer_ = settings.use_consumer;
+    use_system_ = settings.use_system;
     api_enabled_ = settings.api_enabled;
     api_port_ = settings.api_port;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
@@ -281,6 +283,7 @@ aoap::ProfileSetup App::build_setup() const {
     setup.pen.mode = pen_mode_ == 0 ? AOAHID_PEN_DIRECT_SCREEN : AOAHID_PEN_INDIRECT_TABLET;
     aoap::resolve_pen_surface(setup);
     setup.consumer.enabled = use_consumer_;
+    setup.system.enabled = use_system_;
     return setup;
 }
 
@@ -749,8 +752,11 @@ void App::on_cursor(const double x, const double y) {
             const int32_t ty = std::clamp(
                 static_cast<int32_t>(device.y * static_cast<float>(setup.touch.height)), 0,
                 setup.touch.height - 1);
-            if (tx != live_touch_x_ || ty != live_touch_y_)
+            if (tx != live_touch_x_ || ty != live_touch_y_) {
+                live_touch_x_ = tx;
+                live_touch_y_ = ty;
                 engine_.live_send(aoap::TouchEvent{live_finger(), true, tx, ty});
+            }
         }
     }
 
@@ -850,9 +856,8 @@ void App::frame() {
         }
     }
     const bool forwarding_keys = engine_.live_active() && live_.key;
-    // The pointer capture's own release key, and full screen's own Escape
-    // and configurable toggle key, are all handled in on_key(), straight
-    // from the window system, so they work whichever key is configured and
+    // The pointer capture's own release key is handled in on_key(), straight
+    // from the window system, so it works whichever key is configured and
     // whether or not Keyboard forwarding is on.
     // Live control owns the keyboard while it is forwarding keys.
     if (forwarding_keys)

@@ -28,10 +28,13 @@ struct PenSample    { bool in_range, tip; int32_t x, y, pressure; };
 // stop). Live/API only: no CSV row prefix exists for this, so it never
 // appears in a loaded or recorded EventScript (see Profile::consumer).
 struct ConsumerEvent{ uint16_t usage; bool down; };
+// A System Control-page key (power down, sleep, wake up). Live/API only,
+// same as ConsumerEvent (see Profile::system).
+struct SystemEvent  { uint16_t usage; bool down; };
 
 using EventPayload = std::variant<TouchEvent, MouseMove, MouseButton, KeyEvent,
                                    GamepadButton, GamepadAxis, GamepadDpad, PenSample,
-                                   ConsumerEvent>;
+                                   ConsumerEvent, SystemEvent>;
 
 struct EventRecord {
     EventPayload payload;

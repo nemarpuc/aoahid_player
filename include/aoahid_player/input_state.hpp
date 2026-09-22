@@ -52,6 +52,9 @@ class InputState {
     // Separate from keys_: a Consumer-page usage and a Keyboard-page usage
     // can share the same numeric value (see ConsumerEvent).
     std::bitset<256> consumer_keys_{};
+    // Separate again: a System Control-page usage (see SystemEvent) can
+    // likewise share a numeric value with either of the above.
+    std::bitset<256> system_keys_{};
     std::vector<uint32_t> mouse_buttons_; // sorted
     std::vector<uint32_t> pad_buttons_;   // sorted
     std::array<int32_t, max_axes> axes_{};

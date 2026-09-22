@@ -30,6 +30,7 @@ struct Settings {
     bool use_pen{};
     int pen_mode{}; // 0 direct screen, 1 indirect tablet
     bool use_consumer{}; // media keys: volume, mute, play/pause, tracks, stop
+    bool use_system{};   // power, sleep, wake up
 
     // The local HTTP control API (see control_api.hpp). Off by default;
     // binds 127.0.0.1 only.
