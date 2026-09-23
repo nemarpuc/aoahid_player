@@ -177,6 +177,7 @@ class App {
     void draw_key_settings();
     void draw_gamepad_settings();
     void draw_pen_settings();
+    void draw_toggle_settings();
     void draw_connect_card();
     // The local HTTP control API's on/off toggle and port; see
     // control_api.hpp.
@@ -323,6 +324,7 @@ class App {
     bool use_key_{};
     bool use_gamepad_{};
     bool use_pen_{};
+    bool use_toggle_{true};
     int touch_width_{1080};
     int touch_height_{2400};
     // 16 by default (the maximum) so the Live tab's reserved top slot (see

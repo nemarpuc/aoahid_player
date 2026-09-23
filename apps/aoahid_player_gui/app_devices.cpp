@@ -119,8 +119,17 @@ void App::draw_devices_card() {
         ui::draw_text_ellipsized(list, ImVec2(text_x, p0.y + row * 0.5f - line - px(1)),
                                  ImGui::GetColorU32(theme::text), device.product.c_str(),
                                  p1.x - dot_reserve - text_x);
-        char detail[160];
-        std::snprintf(detail, sizeof detail, "%04x:%04x%s%s", device.vendor_id, device.product_id,
+        std::string ports;
+        for (int i = 0; i < device.port_path_length; ++i) {
+            if (i > 0) ports += "-";
+            ports += std::to_string(device.port_path[i]);
+        }
+        if (ports.empty()) ports = "?";
+
+        char detail[200];
+        std::snprintf(detail, sizeof detail, "%04x:%04x  ·  Bus %d Port %s%s%s", 
+                      device.vendor_id, device.product_id, 
+                      device.bus, ports.c_str(),
                       device.serial.empty() ? "" : "  ·  ", device.serial.c_str());
         ui::draw_text_ellipsized(list, ImVec2(text_x, p0.y + row * 0.5f + px(1)),
                                  ImGui::GetColorU32(theme::text_faint), detail,
@@ -184,6 +193,7 @@ void App::draw_profiles_card() {
          std::to_string(pad_buttons_) + " buttons, " + std::to_string(pad_axes_.size()) + " axes"},
         {"Pen##pen", &use_pen_, &App::draw_pen_settings,
          pen_mode_ == 0 ? "on screen" : "tablet"},
+        {"Toggle##toggle", &use_toggle_, &App::draw_toggle_settings, "Consumer control"},
     };
     bool first = true;
     for (const Entry& entry : entries) {
@@ -332,6 +342,10 @@ void App::draw_pen_settings() {
     ImGui::Combo("##mode", &pen_mode_, modes, 2);
     small_dim(use_touch_ ? "Uses the touchscreen resolution."
                          : "Uses a 0-32767 surface the phone maps onto its screen.");
+}
+
+void App::draw_toggle_settings() {
+    small_dim("Enables media controls and system buttons (Home, Back, Volume, Play, etc.).");
 }
 
 

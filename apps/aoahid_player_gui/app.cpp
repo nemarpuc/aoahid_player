@@ -278,6 +278,7 @@ aoap::ProfileSetup App::build_setup() const {
     setup.pen.enabled = use_pen_;
     setup.pen.mode = pen_mode_ == 0 ? AOAHID_PEN_DIRECT_SCREEN : AOAHID_PEN_INDIRECT_TABLET;
     aoap::resolve_pen_surface(setup);
+    setup.toggle.enabled = use_toggle_;
     return setup;
 }
 

@@ -74,6 +74,9 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
         entry.serial = text_or(info->serial, "");
         entry.vendor_id = info->vendor_id;
         entry.product_id = info->product_id;
+        entry.bus = info->bus_number;
+        entry.port_path_length = info->port_path_length;
+        std::memcpy(entry.port_path, info->port_path, std::min<size_t>(sizeof(entry.port_path), info->port_path_length));
         char identity[48];
         std::snprintf(identity, sizeof identity, "%04x:%04x@%u.%u",
                       static_cast<unsigned>(info->vendor_id),

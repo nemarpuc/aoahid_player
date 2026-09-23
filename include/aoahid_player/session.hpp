@@ -21,6 +21,9 @@ struct DeviceEntry {
     std::string serial;
     uint16_t vendor_id{};
     uint16_t product_id{};
+    uint8_t bus{};
+    uint8_t port_path_length{};
+    uint8_t port_path[7]{}; // MAX_PORT_PATH in libusb is 7
     std::string key; // stable across refreshes, for keeping a selection
 };
 
