@@ -61,7 +61,7 @@ is logged.
    once the phone reappears. Tick one or more (a single phone is ticked for
    you).
 2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen. Each one's settings open when it is
+   keyboard, gamepad, pen, toggle. Each one's settings open when it is
    switched on.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
@@ -71,7 +71,9 @@ is logged.
    *Live tab*, below), so a script gets one fewer than this to itself.
 3. *Connect* starts the AOA handshake on the ticked devices right away —
    it does not touch adb or rescan, so it stays fast how ever many devices
-   are ticked.
+   are ticked. *Accessory Mode* switches the ticked devices into AOA
+   accessory mode without taking the connection; to leave this mode
+   afterwards, physically unplug and replug the USB cable.
 
 While connected, the profile choices are locked; disconnect to change them.
 Each connected phone shows a status dot and its report count, and a phone
@@ -113,8 +115,9 @@ that stops responding is dropped without stopping playback for the others.
 A black preview with the phone's shape, for using the phone from the computer
 and watching what the scripts do. Turn on *Live control*, then choose what to
 forward: *Touch* (drag inside the preview), *Mouse* (motion, buttons, and the
-wheel), *Keyboard*, and *Gamepad* (any controller GLFW recognises). Only
-profiles the connection actually has can be turned on, and touch and mouse
+wheel), *Keyboard*, *Gamepad* (any controller GLFW recognises), and *Toggle*
+(media and system keys). Only profiles the connection actually has can be
+turned on, and touch and mouse
 preview lists what is held and what was sent, including an *Active touches*
 line per finger currently down — Live's own included, called out from the
 rest — since a script can now be playing at the same time (see below); the
@@ -128,7 +131,7 @@ inside the preview is taken as a fraction, turned back into the phone's own
 orientation, and only then scaled to the connected resolution. The expand
 button switches the preview to a real, OS-level full screen window (not just
 this window's own layout filling its still-windowed frame) with just the
-preview and the input switches, reached by right-clicking the preview —
+preview and the input switches (including toggle buttons), reached by right-clicking the preview —
 the only way in, so nothing pops up on its own; Mouse mode's own right
 button is not taken until the pointer is actually captured, so the menu
 still works right up to that point. *Exit full screen* is in that menu.
@@ -585,7 +588,7 @@ The main headers in `include/aoahid_player/`:
   pen input.
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
   `ABS_MT_TRACKING_ID`); the older Type A `SYN_MT_REPORT` form is not parsed.
-- libaoahid's toggle, battery, and raw profiles are not exposed.
+- libaoahid's battery and raw profiles are not exposed.
 
 ## License
 
