@@ -772,27 +772,52 @@ void App::draw_live_toggles() {
     const uint32_t available = engine_.connected_profiles();
     const bool present = (available & aoap::profile_bit(aoap::Profile::toggle)) != 0U;
     
-    ImGui::BeginDisabled(!present || !engine_.live_active());
-    const float btn_w = px(40);
-    if (ui::icon_button("##play_pause", ui::Icon::play, btn_w, ui::Tone::primary, "Play/Pause (Toggle)")) {
-        engine_.live_toggle(0x00CDU, 1U);
-        engine_.live_toggle(0x00CDU, 0U);
-    }
+    ImGui::BeginDisabled(!present || !engine_.live_active() || !live_.toggle);
+
+    // Style for transparent background and colored text (icons)
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
+    ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
+
+    const ImVec2 size(px(60), px(28));
+
+    auto toggle_btn = [&](const char* label, uint16_t usage, const char* tooltip) {
+        if (ImGui::Button(label, size)) {
+            engine_.live_toggle(usage, 1U);
+            engine_.live_toggle(usage, 0U);
+        }
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", tooltip);
+    };
+
+    ImGui::TextDisabled("Media");
+    ImGui::SameLine(px(70));
+    toggle_btn("Prev", 0x00B6U, "Previous Track");
     ImGui::SameLine();
-    if (ui::icon_button("##vol_up", ui::Icon::up, btn_w, ui::Tone::primary, "Volume Up (Toggle)")) {
-        engine_.live_toggle(0x00E9U, 1U);
-        engine_.live_toggle(0x00E9U, 0U);
-    }
+    toggle_btn("Play", 0x00CDU, "Play / Pause");
     ImGui::SameLine();
-    if (ui::icon_button("##mute", ui::Icon::close, btn_w, ui::Tone::primary, "Mute (Toggle)")) {
-        engine_.live_toggle(0x00E2U, 1U);
-        engine_.live_toggle(0x00E2U, 0U);
-    }
+    toggle_btn("Next", 0x00B5U, "Next Track");
     ImGui::SameLine();
-    if (ui::icon_button("##ac_new", ui::Icon::restart, btn_w, ui::Tone::primary, "AC New (Toggle)")) {
-        engine_.live_toggle(0x0201U, 1U);
-        engine_.live_toggle(0x0201U, 0U);
-    }
+    toggle_btn("Stop", 0x00B7U, "Stop");
+    ImGui::SameLine();
+    toggle_btn("Vol-", 0x00EAU, "Volume Down");
+    ImGui::SameLine();
+    toggle_btn("Vol+", 0x00E9U, "Volume Up");
+    ImGui::SameLine();
+    toggle_btn("Mute", 0x00E2U, "Mute");
+
+    ImGui::TextDisabled("Sys");
+    ImGui::SameLine(px(70));
+    toggle_btn("Home", 0x0223U, "AC Home");
+    ImGui::SameLine();
+    toggle_btn("Back", 0x0224U, "AC Back");
+    ImGui::SameLine();
+    toggle_btn("Pan", 0x0238U, "AC Pan");
+    ImGui::SameLine();
+    toggle_btn("New", 0x0201U, "AC New");
+
+    ImGui::PopStyleColor(4);
     ImGui::EndDisabled();
 }
 
@@ -957,6 +982,7 @@ void App::draw_live_controls() {
         {"Mouse##live", &live_.mouse, aoap::Profile::mouse},
         {"Keyboard##live", &live_.key, aoap::Profile::key},
         {"Gamepad##live", &live_.gamepad, aoap::Profile::gamepad},
+        {"Toggle##live", &live_.toggle, aoap::Profile::toggle},
     };
     bool first_entry = true;
     for (const Entry& entry : entries) {

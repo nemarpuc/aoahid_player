@@ -431,18 +431,41 @@ class SpecSet {
         options.application_usage = 0x01U; // Consumer Control
         options.field_page = 0x0CU;
 
-        static const uint16_t usages[] = { 0x00CDU, 0x00E9U, 0x00E2U, 0x0201U };
-        static const aoahid_usage_semantic semantics[] = {
-            AOAHID_USAGE_ONE_SHOT,
-            AOAHID_USAGE_RETRIGGER,
-            AOAHID_USAGE_ON_OFF_MAINTAINED,
-            AOAHID_USAGE_SELECTOR_BITMAP
+        static const uint16_t usages[] = {
+            0x00B5U, // Next
+            0x00B6U, // Prev
+            0x00B7U, // Stop
+            0x00CDU, // Play/Pause
+            0x00E2U, // Mute
+            0x00E9U, // Vol Up
+            0x00EAU, // Vol Down
+            0x0223U, // AC Home
+            0x0224U, // AC Back
+            0x0201U  // AC New
         };
-        static const char* expected_types[] = { "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY" };
-        static const char* expected_codes[] = { "KEY_PLAYPAUSE", "KEY_VOLUMEUP", "KEY_MUTE", "KEY_NEW" };
+        static const aoahid_usage_semantic semantics[] = {
+            AOAHID_USAGE_ONE_SHOT,          // Next
+            AOAHID_USAGE_ONE_SHOT,          // Prev
+            AOAHID_USAGE_ONE_SHOT,          // Stop
+            AOAHID_USAGE_ONE_SHOT,          // Play/Pause
+            AOAHID_USAGE_ON_OFF_MAINTAINED, // Mute
+            AOAHID_USAGE_RETRIGGER,         // Vol Up
+            AOAHID_USAGE_RETRIGGER,         // Vol Down
+            AOAHID_USAGE_ONE_SHOT,          // AC Home
+            AOAHID_USAGE_ONE_SHOT,          // AC Back
+            AOAHID_USAGE_SELECTOR_BITMAP    // AC New
+        };
+        static const char* expected_types[] = {
+            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY",
+            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY"
+        };
+        static const char* expected_codes[] = {
+            "KEY_NEXTSONG", "KEY_PREVIOUSSONG", "KEY_STOPCD", "KEY_PLAYPAUSE", "KEY_MUTE",
+            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "KEY_NEW"
+        };
 
         options.allowed_usages = usages;
-        options.allowed_usage_count = 4U;
+        options.allowed_usage_count = 10U;
         options.usage_semantics = semantics;
         options.expected_linux_event_types = expected_types;
         options.expected_linux_codes = expected_codes;

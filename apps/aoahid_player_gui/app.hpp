@@ -107,6 +107,7 @@ class App {
         bool mouse{};
         bool key{};
         bool gamepad{};
+        bool toggle{true};
     };
     // One line of the Live tab's input log.
     struct LiveLogEntry {
