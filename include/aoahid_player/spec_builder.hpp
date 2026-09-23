@@ -441,6 +441,7 @@ class SpecSet {
             0x00EAU, // Vol Down
             0x0223U, // AC Home
             0x0224U, // AC Back
+            0x0238U, // AC Pan
             0x0201U  // AC New
         };
         static const aoahid_usage_semantic semantics[] = {
@@ -453,19 +454,20 @@ class SpecSet {
             AOAHID_USAGE_RETRIGGER,         // Vol Down
             AOAHID_USAGE_ONE_SHOT,          // AC Home
             AOAHID_USAGE_ONE_SHOT,          // AC Back
+            AOAHID_USAGE_ONE_SHOT,          // AC Pan
             AOAHID_USAGE_SELECTOR_BITMAP    // AC New
         };
         static const char* expected_types[] = {
             "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY",
-            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY"
+            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY"
         };
         static const char* expected_codes[] = {
             "KEY_NEXTSONG", "KEY_PREVIOUSSONG", "KEY_STOPCD", "KEY_PLAYPAUSE", "KEY_MUTE",
-            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "KEY_NEW"
+            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "KEY_PAN", "KEY_NEW"
         };
 
         options.allowed_usages = usages;
-        options.allowed_usage_count = 10U;
+        options.allowed_usage_count = 11U;
         options.usage_semantics = semantics;
         options.expected_linux_event_types = expected_types;
         options.expected_linux_codes = expected_codes;
