@@ -87,6 +87,50 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
     return true;
 }
 
+bool Session::accessory(const std::vector<size_t>& selection, std::string& error) {
+    if (connected()) {
+        error = "Already connected. Disconnect first.";
+        return false;
+    }
+    if (discovery_ == nullptr) {
+        error = "Refresh the device list first.";
+        return false;
+    }
+    if (selection.empty()) {
+        error = "Select at least one device.";
+        return false;
+    }
+    if (!ensure_context(error))
+        return false;
+
+    bool success = false;
+    const size_t count = aoahid_discovery_count(discovery_);
+    for (const size_t index : selection) {
+        const aoahid_device_info* info =
+            index < count ? aoahid_discovery_get(discovery_, index) : nullptr;
+        if (info == nullptr) {
+            note(Severity::warning, "A selected device is no longer in the list; refresh it.");
+            continue;
+        }
+
+        aoahid_accessory_options opt{};
+        opt.struct_size = static_cast<uint32_t>(sizeof(opt));
+        opt.strings.manufacturer = "aoahid_player";
+        opt.strings.model = "aoahid_player";
+        opt.strings.description = "aoahid_player accessory mode";
+        
+        const aoahid_result res = aoahid_accessory_start(context_.native_handle(), info, &opt);
+        if (res == AOAHID_OK) {
+            note(Severity::info, "Requested accessory mode for " + device_label(info));
+            success = true;
+        } else {
+            note(Severity::error, "Accessory request failed: " + explain_error(res));
+        }
+    }
+    
+    return success;
+}
+
 bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& setup,
                       std::string& error) {
     if (connected()) {

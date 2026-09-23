@@ -50,6 +50,9 @@ class Session {
     // Closes every device; each Node close sends its neutral report first.
     void disconnect() noexcept;
 
+    // Requests accessory mode for the given entries of the last refresh.
+    bool accessory(const std::vector<size_t>& selection, std::string& error);
+
     [[nodiscard]] bool connected() const noexcept { return !group_.empty(); }
     // The profiles of the current connection; meaningful while connected.
     [[nodiscard]] const ProfileSetup& setup() const noexcept { return setup_; }

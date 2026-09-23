@@ -546,35 +546,10 @@ void Engine::execute(Command& command) {
     }
     case Command::Kind::accessory: {
         session_.disconnect();
-        std::vector<aoap::DeviceEntry> found;
-        if (!session_.refresh(found, error)) {
-            note(aoap::Severity::error, error);
-            set_phase(Phase::idle);
-            break;
-        }
         
-        bool success = false;
-        for (const size_t index : command.selection) {
-            if (index >= found.size())
-                continue;
-            const aoap::DeviceEntry& entry = found[index];
-            aoahid_device_info info{};
-            info.vendor_id = entry.vendor_id;
-            info.product_id = entry.product_id;
-            
-            aoahid_accessory_options opt{};
-            opt.struct_size = static_cast<uint32_t>(sizeof(opt));
-            opt.strings.manufacturer = "aoahid_player";
-            opt.strings.model = "aoahid_player";
-            opt.strings.description = "aoahid_player accessory mode";
-            
-            const aoahid_result res = aoahid_accessory_start(session_.context().native_handle(), &info, &opt);
-            if (res == AOAHID_OK) {
-                note(aoap::Severity::info, "Requested accessory mode for " + entry.product);
-                success = true;
-            } else {
-                note(aoap::Severity::error, "Accessory request failed: " + aoap::explain_error(res));
-            }
+        bool success = session_.accessory(command.selection, error);
+        if (!success && !error.empty()) {
+            note(aoap::Severity::error, error);
         }
         if (success) {
             // Re-fetch list to update UI, but the device will disconnect soon
