@@ -2,6 +2,7 @@
 #include "aoahid_player/session.hpp"
 
 #include <cstdio>
+#include <cstring>
 #include <utility>
 
 namespace aoap {
