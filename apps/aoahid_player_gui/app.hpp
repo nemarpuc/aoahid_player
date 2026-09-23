@@ -214,6 +214,7 @@ class App {
     // The switches and the way out, shared by the side panel and the
     // right-click menu of the full screen view.
     void draw_live_fullscreen_switches(float width);
+    void draw_live_toggles();
     void draw_playlist();
     void draw_playlist_picker();
     void draw_recorder();
@@ -229,6 +230,7 @@ class App {
     // Touches neither adb nor the device list; both are kept current by the
     // startup pre-flight and the Devices card's refresh button.
     void connect();
+    void accessory();
     // The Devices card's refresh button: adb kill-server, then a rescan. No
     // adb start-server, no screen size, and no handshake — just a cheap way
     // to make USB devices visible again after something else was holding

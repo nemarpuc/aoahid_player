@@ -28,7 +28,7 @@ env:
   # tagged aoahid-player build stays reproducible; "latest" would silently
   # change what the released binaries link against.
   AOAHID_REPOSITORY: nemarpuc/Libaoa_hid
-  AOAHID_TAG: latest
+  AOAHID_TAG: v2.0.0
 
 jobs:
   build:

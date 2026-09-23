@@ -402,6 +402,21 @@ void App::load_script(const std::string& path) {
     cursor_ = {};
 }
 
+void App::accessory() {
+    connect_error_.clear();
+    std::vector<size_t> selection;
+    for (size_t index = 0; index < devices_.size(); ++index) {
+        if (selected_.count(devices_[index].key) != 0)
+            selection.push_back(index);
+    }
+    if (selection.empty()) {
+        connect_error_ = devices_.empty() ? "No device found. Plug in a phone and refresh."
+                                          : "Select at least one device.";
+        return;
+    }
+    engine_.accessory(std::move(selection));
+}
+
 void App::connect() {
     connect_error_.clear();
     std::vector<size_t> selection;

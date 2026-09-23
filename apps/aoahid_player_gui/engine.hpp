@@ -73,6 +73,7 @@ class Engine final : private aoap::PlaybackObserver {
     void refresh();
     void connect(std::vector<size_t> selection, aoap::ProfileSetup setup);
     void disconnect();
+    void accessory(std::vector<size_t> selection);
     // `loops` 0 repeats until stopped.
     void play(std::shared_ptr<const aoap::EventScript> script, std::string name,
               aoap::PlaybackPosition start, int64_t loops);
@@ -90,6 +91,7 @@ class Engine final : private aoap::PlaybackObserver {
     void live_stop();
     void live_send(const aoap::EventPayload& payload);
     void live_scroll(int32_t wheel);
+    void live_toggle(uint16_t usage, uint8_t value);
     [[nodiscard]] bool live_active() const noexcept {
         return live_active_.load(std::memory_order_acquire);
     }
@@ -128,7 +130,7 @@ class Engine final : private aoap::PlaybackObserver {
 
   private:
     struct Command {
-        enum class Kind { refresh, connect, disconnect, play, playlist, live, quit } kind;
+        enum class Kind { refresh, connect, disconnect, play, playlist, live, accessory, quit } kind;
         std::vector<size_t> selection;
         aoap::ProfileSetup setup;
         std::shared_ptr<const aoap::EventScript> script;
@@ -140,8 +142,11 @@ class Engine final : private aoap::PlaybackObserver {
     };
     struct LiveItem {
         bool wheel{};
+        bool toggle{};
         aoap::EventPayload payload{aoap::MouseMove{0, 0}};
         int32_t wheel_delta{};
+        uint16_t usage{};
+        uint8_t toggle_value{};
     };
 
     void push(Command command, Phase optimistic);

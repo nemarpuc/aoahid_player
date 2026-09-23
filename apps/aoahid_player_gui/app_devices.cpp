@@ -384,12 +384,17 @@ void App::draw_connect_card() {
     const Phase phase = engine_.phase();
     const ImVec2 size(-FLT_MIN, ImGui::GetFrameHeight() + px(14));
     switch (phase) {
-    case Phase::idle:
+    case Phase::idle: {
         ImGui::BeginDisabled(startup_prep_task_.valid() || retry_task_.valid());
-        if (ui::button("Connect", size, ui::Tone::primary))
+        const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        if (ui::button("Connect", ImVec2(w, size.y), ui::Tone::primary))
             connect();
+        ImGui::SameLine();
+        if (ui::button("Accessory Mode", ImVec2(w, size.y), ui::Tone::primary))
+            accessory();
         ImGui::EndDisabled();
         break;
+    }
     case Phase::connected:
     case Phase::playing:
         if (ui::button("Disconnect", size, ui::Tone::danger))

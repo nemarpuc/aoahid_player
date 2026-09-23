@@ -55,6 +55,7 @@ class Session {
     [[nodiscard]] const ProfileSetup& setup() const noexcept { return setup_; }
     [[nodiscard]] DeviceGroup& group() noexcept { return group_; }
     [[nodiscard]] const DeviceGroup& group() const noexcept { return group_; }
+    [[nodiscard]] Context& context() noexcept { return context_; }
 
   private:
     bool ensure_context(std::string& error);

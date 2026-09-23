@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 0.16.1 LANGUAGES C CXX)
+project(aoahid-player VERSION 0.17.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +29,7 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # reachable Gamepad settings here: the GUI's D-pad default is Hat and its
 # axis-bits slider (build_gamepad(), 2-32 bits) allows 29-32, a combination
 # an older libaoahid always rejected regardless of any other setting.
-find_package(aoahid 0.5.3 CONFIG REQUIRED)
+find_package(aoahid 2.0.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree

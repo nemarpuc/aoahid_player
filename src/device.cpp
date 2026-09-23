@@ -77,6 +77,8 @@ const char* profile_name(const Profile profile) noexcept {
         return "gamepad";
     case Profile::pen:
         return "pen";
+    case Profile::toggle:
+        return "toggle";
     default:
         return "unknown";
     }
@@ -94,6 +96,8 @@ const char* profile_title(const Profile profile) noexcept {
         return "Gamepad";
     case Profile::pen:
         return "Pen";
+    case Profile::toggle:
+        return "Toggle Controls";
     default:
         return "Unknown";
     }
@@ -139,13 +143,14 @@ Device::Device(Device&& other) noexcept
     : handle_(std::exchange(other.handle_, nullptr)), nodes_(other.nodes_),
       profile_mask_(std::exchange(other.profile_mask_, 0U)), touch_(other.touch_),
       mouse_(other.mouse_), key_(other.key_), gamepad_(other.gamepad_), pen_(other.pen_),
-      label_(std::move(other.label_)) {
+      toggle_(other.toggle_), label_(std::move(other.label_)) {
     other.nodes_.fill(nullptr);
     other.touch_ = {};
     other.mouse_ = {};
     other.key_ = {};
     other.gamepad_ = {};
     other.pen_ = {};
+    other.toggle_ = {};
 }
 
 Device& Device::operator=(Device&& other) noexcept {
@@ -159,6 +164,7 @@ Device& Device::operator=(Device&& other) noexcept {
         key_ = other.key_;
         gamepad_ = other.gamepad_;
         pen_ = other.pen_;
+        toggle_ = other.toggle_;
         label_ = std::move(other.label_);
         other.nodes_.fill(nullptr);
         other.touch_ = {};
@@ -166,6 +172,7 @@ Device& Device::operator=(Device&& other) noexcept {
         other.key_ = {};
         other.gamepad_ = {};
         other.pen_ = {};
+        other.toggle_ = {};
     }
     return *this;
 }
@@ -209,6 +216,9 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     case Profile::pen:
         bound = aoa::bind(opened_node, pen_);
         break;
+    case Profile::toggle:
+        bound = aoa::bind(opened_node, toggle_);
+        break;
     default:
         bound = AOAHID_ERR_PARAM;
         break;
@@ -236,6 +246,7 @@ void Device::close() noexcept {
     key_ = {};
     gamepad_ = {};
     pen_ = {};
+    toggle_ = {};
 }
 
 } // namespace aoap

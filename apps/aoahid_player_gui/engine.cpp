@@ -79,6 +79,15 @@ void Engine::connect(std::vector<size_t> selection, aoap::ProfileSetup setup) {
          Phase::connecting);
 }
 
+void Engine::accessory(std::vector<size_t> selection) {
+    if (selection.empty() || busy())
+        return;
+    Command command{};
+    command.kind = Command::Kind::accessory;
+    command.selection = std::move(selection);
+    push(std::move(command), Phase::connecting);
+}
+
 void Engine::disconnect() {
     if (!connected())
         return;
@@ -217,7 +226,9 @@ void Engine::live_send(const aoap::EventPayload& payload) {
         }
         if (live_inbox_.size() >= live_inbox_limit)
             return;
-        live_inbox_.push_back(LiveItem{false, payload, 0});
+        LiveItem item{};
+        item.payload = payload;
+        live_inbox_.push_back(item);
     }
     live_pending_.store(true, std::memory_order_release);
     ready_.notify_one();
@@ -234,8 +245,29 @@ void Engine::live_scroll(const int32_t wheel) {
         } else {
             if (live_inbox_.size() >= live_inbox_limit)
                 return;
-            live_inbox_.push_back(LiveItem{true, aoap::MouseMove{0, 0}, wheel});
+            LiveItem item{};
+            item.wheel = true;
+            item.wheel_delta = wheel;
+            live_inbox_.push_back(item);
         }
+    }
+    live_pending_.store(true, std::memory_order_release);
+    ready_.notify_one();
+    player_.wake_live();
+}
+
+void Engine::live_toggle(const uint16_t usage, const uint8_t value) {
+    if (!live_active_.load(std::memory_order_relaxed))
+        return;
+    {
+        const std::lock_guard lock(mutex_);
+        if (live_inbox_.size() >= live_inbox_limit)
+            return;
+        LiveItem item{};
+        item.toggle = true;
+        item.usage = usage;
+        item.toggle_value = value;
+        live_inbox_.push_back(item);
     }
     live_pending_.store(true, std::memory_order_release);
     ready_.notify_one();
@@ -417,6 +449,14 @@ void Engine::pump_live() {
                                  aoap::Timing::now_ns()});
             continue;
         }
+        if (item.toggle) {
+            aoahid_result result = group.toggle(item.usage, item.toggle_value);
+            if (result == AOAHID_ERR_BUSY) {
+                group.flush();
+                group.toggle(item.usage, item.toggle_value);
+            }
+            continue;
+        }
         apply_live_one(item.payload);
     }
     // One report per burst; while it drains, new input folds in the inbox.
@@ -502,6 +542,48 @@ void Engine::execute(Command& command) {
              "Ready: " + plural(session_.group().size(), "device", "devices") + " with " +
                  aoap::describe_profiles(session_.group().profile_mask()) + ".");
         set_phase(Phase::connected);
+        break;
+    }
+    case Command::Kind::accessory: {
+        session_.disconnect();
+        std::vector<aoap::DeviceEntry> found;
+        if (!session_.refresh(found, error)) {
+            note(aoap::Severity::error, error);
+            set_phase(Phase::idle);
+            break;
+        }
+        
+        bool success = false;
+        for (const size_t index : command.selection) {
+            if (index >= found.size())
+                continue;
+            const aoap::DeviceEntry& entry = found[index];
+            aoahid_device_info info{};
+            info.vendor_id = entry.vendor_id;
+            info.product_id = entry.product_id;
+            
+            aoahid_accessory_options opt{};
+            opt.struct_size = static_cast<uint32_t>(sizeof(opt));
+            opt.strings.manufacturer = "aoahid_player";
+            opt.strings.model = "aoahid_player";
+            opt.strings.description = "aoahid_player accessory mode";
+            
+            const aoahid_result res = aoahid_accessory_start(session_.context().native_handle(), &info, &opt);
+            if (res == AOAHID_OK) {
+                note(aoap::Severity::info, "Requested accessory mode for " + entry.product);
+                success = true;
+            } else {
+                note(aoap::Severity::error, "Accessory request failed: " + aoap::explain_error(res));
+            }
+        }
+        if (success) {
+            // Re-fetch list to update UI, but the device will disconnect soon
+            std::this_thread::sleep_for(std::chrono::milliseconds(200));
+        }
+        Command cmd{};
+        cmd.kind = Command::Kind::refresh;
+        push(std::move(cmd), Phase::refreshing);
+        set_phase(Phase::idle);
         break;
     }
     case Command::Kind::disconnect:

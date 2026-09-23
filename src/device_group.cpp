@@ -182,6 +182,31 @@ aoahid_result DeviceGroup::scroll(const int32_t wheel) {
     return AOAHID_OK;
 }
 
+aoahid_result DeviceGroup::toggle(const uint16_t usage, const uint8_t value) {
+    if ((profile_mask() & profile_bit(Profile::toggle)) == 0U)
+        return AOAHID_ERR_UNSUPPORTED;
+    bool applied = false;
+    for (const std::unique_ptr<Slot>& slot : slots_) {
+        if (!slot->active.load(std::memory_order_relaxed))
+            continue;
+        const aoahid_result result = slot->device.toggle().set(usage, value != 0);
+        if (result == AOAHID_OK) {
+            applied = true;
+            continue;
+        }
+        if (result == AOAHID_ERR_BUSY) {
+            if (!applied)
+                return AOAHID_ERR_BUSY;
+            continue;
+        }
+        fail(*slot, result);
+    }
+    if (applied)
+        dirty_mask_ |= profile_bit(Profile::toggle);
+    return AOAHID_OK;
+}
+
+
 bool DeviceGroup::flush() {
     if (dirty_mask_ == 0U)
         return false;

@@ -53,12 +53,17 @@ struct PenSetup {
     int32_t pressure_maximum{4095};
 };
 
+struct ToggleSetup {
+    bool enabled{};
+};
+
 struct ProfileSetup {
     TouchSetup touch;
     MouseSetup mouse;
     KeySetup key;
     GamepadSetup gamepad;
     PenSetup pen;
+    ToggleSetup toggle;
 };
 
 namespace spec_detail {
@@ -278,6 +283,8 @@ class SpecSet {
             return false;
         if (setup.pen.enabled && !build_pen(setup.pen, error))
             return false;
+        if (setup.toggle.enabled && !build_toggle(setup.toggle, error))
+            return false;
         return true;
     }
 
@@ -415,6 +422,34 @@ class SpecSet {
         aoahid_spec* spec = nullptr;
         const aoahid_result result = aoahid_spec_create_pen(&options, &spec);
         return store(Profile::pen, result, spec, "pen", error);
+    }
+
+    bool build_toggle(const ToggleSetup& /*setup*/, std::string& error) {
+        aoahid_toggle_options options{};
+        options.struct_size = static_cast<uint32_t>(sizeof(options));
+        options.application_page = 0x0CU; // Consumer
+        options.application_usage = 0x01U; // Consumer Control
+        options.field_page = 0x0CU;
+
+        static const uint16_t usages[] = { 0x00CDU, 0x00E9U, 0x00E2U, 0x0201U };
+        static const aoahid_usage_semantic semantics[] = {
+            AOAHID_USAGE_ONE_SHOT,
+            AOAHID_USAGE_RETRIGGER,
+            AOAHID_USAGE_ON_OFF_MAINTAINED,
+            AOAHID_USAGE_SELECTOR_BITMAP
+        };
+        static const char* expected_types[] = { "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY" };
+        static const char* expected_codes[] = { "KEY_PLAYPAUSE", "KEY_VOLUMEUP", "KEY_MUTE", "KEY_NEW" };
+
+        options.allowed_usages = usages;
+        options.allowed_usage_count = 4U;
+        options.usage_semantics = semantics;
+        options.expected_linux_event_types = expected_types;
+        options.expected_linux_codes = expected_codes;
+
+        aoahid_spec* spec = nullptr;
+        const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
+        return store(Profile::toggle, result, spec, "toggle", error);
     }
 
 };

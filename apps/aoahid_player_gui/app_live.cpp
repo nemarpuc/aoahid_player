@@ -725,6 +725,8 @@ void App::draw_live_fullscreen() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
     if (ImGui::BeginPopup("##live_full_menu")) {
         draw_live_fullscreen_switches(px(170));
+        gap(4);
+        draw_live_toggles();
         ImGui::EndPopup();
     }
     ImGui::PopStyleVar();
@@ -764,6 +766,34 @@ void App::draw_live_fullscreen_switches(const float width) {
     gap(2);
     if (ui::button("Exit full screen", ImVec2(width, 0)))
         live_fullscreen_ = false;
+}
+
+void App::draw_live_toggles() {
+    const uint32_t available = engine_.connected_profiles();
+    const bool present = (available & aoap::profile_bit(aoap::Profile::toggle)) != 0U;
+    
+    ImGui::BeginDisabled(!present || !engine_.live_active());
+    const float btn_w = px(40);
+    if (ui::icon_button("##play_pause", ui::Icon::play, btn_w, ui::Tone::primary, "Play/Pause (Toggle)")) {
+        engine_.live_toggle(0x00CDU, 1U);
+        engine_.live_toggle(0x00CDU, 0U);
+    }
+    ImGui::SameLine();
+    if (ui::icon_button("##vol_up", ui::Icon::up, btn_w, ui::Tone::primary, "Volume Up (Toggle)")) {
+        engine_.live_toggle(0x00E9U, 1U);
+        engine_.live_toggle(0x00E9U, 0U);
+    }
+    ImGui::SameLine();
+    if (ui::icon_button("##mute", ui::Icon::close, btn_w, ui::Tone::primary, "Mute (Toggle)")) {
+        engine_.live_toggle(0x00E2U, 1U);
+        engine_.live_toggle(0x00E2U, 0U);
+    }
+    ImGui::SameLine();
+    if (ui::icon_button("##ac_new", ui::Icon::restart, btn_w, ui::Tone::primary, "AC New (Toggle)")) {
+        engine_.live_toggle(0x0201U, 1U);
+        engine_.live_toggle(0x0201U, 0U);
+    }
+    ImGui::EndDisabled();
 }
 
 void App::draw_live_log(const ImVec2 size) {
@@ -949,6 +979,9 @@ void App::draw_live_controls() {
         if (!present && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("This profile is not part of the connection.");
     }
+    
+    gap(4);
+    draw_live_toggles();
     
     gap(4);
     int current_fps = ::g_fps_limit.load(std::memory_order_relaxed);

@@ -83,6 +83,9 @@ class DeviceGroup {
     // Adds wheel detents on every active mouse; results as for apply().
     aoahid_result scroll(int32_t wheel);
 
+    // Toggles a Consumer Control usage on every active toggle profile.
+    aoahid_result toggle(uint16_t usage, uint8_t value);
+
     [[nodiscard]] uint64_t rejected_rows() const noexcept { return rejected_rows_; }
     [[nodiscard]] const std::string& rejection_detail() const noexcept {
         return rejection_detail_;
