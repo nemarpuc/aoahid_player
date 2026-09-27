@@ -236,6 +236,12 @@ closes the bridge before the phone is closed and runs `adb disconnect`.
 Bridges cannot be switched while a script plays, since stopping one can take
 up to a second.
 
+The bridge has been verified end to end on real hardware with a Samsung
+tablet and a HyperOS phone, on both Linux and Windows. On Windows the HyperOS
+phone worked as plugged in, while the Samsung tablet first needed its driver
+switched to WinUSB. If a bridge does not start on Windows, see
+[Troubleshooting](#troubleshooting).
+
 On a Wayland session the GUI opens through XWayland, because GLFW's native
 Wayland backend has no input method support; that is what lets the script
 search (and every other text field) take Japanese and other IME input via
@@ -620,6 +626,67 @@ The main headers in `include/aoahid_player/`:
 
 `CMAKE_PREFIX_PATH` needs both this package's prefix and libaoahid's.
 
+## Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| Windows: the ADB Bridge does not start, and the error contains `libusb status -12` | The phone's adb interface uses a driver that libusb cannot use. Some manufacturers install their own USB driver by default. | Switch the phone to WinUSB with Zadig ([example below](#example-samsung-on-windows)). |
+
+### Example: Samsung on Windows
+
+A Samsung tablet on Windows, with Samsung's USB driver installed as it is by
+default, connected and played scripts normally, but its ADB Bridge would not
+start. The *ADB* tab showed:
+
+```text
+Could not start: the phone's ADB interface could not be opened:
+AOAHID_ERR_UNSUPPORTED (channel.open: The Bulk interface could not be read,
+claimed, or started.), libusb status -12. USB debugging may be off, or another
+program holds the interface.
+```
+
+(Before 0.18.2 the message was only "the phone has no free ADB interface (USB
+debugging is off, or an adb server still holds it)".)
+
+`-12` is libusb's `LIBUSB_ERROR_NOT_SUPPORTED`. On Windows, libusb can only
+claim an interface whose driver is WinUSB, libusbK or libusb0. HID still
+worked because it goes through the phone's control endpoint, not the adb
+interface. USB debugging and the adb server had nothing to do with it.
+
+Why Samsung and not the HyperOS phone: on Windows the HyperOS phone's adb
+interface came up with WinUSB from the start, so the bridge worked with no
+changes. Samsung ships its own dedicated USB driver, and Windows uses it for
+Samsung devices instead of WinUSB. On the tablet, the parent device "SAMSUNG
+Mobile USB Composite Device" used Samsung's `dg_ssudbus` (version 2.21.4.0).
+libusb accepts `dg_ssudbus` as a composite parent, but the adb interface under
+it did not get WinUSB, so libusb could not claim it.
+
+The fix was to remove Samsung's driver and give the phone WinUSB:
+
+1. Plug in the phone and open Device Manager.
+2. Under *Universal Serial Bus controllers*, right-click the phone's parent
+   device ("SAMSUNG Mobile USB Composite Device" for Samsung) and choose
+   *Uninstall device*. Tick *Attempt to remove the driver for this device*
+   (*Delete the driver software for this device* on Windows 10) and click
+   *Uninstall*. Without this tick, Windows puts the same driver back.
+3. Unplug the phone and plug it back in.
+4. Download and run [Zadig](https://zadig.akeo.ie/).
+5. Turn on *Options → List All Devices*.
+6. Pick the phone in the drop-down. The names depend on the device; check
+   that the *USB ID* matches the phone.
+7. Set the driver on the right of the arrow to *WinUSB* and click
+   *Replace Driver* (*Install Driver* if it had none).
+8. Connect the phone in this program again and turn its bridge on.
+
+Other manufacturers that ship their own dedicated USB driver can be handled
+the same way. A phone whose adb interface is already WinUSB, like the HyperOS
+phone, needs none of this.
+
+After the change, Windows `adb` on its own no longer sees the phone over USB,
+and tools that need the manufacturer's driver (such as Samsung Smart Switch)
+may stop working with it. Use `adb` through the ADB Bridge. To undo, repeat
+steps 1-3, or reinstall the manufacturer's USB driver.
+
 ## Known limitations
 
 - A script has two kinds of rows, once-only and repeated; there is no
@@ -629,9 +696,6 @@ The main headers in `include/aoahid_player/`:
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
   `ABS_MT_TRACKING_ID`); the older Type A `SYN_MT_REPORT` form is not parsed.
 - libaoahid's battery and raw profiles are not exposed.
-- The ADB Bridge has not been verified end to end on real hardware yet
-  (aoahid_adb_proxy and libaoahid both list the ADB Channel alongside HID as
-  not hardware-tested).
 
 ## License
 
