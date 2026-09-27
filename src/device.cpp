@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/device.hpp"
 
+#include "aoahid_player/context.hpp"
+
 #include <aoahid_adb_proxy.h>
 
 #include <cstdio>
@@ -142,9 +144,16 @@ std::string device_label(const aoahid_device_info* info) {
 std::string explain_adb_bridge_error(const int code, const uint16_t port) {
     const std::string at = "127.0.0.1:" + std::to_string(port);
     switch (code) {
-    case -2:
-        return "the phone has no free ADB interface (USB debugging is off, or an adb server "
-               "still holds it)";
+    case -2: {
+        // The proxy makes no libaoahid call after a failed aoahid_channel_open,
+        // so this thread's last diagnostic is that failure.
+        const aoahid_error_detail* detail = aoahid_last_error();
+        const aoahid_result result = static_cast<aoahid_result>(detail->code);
+        const std::string usb_status = std::to_string(detail->libusb_status);
+        return "the phone's ADB interface could not be opened: " + describe_error(result) +
+               ", libusb status " + usb_status +
+               ". USB debugging may be off, or another program holds the interface";
+    }
     case -4:
         return "port " + std::to_string(port) + " is already in use; choose another port";
     case -3:
