@@ -230,8 +230,9 @@ computer, the same prompt as over USB.
 Turning a bridge on works in this order: the phone is already connected and
 its HID devices registered; the bridge claims the phone's adb interface. If
 an adb server holds that interface, the server is stopped and the bridge
-tried once more (the other bridges are then reconnected to adb), and finally
-`adb connect` runs off the UI thread. Turning it off, or disconnecting,
+tried once more (the other bridges are then reconnected to adb); a driver
+problem (`libusb status -12`) skips this, since stopping adb cannot fix it.
+Finally `adb connect` runs off the UI thread. Turning it off, or disconnecting,
 closes the bridge before the phone is closed and runs `adb disconnect`.
 Bridges cannot be switched while a script plays, since stopping one can take
 up to a second.
@@ -645,8 +646,10 @@ claimed, or started.), libusb status -12. USB debugging may be off, or another
 program holds the interface.
 ```
 
-(Before 0.18.2 the message was only "the phone has no free ADB interface (USB
-debugging is off, or an adb server still holds it)".)
+That is the 0.18.2 message. From 0.18.3, a `-12` ends with "The phone's adb
+interface needs a driver libusb can use, such as WinUSB" instead of the USB
+debugging hint, and before 0.18.2 the message was only "the phone has no free
+ADB interface (USB debugging is off, or an adb server still holds it)".
 
 `-12` is libusb's `LIBUSB_ERROR_NOT_SUPPORTED`. On Windows, libusb can only
 claim an interface whose driver is WinUSB, libusbK or libusb0. HID still

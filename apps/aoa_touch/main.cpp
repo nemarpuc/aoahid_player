@@ -348,7 +348,12 @@ int run(int argc, char** argv) {
         fail("no AOA-capable device found.\n"
              "  1) is the cable a data cable, not charge-only?\n"
              "  2) is the phone's USB mode something other than \"Charge only\"?\n"
-             "  3) on Linux, does the udev rule allow access to this device?");
+#ifdef _WIN32
+             "  3) does the phone have a driver libusb can open, such as WinUSB?\n"
+             "     (see Troubleshooting in README.md)");
+#else
+             "  3) does the udev rule allow access to this device?");
+#endif
         return 1;
     }
 

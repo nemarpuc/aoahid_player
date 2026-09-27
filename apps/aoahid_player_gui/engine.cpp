@@ -502,7 +502,9 @@ void Engine::pump_bridge() {
             group.stop_adb_bridge(request.device);
         } else {
             int code = group.start_adb_bridge(request.device, request.port);
-            if (code == -2) {
+            // LIBUSB_ERROR_NOT_SUPPORTED is the interface's driver, which
+            // stopping the adb server cannot change.
+            if (code == -2 && aoahid_last_error()->libusb_status != -12) {
                 // Usually an adb server holding the ADB interface: stop it and
                 // retry once. Other bridges' adb connections go with it.
                 std::string error;
@@ -582,7 +584,12 @@ void Engine::execute(Command& command) {
         else if (count == 0)
             note(aoap::Severity::warning,
                  "No AOA-capable device found. Use a data cable, set the phone's USB mode to "
-                 "something other than \"Charge only\", and on Linux install the udev rule.");
+#ifdef _WIN32
+                 "something other than \"Charge only\", and give the phone a driver libusb "
+                 "can open, such as WinUSB (see Troubleshooting in README.md).");
+#else
+                 "something other than \"Charge only\", and install the udev rule.");
+#endif
         else
             note(aoap::Severity::info, "Found " + plural(count, "device.", "devices."));
         set_phase(Phase::idle);

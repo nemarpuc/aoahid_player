@@ -149,10 +149,17 @@ std::string explain_adb_bridge_error(const int code, const uint16_t port) {
         // so this thread's last diagnostic is that failure.
         const aoahid_error_detail* detail = aoahid_last_error();
         const aoahid_result result = static_cast<aoahid_result>(detail->code);
+        const char* hint =
+            ". USB debugging may be off, or another program holds the interface";
+#ifdef _WIN32
+        // LIBUSB_ERROR_NOT_SUPPORTED: libusb cannot use the interface's driver.
+        if (detail->libusb_status == -12)
+            hint = ". The phone's adb interface needs a driver libusb can use, such as WinUSB "
+                   "(see Troubleshooting in README.md)";
+#endif
         const std::string usb_status = std::to_string(detail->libusb_status);
         return "the phone's ADB interface could not be opened: " + describe_error(result) +
-               ", libusb status " + usb_status +
-               ". USB debugging may be off, or another program holds the interface";
+               ", libusb status " + usb_status + hint;
     }
     case -4:
         return "port " + std::to_string(port) + " is already in use; choose another port";

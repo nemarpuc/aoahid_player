@@ -39,9 +39,14 @@ const char* plain_reason(const aoahid_result result) noexcept {
     case AOAHID_ERR_VERSION:
         return "The device reports an AOA protocol version this program cannot use";
     case AOAHID_ERR_ACCESS:
-        return "Access to the USB device was denied. On Linux, install udev/51-aoahid.rules "
-               "and replug the device; on Windows, the device needs a driver libusb can open "
-               "(such as WinUSB)";
+#ifdef _WIN32
+        return "Access to the USB device was denied. Another program, such as the adb server, "
+               "may have it open, or the device needs a driver libusb can open, such as WinUSB "
+               "(see Troubleshooting in README.md)";
+#else
+        return "Access to the USB device was denied. Install udev/51-aoahid.rules and replug "
+               "the device";
+#endif
     case AOAHID_ERR_BUSY:
         return "The device is busy or held by another program, such as the adb server";
     case AOAHID_ERR_NO_DEVICE:
