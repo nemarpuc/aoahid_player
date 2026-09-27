@@ -639,7 +639,8 @@ MIT; see [LICENSE](LICENSE). The release archives also contain, each under
 its own licence in `third-party/`:
 
 - [libaoahid](https://github.com/nemarpuc/Libaoa_hid) (MIT) and libusb-1.0
-  (LGPL-2.1-or-later, with its corresponding source), as shipped by libaoahid
+  (LGPL-2.1-or-later, dynamically linked, with its licence and corresponding
+  source), as shipped by libaoahid, under `third-party/libaoahid/`
 - [Dear ImGui](https://github.com/ocornut/imgui) (MIT) and
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,

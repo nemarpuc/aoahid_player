@@ -69,10 +69,13 @@ function(aoahid_player_install_runtime)
     message(STATUS "aoahid-player: no shared libaoahid runtime found to bundle")
   endif()
 
-  # libaoahid's own notices, including libusb's LGPL text and source archive.
+  # libaoahid's own notices, including libusb's LGPL text and source archive,
+  # kept in their own folder so the paths THIRD_PARTY_NOTICES.md names hold.
   get_filename_component(_notices "${aoahid_DIR}/../../../share/doc/libaoahid" ABSOLUTE)
   if(EXISTS "${_notices}")
-    install(DIRECTORY "${_notices}/" DESTINATION third-party COMPONENT runtime)
+    install(DIRECTORY "${_notices}/" DESTINATION third-party/libaoahid COMPONENT runtime
+      PATTERN "examples" EXCLUDE
+      PATTERN "CHANGELOG.md" EXCLUDE)
   endif()
 
   if(MSVC)
