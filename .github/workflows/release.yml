@@ -182,9 +182,13 @@ jobs:
           missing=0
           for required in "aoa_touch$exe" "aoa_record$exe" "aoahid_player_gui$exe" \
                           README.md LICENSE csv/example.csv \
-                          third-party/LICENSE third-party/NOTICE third-party/THIRD_PARTY_NOTICES.md \
+                          third-party/libaoahid/LICENSE third-party/libaoahid/NOTICE \
+                          third-party/libaoahid/THIRD_PARTY_NOTICES.md \
+                          third-party/libaoahid/third-party/libusb-copyright \
                           third-party/DearImGui-LICENSE.txt third-party/GLFW-LICENSE.md \
-                          third-party/Roboto-LICENSE.txt; do
+                          third-party/cpp-httplib-LICENSE.txt third-party/Roboto-LICENSE.txt \
+                          third-party/stb_image-LICENSE.txt \
+                          third-party/aoahid_adb_proxy-LICENSE.txt; do
             if [ ! -e "$stage/$required" ]; then
               echo "::error::$required is missing from the package."
               missing=1
@@ -194,7 +198,7 @@ jobs:
             ls "$stage"/libaoahid.so.* "$stage"/libusb-1.0.so.* > /dev/null || missing=1
             # libusb is LGPL-2.1-or-later and ships inside this archive, so
             # its corresponding source must travel with it.
-            ls "$stage"/third-party/third-party/source/libusb-*.tar.* > /dev/null || missing=1
+            ls "$stage"/third-party/libaoahid/third-party/source/libusb-*.tar.* > /dev/null || missing=1
           else
             # Windows DLLs have no "lib" prefix (aoahid.dll, not
             # libaoahid.dll) unlike the Linux .so above.
@@ -204,7 +208,7 @@ jobs:
             # the same as the Linux .so and source checks above.
             ls "$stage"/*usb*.dll > /dev/null || {
               echo "::error::the libusb DLL was not bundled."; missing=1; }
-            ls "$stage"/third-party/third-party/source/libusb-*.tar.* > /dev/null || {
+            ls "$stage"/third-party/libaoahid/third-party/source/libusb-*.tar.* > /dev/null || {
               echo "::error::the libusb source archive was not bundled."; missing=1; }
             # The app-local MSVC runtime libaoahid.dll and the programs need.
             for dll in vcruntime140.dll msvcp140.dll; do
