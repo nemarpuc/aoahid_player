@@ -11,7 +11,13 @@
 
 #include "context.hpp"
 
+struct aoahid_adb_proxy_context;
+
 namespace aoap {
+
+// The ADB Bridge's first TCP port. adb scans 5555-5585 for emulators, so the
+// default stays outside that range.
+constexpr uint16_t default_adb_bridge_port = 6555U;
 
 // The profile families this player drives. The CSV prefixes in README.md map
 // one-to-one onto touch/mouse/key/gamepad/pen. libaoahid's
@@ -49,6 +55,18 @@ class Device {
     // Spec is retained by the Node, so the caller keeps its own reference.
     aoahid_result open_node(Profile profile, aoahid_spec* spec) noexcept;
 
+    // Serves the phone's ADB interface on 127.0.0.1:`port` (aoahid_adb_proxy)
+    // so `adb connect` works while this program holds the USB device. Call it
+    // after every open_node(), with no adb server holding the interface; the
+    // Context must use AOAHID_EVENT_INTERNAL_THREAD. Returns
+    // aoahid_adb_proxy_start()'s code: 0 on success; describe it with
+    // explain_adb_bridge_error(). close() stops it before the Device closes.
+    int start_adb_bridge(uint16_t port) noexcept;
+    // Joins the bridge's threads and closes its Channel; no-op when stopped.
+    void stop_adb_bridge() noexcept;
+    // The port the bridge listens on, or 0 when it is not running.
+    [[nodiscard]] uint16_t adb_port() const noexcept { return adb_port_; }
+
     [[nodiscard]] bool has(Profile profile) const noexcept {
         return nodes_[static_cast<size_t>(profile)] != nullptr;
     }
@@ -69,6 +87,8 @@ class Device {
 
   private:
     aoahid_device* handle_{};
+    aoahid_adb_proxy_context* adb_bridge_{};
+    uint16_t adb_port_{};
     std::array<aoahid_node*, profile_count> nodes_{};
     uint32_t profile_mask_{};
 
@@ -85,5 +105,8 @@ class Device {
 // Human-readable "product (vid:pid) serial" used by the picker and the error
 // summary. Safe against null strings in aoahid_device_info.
 std::string device_label(const aoahid_device_info* info);
+
+// A sentence for a nonzero Device::start_adb_bridge() result.
+std::string explain_adb_bridge_error(int code, uint16_t port);
 
 } // namespace aoap

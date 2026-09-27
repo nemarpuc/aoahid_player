@@ -4,6 +4,7 @@
 #include <aoahid.h>
 
 #include <filesystem>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -30,6 +31,8 @@ struct Settings {
     bool use_pen{};
     int pen_mode{}; // 0 direct screen, 1 indirect tablet
 
+    // The ADB tab's bridge port per device key (aoap::DeviceEntry::key).
+    std::map<std::string, int> adb_ports;
     // The local HTTP control API (see control_api.hpp). Off by default;
     // binds 127.0.0.1 only.
     bool api_enabled{};

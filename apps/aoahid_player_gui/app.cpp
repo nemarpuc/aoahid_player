@@ -107,7 +107,7 @@ bool App::settings_locked() const { return engine_.phase() != Phase::idle; }
 
 bool App::animating() const {
     if (engine_.busy() || recording() || startup_prep_task_.valid() || retry_task_.valid() ||
-        adb_task_.valid() || ui::animations_active())
+        !adb_jobs_.empty() || adb_task_.valid() || ui::animations_active())
         return true;
     if (engine_.phase() == Phase::playing &&
         (engine_.player().status().state != aoap::PlaybackState::paused ||
@@ -141,6 +141,7 @@ Settings App::current_settings() const {
     settings.pad_axes = pad_axes_;
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
+    settings.adb_ports = adb_ports_;
     settings.api_enabled = api_enabled_;
     settings.api_port = api_port_;
     settings.record_coords = record_coords_;
@@ -194,6 +195,7 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
+    adb_ports_ = settings.adb_ports;
     api_enabled_ = settings.api_enabled;
     api_port_ = settings.api_port;
     record_coords_ = std::clamp(settings.record_coords, 0, 1);
@@ -210,7 +212,7 @@ void App::apply_settings(const Settings& settings) {
     window_y_ = settings.window_y;
     window_width_ = settings.window_width;
     window_height_ = settings.window_height;
-    tab_ = settings.tab >= 0 && settings.tab <= 3 ? static_cast<Tab>(settings.tab) : Tab::player;
+    tab_ = settings.tab >= 0 && settings.tab <= 4 ? static_cast<Tab>(settings.tab) : Tab::player;
     speed_ = settings.speed;
     loop_limit_ = settings.loop_limit;
     log_open_ = settings.log_open;
@@ -333,10 +335,16 @@ void App::poll() {
         const std::string previous = adb_serial();
         adb_devices_ = std::move(result.devices);
         adb_choice_ = 0;
+        // A fresh ADB Bridge is picked over an automatic choice, which would
+        // otherwise be ambiguous whenever adb also lists another phone.
+        const std::string wanted =
+            previous.empty() && !prefer_adb_serial_.empty() ? prefer_adb_serial_ : previous;
         for (size_t index = 0; index < adb_devices_.size(); ++index) {
-            if (adb_devices_[index].serial == previous)
+            if (adb_devices_[index].serial == wanted)
                 adb_choice_ = static_cast<int>(index) + 1;
         }
+        if (adb_choice_ != 0 && wanted == prefer_adb_serial_)
+            prefer_adb_serial_.clear();
         if (result.ok)
             set_adb_status(AdbStatus::running);
         else {
@@ -347,6 +355,7 @@ void App::poll() {
     }
     if (record_done_.load(std::memory_order_acquire))
         finish_recording();
+    update_adb_bridges();
 }
 
 void App::refresh_scripts() {
@@ -928,8 +937,10 @@ void App::frame() {
             draw_live();
         else if (tab_ == Tab::playlist)
             draw_playlist();
-        else
+        else if (tab_ == Tab::recorder)
             draw_recorder();
+        else
+            draw_adb();
     }
     ImGui::EndChild();
 

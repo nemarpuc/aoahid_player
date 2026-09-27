@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 0.17.6 LANGUAGES C CXX)
+project(aoahid-player VERSION 0.18.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,7 +29,9 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # reachable Gamepad settings here: the GUI's D-pad default is Hat and its
 # axis-bits slider (build_gamepad(), 2-32 bits) allows 29-32, a combination
 # an older libaoahid always rejected regardless of any other setting.
-find_package(aoahid 2.0.0 CONFIG REQUIRED)
+# 3.0.0 added AOAHID_CHANNEL_READ_REQUEST, which the vendored
+# aoahid_adb_proxy (the ADB Bridge) opens its Channel with.
+find_package(aoahid 3.0.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree
@@ -56,6 +58,8 @@ endif()
 # --- runtime component: what the release archive contains ------------------
 install(DIRECTORY csv/ DESTINATION csv COMPONENT runtime)
 install(FILES README.md LICENSE DESTINATION . COMPONENT runtime)
+install(FILES third_party/licenses/aoahid_adb_proxy-LICENSE.txt
+  DESTINATION third-party COMPONENT runtime)
 aoahid_player_install_runtime()
 
 # --- development component: aoahid_player_core as a CMake package ----------

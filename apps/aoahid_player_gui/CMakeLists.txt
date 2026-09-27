@@ -83,6 +83,7 @@ add_custom_command(
 add_executable(aoahid_player_gui WIN32
   main.cpp
   app.cpp
+  app_adb.cpp
   app_devices.cpp
   app_live.cpp
   app_player.cpp

@@ -105,11 +105,6 @@ void App::draw_record_coords(const bool locked) {
 void App::draw_recorder() {
     const bool active = recording();
 
-    // Recording reads the phone over adb; on Windows that needs AOA
-    // disconnected first (see draw_aoa_link_card()'s own comment).
-    draw_aoa_link_card();
-    gap(2);
-
     ui::begin_card("##phone");
     caption_row("Phone");
     gap(2);
@@ -152,7 +147,8 @@ void App::draw_recorder() {
                              &record_input_);
     ImGui::EndDisabled();
     gap(2);
-    small_dim("Recording reads touches and keys with adb over USB debugging. The result plays "
+    small_dim("Recording reads touches and keys with adb over USB debugging. Turning a phone's "
+              "bridge on in the ADB tab chooses its 127.0.0.1 address here. The result plays "
               "back with the touchscreen and keyboard profiles.");
     ui::end_card();
 

@@ -24,6 +24,7 @@ struct DeviceStatus {
     uint64_t errors{};
     bool active{};
     std::string last_error;
+    uint16_t adb_port{}; // the ADB Bridge's port, 0 when it was not started
 };
 
 // Holds every connected Device and broadcasts one script event to all of
@@ -97,10 +98,17 @@ class DeviceGroup {
 
     [[nodiscard]] std::vector<DeviceStatus> snapshot() const;
 
+    // The ADB Bridge of the device at `index` (snapshot() order); see
+    // Device::start_adb_bridge(). Start returns -1 for an unknown or dropped
+    // device. Stopping can block up to ~1 s, so not while a script plays.
+    int start_adb_bridge(size_t index, uint16_t port);
+    void stop_adb_bridge(size_t index) noexcept;
+
   private:
     struct Slot {
         Device device;
         std::string label;
+        std::atomic<uint16_t> adb_port{};
         std::string last_error; // guarded by mutex_
         std::atomic<uint64_t> reports{};
         std::atomic<uint64_t> errors{};

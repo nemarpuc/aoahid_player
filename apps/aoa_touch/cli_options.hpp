@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include "aoahid_player/session.hpp"
 #include "aoahid_player/spec_builder.hpp"
 
 namespace aoap::cli {
@@ -30,6 +31,9 @@ struct Options {
     int64_t loop_count{}; // 0 = infinite
     std::string script_path;
     bool no_prompt{}; // --no-prompt: skip the live "-> " offset thread
+
+    // ADB Bridge: on unless --no-adb-bridge; --adb-port sets the first port.
+    AdbBridgeOptions adb_bridge{true, default_adb_bridge_port};
     bool help{};      // -h/--help was given: usage was printed, exit 0
 };
 

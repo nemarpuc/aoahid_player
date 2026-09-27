@@ -146,6 +146,15 @@ bool Recorder::run(const RecordOptions& options) {
     output << "# recorded by aoahid-player from `adb shell getevent -lt`\n"
               "# every row is lowercase, so the whole script repeats each loop\n";
 
+    // An ADB Bridge (or any network serial) is only reachable once adb has
+    // connected to it; a server restarted since then has forgotten it.
+    if (adb_network_serial(options.adb_serial)) {
+        std::string error;
+        if (!adb_connect(options.adb_serial, error))
+            note(Severity::warning, "Could not connect adb to " + options.adb_serial + ": " +
+                                        error);
+    }
+
     // The panel reports raw coordinates, which are not always screen pixels.
     // Its range lets the recording name its coordinate space (raw), or be
     // converted into fractions of the panel (normalized); playback then

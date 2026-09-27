@@ -108,6 +108,11 @@ void print_usage(const char* program) {
         "  --speed FACTOR           Playback speed multiplier (default 1.0)\n"
         "  --loop N                 Stop after N laps, the first included (default: infinite)\n"
         "  --no-prompt              Do not start the live \"-> \" offset prompt\n"
+        "\n"
+        "ADB Bridge (keeps adb usable while this program holds the phone):\n"
+        "  --adb-port N             First port on 127.0.0.1 (default 6555; the next\n"
+        "                           device gets the next port)\n"
+        "  --no-adb-bridge          Do not start it (the adb server is left alone)\n"
         "  -h, --help               Show this text\n"
         "\n"
         "With no script path, the csv/ folder next to the executable is listed\n"
@@ -321,6 +326,21 @@ std::optional<Options> parse(const int argc, char** argv) {
         }
         if (argument == "--no-prompt") {
             options.no_prompt = true;
+            continue;
+        }
+        if (argument == "--adb-port") {
+            if (!needs_value(index, argc, "--adb-port"))
+                return std::nullopt;
+            size_t value = 0;
+            if (!parse_size_t(argv[++index], value) || value < 1024 || value > 65535) {
+                std::fprintf(stderr, "[ERROR] --adb-port must be a port from 1024 to 65535\n");
+                return std::nullopt;
+            }
+            options.adb_bridge.first_port = static_cast<uint16_t>(value);
+            continue;
+        }
+        if (argument == "--no-adb-bridge") {
+            options.adb_bridge.enabled = false;
             continue;
         }
         if (!argument.empty() && argument.front() == '-') {

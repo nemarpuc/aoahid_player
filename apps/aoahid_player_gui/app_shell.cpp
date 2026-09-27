@@ -150,6 +150,7 @@ void App::draw_nav_rail() {
         {"Live", ui::Icon::monitor, Tab::live},
         {"Playlist", ui::Icon::list, Tab::playlist},
         {"Recorder", ui::Icon::record, Tab::recorder},
+        {"ADB", ui::Icon::terminal, Tab::adb},
     };
     const float diameter = px(40);
     ImDrawList* list = ImGui::GetWindowDrawList();

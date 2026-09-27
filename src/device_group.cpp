@@ -68,6 +68,7 @@ DeviceGroup::~DeviceGroup() { reset(); }
 void DeviceGroup::add_device(Device&& device) {
     auto slot = std::make_unique<Slot>();
     slot->label = device.label();
+    slot->adb_port.store(device.adb_port(), std::memory_order_relaxed);
     const uint32_t mask = device.profile_mask();
     slot->device = std::move(device);
     {
@@ -108,6 +109,7 @@ void DeviceGroup::fail(Slot& slot, const aoahid_result result) {
         return;
     active_count_.fetch_sub(1, std::memory_order_relaxed);
     slot.device.close();
+    slot.adb_port.store(0U, std::memory_order_relaxed);
     if (sink_ != nullptr)
         sink_->message(Severity::warning, slot.label + " stopped responding and was dropped. " +
                                               detail);
@@ -271,9 +273,27 @@ std::vector<DeviceStatus> DeviceGroup::snapshot() const {
         status.errors = slot->errors.load(std::memory_order_relaxed);
         status.active = slot->active.load(std::memory_order_relaxed);
         status.last_error = slot->last_error;
+        status.adb_port = slot->adb_port.load(std::memory_order_relaxed);
         list.push_back(std::move(status));
     }
     return list;
+}
+
+int DeviceGroup::start_adb_bridge(const size_t index, const uint16_t port) {
+    if (index >= slots_.size() || !slots_[index]->active.load(std::memory_order_relaxed))
+        return -1;
+    Slot& slot = *slots_[index];
+    const int result = slot.device.start_adb_bridge(port);
+    slot.adb_port.store(slot.device.adb_port(), std::memory_order_relaxed);
+    return result;
+}
+
+void DeviceGroup::stop_adb_bridge(const size_t index) noexcept {
+    if (index >= slots_.size())
+        return;
+    Slot& slot = *slots_[index];
+    slot.device.stop_adb_bridge();
+    slot.adb_port.store(0U, std::memory_order_relaxed);
 }
 
 } // namespace aoap

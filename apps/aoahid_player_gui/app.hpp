@@ -19,6 +19,7 @@
 #include <filesystem>
 #include <functional>
 #include <future>
+#include <map>
 #include <memory>
 #include <set>
 #include <string>
@@ -90,7 +91,7 @@ class App {
     [[nodiscard]] bool consume_theme_change() noexcept;
 
   private:
-    enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3 };
+    enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3, adb = 4 };
     // The Player tab actions whose key can be remapped; the value indexes
     // player_keys_ and player_key_default().
     enum class PlayerAction : int { play = 0, stop = 1, restart = 2, none = 3 };
@@ -144,6 +145,25 @@ class App {
         bool skipped{};
         AdbStatus status{AdbStatus::unknown};
     };
+    // One `adb connect` / `adb disconnect` for an ADB Bridge, off the UI
+    // thread. `version` is the connection it belongs to (setup_version()).
+    struct AdbJob {
+        uint64_t version{};
+        size_t device{};
+        std::string serial; // "127.0.0.1:<port>"
+        bool connect{};
+        bool ok{};
+        std::string error;
+    };
+    // The ADB tab's state for one connected device (snapshot() index).
+    // Whether its bridge runs is DeviceStatus::adb_port, not stored here.
+    struct BridgeRow {
+        int port{};
+        bool busy{};          // a request is on the worker thread
+        std::string linked;   // serial `adb connect` reached, else empty
+        std::string note;     // last result, shown under the row
+        bool note_error{};
+    };
     // One file of the csv folder, with what the picker shows and searches.
     struct ScriptFile {
         std::string path;
@@ -183,9 +203,6 @@ class App {
     // control_api.hpp.
     void draw_control_api_card();
     void draw_player();
-    // Windows only notice that adb and AOA HID cannot share the phone, with
-    // a Disconnect button so adb can be used again without leaving the tab.
-    void draw_aoa_link_card();
     void draw_script_card();
     void draw_script_picker(float width);
     void draw_transport_card();
@@ -232,6 +249,12 @@ class App {
     // Touches neither adb nor the device list; both are kept current by the
     // startup pre-flight and the Devices card's refresh button.
     void connect();
+    // The ADB tab: each connected device's ADB Bridge, turned on and off one
+    // by one (see Engine::adb_bridge()).
+    void draw_adb();
+    // Applies Engine bridge results and finished adb jobs; every frame.
+    void update_adb_bridges();
+    void run_adb_job(size_t device, const std::string& serial, bool connect);
     void accessory();
     // The Devices card's refresh button: adb kill-server, then a rescan. No
     // adb start-server, no screen size, and no handshake — just a cheap way
@@ -293,6 +316,13 @@ class App {
     // whenever draw_control_api_card() changes it.
     bool api_enabled_{};
     int api_port_{47821};
+    // ADB Bridge port per device key (DeviceEntry::key), saved between runs.
+    std::map<std::string, int> adb_ports_;
+    std::vector<BridgeRow> bridge_rows_;
+    uint64_t bridge_version_{~uint64_t{0}}; // setup_version() of bridge_rows_
+    std::vector<std::future<AdbJob>> adb_jobs_;
+    // Selected in the Recorder once the next adb device list contains it.
+    std::string prefer_adb_serial_;
     Tab tab_{Tab::player};
 
     // Devices.

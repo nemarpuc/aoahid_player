@@ -124,12 +124,48 @@ bool adb_screen_size(const std::string& serial, int32_t& width, int32_t& height,
     return false;
 }
 
-bool adb_kill_server(std::string& error) {
-    return check(run_command(adb_command({}, {"kill-server"})), error);
+bool adb_kill_server(std::string& error, bool* const was_running) {
+    const CommandResult result = run_command(adb_command({}, {"kill-server"}));
+    if (was_running != nullptr) {
+        // With no server, adb prints "cannot connect to daemon" and still exits 0.
+        *was_running = result.output.find("cannot connect") == std::string::npos &&
+                       result.error_output.find("cannot connect") == std::string::npos;
+    }
+    return check(result, error);
 }
 
 bool adb_start_server(std::string& error) {
     return check(run_command(adb_command({}, {"start-server"})), error);
+}
+
+std::string adb_bridge_address(const uint16_t port) {
+    return "127.0.0.1:" + std::to_string(port);
+}
+
+bool adb_network_serial(const std::string_view serial) noexcept {
+    return serial.find(':') != std::string_view::npos;
+}
+
+bool adb_connect_succeeded(const std::string_view output) noexcept {
+    // "failed to connect to" and "cannot connect to" do not contain this.
+    return output.find("connected to") != std::string_view::npos;
+}
+
+bool adb_connect(const std::string& address, std::string& error) {
+    const CommandResult result = run_command(adb_command({}, {"connect", address}));
+    if (!check(result, error))
+        return false;
+    if (adb_connect_succeeded(result.output))
+        return true;
+    std::string reason = first_line(result.output);
+    if (reason.empty())
+        reason = first_line(result.error_output);
+    error = reason.empty() ? "adb could not connect to " + address + "." : "adb: " + reason;
+    return false;
+}
+
+bool adb_disconnect(const std::string& address, std::string& error) {
+    return check(run_command(adb_command({}, {"disconnect", address})), error);
 }
 
 bool adb_missing(const std::string& error) {

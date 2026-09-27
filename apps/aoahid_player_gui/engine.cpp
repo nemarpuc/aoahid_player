@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "engine.hpp"
 
+#include "aoahid_player/adb.hpp"
 #include "aoahid_player/input_state.hpp"
 #include "aoahid_player/timing.hpp"
 
@@ -349,7 +350,14 @@ void Engine::loop() {
         Command command;
         {
             std::unique_lock lock(mutex_);
-            ready_.wait(lock, [this] { return !queue_.empty(); });
+            ready_.wait(lock, [this] {
+                return !queue_.empty() || bridge_pending_.load(std::memory_order_relaxed);
+            });
+            if (bridge_pending_.load(std::memory_order_relaxed)) {
+                lock.unlock();
+                pump_bridge();
+                continue;
+            }
             command = std::move(queue_.front());
             queue_.pop_front();
             if (command.kind == Command::Kind::quit)
@@ -463,6 +471,59 @@ void Engine::pump_live() {
     group.flush();
 }
 
+void Engine::adb_bridge(const size_t device, const bool on, const uint16_t port) {
+    {
+        const std::lock_guard lock(mutex_);
+        bridge_inbox_.push_back(BridgeRequest{device, on, port});
+        bridge_pending_.store(true, std::memory_order_release);
+    }
+    ready_.notify_one();
+}
+
+std::vector<BridgeEvent> Engine::take_bridge_events() {
+    std::vector<BridgeEvent> events;
+    const std::lock_guard lock(mutex_);
+    events.swap(bridge_events_);
+    return events;
+}
+
+void Engine::pump_bridge() {
+    if (!bridge_pending_.exchange(false, std::memory_order_acq_rel))
+        return;
+    std::vector<BridgeRequest> batch;
+    {
+        const std::lock_guard lock(mutex_);
+        batch.swap(bridge_inbox_);
+    }
+    aoap::DeviceGroup& group = session_.group();
+    for (const BridgeRequest& request : batch) {
+        BridgeEvent event{request.device, request.port, false, {}, false};
+        if (!request.on) {
+            group.stop_adb_bridge(request.device);
+        } else {
+            int code = group.start_adb_bridge(request.device, request.port);
+            if (code == -2) {
+                // Usually an adb server holding the ADB interface: stop it and
+                // retry once. Other bridges' adb connections go with it.
+                std::string error;
+                bool was_running = false;
+                if (aoap::adb_kill_server(error, &was_running) && was_running) {
+                    event.adb_stopped = true;
+                    aoap::Timing::sleep_ms(800);
+                    code = group.start_adb_bridge(request.device, request.port);
+                }
+            }
+            event.on = code == 0;
+            if (code != 0)
+                event.error = aoap::explain_adb_bridge_error(code, request.port);
+        }
+        const std::lock_guard lock(mutex_);
+        bridge_events_.push_back(std::move(event));
+    }
+    if (wake_)
+        wake_();
+}
+
 void Engine::run_live() {
     aoap::DeviceGroup& group = session_.group();
     bool stopped = false;
@@ -471,7 +532,8 @@ void Engine::run_live() {
             std::unique_lock lock(mutex_);
             ready_.wait(lock, [&] {
                 return live_stop_ || !queue_.empty() ||
-                       live_pending_.load(std::memory_order_relaxed);
+                       live_pending_.load(std::memory_order_relaxed) ||
+                       bridge_pending_.load(std::memory_order_relaxed);
             });
             if (live_stop_ || !queue_.empty()) {
                 // Captured under the same lock as the check above, not by
@@ -485,6 +547,7 @@ void Engine::run_live() {
             }
         }
         pump_live();
+        pump_bridge();
         if (group.active_count() == 0) {
             note(aoap::Severity::error, "Every device stopped responding; live control stopped.");
             stopped = true;

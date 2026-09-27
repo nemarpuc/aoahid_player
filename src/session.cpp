@@ -136,7 +136,7 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
 }
 
 bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& setup,
-                      std::string& error) {
+                      std::string& error, const AdbBridgeOptions& bridge) {
     if (connected()) {
         error = "Already connected. Disconnect first.";
         return false;
@@ -188,6 +188,24 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
         if (!ready)
             continue; // Device's destructor closes whatever was opened
         note(Severity::info, "Connected " + label + ".");
+        // libaoahid's documented order: the Bulk Channel opens after the Nodes.
+        if (bridge.enabled) {
+            const size_t port = size_t{bridge.first_port} + group_.size();
+            if (port > UINT16_MAX) {
+                note(Severity::warning, "ADB Bridge for " + label + " not started: no port left "
+                                                                    "above " +
+                                            std::to_string(bridge.first_port) + ".");
+            } else if (const int code = device.start_adb_bridge(static_cast<uint16_t>(port));
+                       code != 0) {
+                note(Severity::warning, "ADB Bridge for " + label + " not started: " +
+                                            explain_adb_bridge_error(
+                                                code, static_cast<uint16_t>(port)) +
+                                            ".");
+            } else {
+                note(Severity::info, "ADB Bridge for " + label + " on 127.0.0.1:" +
+                                         std::to_string(port) + ".");
+            }
+        }
         group_.add_device(std::move(device));
     }
 

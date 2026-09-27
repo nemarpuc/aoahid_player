@@ -27,7 +27,8 @@ enum class Icon {
     collapse,
     monitor, // a screen with a small stand, for "Live"
     list,    // three lines, for "Playlist"
-    sun      // a small circle with rays, for the light/dark theme toggle
+    sun,     // a small circle with rays, for the light/dark theme toggle
+    terminal // ">_", for "ADB"
 };
 
 // What a button is for, which decides how loud it looks.

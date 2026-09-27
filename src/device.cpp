@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/device.hpp"
 
+#include <aoahid_adb_proxy.h>
+
 #include <cstdio>
 #include <utility>
 #include <vector>
@@ -137,10 +139,28 @@ std::string device_label(const aoahid_device_info* info) {
     return text;
 }
 
+std::string explain_adb_bridge_error(const int code, const uint16_t port) {
+    const std::string at = "127.0.0.1:" + std::to_string(port);
+    switch (code) {
+    case -2:
+        return "the phone has no free ADB interface (USB debugging is off, or an adb server "
+               "still holds it)";
+    case -4:
+        return "port " + std::to_string(port) + " is already in use; choose another port";
+    case -3:
+    case -5:
+        return "could not listen on " + at;
+    default:
+        return "failed (code " + std::to_string(code) + ")";
+    }
+}
+
 Device::~Device() { close(); }
 
 Device::Device(Device&& other) noexcept
-    : handle_(std::exchange(other.handle_, nullptr)), nodes_(other.nodes_),
+    : handle_(std::exchange(other.handle_, nullptr)),
+      adb_bridge_(std::exchange(other.adb_bridge_, nullptr)),
+      adb_port_(std::exchange(other.adb_port_, uint16_t{0})), nodes_(other.nodes_),
       profile_mask_(std::exchange(other.profile_mask_, 0U)), touch_(other.touch_),
       mouse_(other.mouse_), key_(other.key_), gamepad_(other.gamepad_), pen_(other.pen_),
       toggle_(other.toggle_), label_(std::move(other.label_)) {
@@ -157,6 +177,8 @@ Device& Device::operator=(Device&& other) noexcept {
     if (this != &other) {
         close();
         handle_ = std::exchange(other.handle_, nullptr);
+        adb_bridge_ = std::exchange(other.adb_bridge_, nullptr);
+        adb_port_ = std::exchange(other.adb_port_, uint16_t{0});
         nodes_ = other.nodes_;
         profile_mask_ = std::exchange(other.profile_mask_, 0U);
         touch_ = other.touch_;
@@ -233,7 +255,27 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     return AOAHID_OK;
 }
 
+int Device::start_adb_bridge(const uint16_t port) noexcept {
+    if (handle_ == nullptr || adb_bridge_ != nullptr)
+        return -1;
+    const int result = aoahid_adb_proxy_start(handle_, port, &adb_bridge_);
+    if (result == 0)
+        adb_port_ = port;
+    else
+        adb_bridge_ = nullptr;
+    return result;
+}
+
+void Device::stop_adb_bridge() noexcept {
+    // Joins the proxy threads and closes its Channel; neither may overlap
+    // aoahid_device_close.
+    aoahid_adb_proxy_stop(adb_bridge_);
+    adb_bridge_ = nullptr;
+    adb_port_ = 0U;
+}
+
 void Device::close() noexcept {
+    stop_adb_bridge();
     // The first aoahid_device_close consumes the Device and every child Node,
     // including on AOAHID_CLOSE_PENDING, so the Nodes are not closed here.
     if (handle_ != nullptr)

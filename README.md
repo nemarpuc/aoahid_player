@@ -76,8 +76,9 @@ is logged.
    afterwards, physically unplug and replug the USB cable.
 
 While connected, the profile choices are locked; disconnect to change them.
-Each connected phone shows a status dot and its report count, and a phone
-that stops responding is dropped without stopping playback for the others.
+Each connected phone shows a status dot and its report count (and its ADB
+Bridge port, see *ADB tab*), and a phone that stops responding is dropped
+without stopping playback for the others.
 
 **Player tab**
 
@@ -193,13 +194,8 @@ optional limit in minutes on the whole run. Playlists are saved as
 
 **Recorder tab**
 
-The *AOA connection* card at the top has a **Disconnect AOA** button, so
-disconnecting never means finding the sidebar — recording reads the phone
-over adb, and on Windows adb and AOA cannot be used at the same time (the
-phone drops off adb while AOA is connected), so the card says so there; on
-other systems it appears only while connected.
-
-Choose the phone (automatic works when adb sees only one) and optionally limit
+Choose the phone (automatic works when adb sees only one; turning on a
+phone's bridge in the *ADB tab* chooses its `127.0.0.1:<port>`) and optionally limit
 it to one `/dev/input/eventN`. Type the *File name* before you start (`.csv` is
 added; blank gives `record-<date>-<time>`). Names with characters Windows or
 Linux cannot store are refused, and a name that already exists turns the
@@ -211,6 +207,34 @@ numbers) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
 in the middle of the screen looks like. Where a touch lands is the same in
 both. The choice is remembered and is fixed while recording; see
 [`--coords`](#aoa_record--usage).
+
+**ADB tab**
+
+While this app holds a phone over USB, adb cannot open it on its own — on
+Windows never, because a USB device can be opened by only one program. The
+*ADB* tab keeps adb working anyway: each connected phone has its own *Bridge*
+switch and *Port*. Turning a bridge on serves that phone's adb interface on
+`127.0.0.1:<port>` with the built-in
+[aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy), then runs
+`adb connect 127.0.0.1:<port>` for you, so the phone shows up in
+`adb devices`, `adb -s 127.0.0.1:<port> shell` works, and the Recorder tab
+selects it. *Copy command* copies that `adb -s ... shell` line; it is only a
+convenience.
+
+Nothing starts on its own at Connect. Ports start at 6555 (the next phone
+gets the next free one) and are remembered per phone; change one while its
+bridge is off, and keep it outside 5555-5585, which adb scans for emulators.
+The phone needs USB debugging on; the first time, it may ask to allow this
+computer, the same prompt as over USB.
+
+Turning a bridge on works in this order: the phone is already connected and
+its HID devices registered; the bridge claims the phone's adb interface. If
+an adb server holds that interface, the server is stopped and the bridge
+tried once more (the other bridges are then reconnected to adb), and finally
+`adb connect` runs off the UI thread. Turning it off, or disconnecting,
+closes the bridge before the phone is closed and runs `adb disconnect`.
+Bridges cannot be switched while a script plays, since stopping one can take
+up to a second.
 
 On a Wayland session the GUI opens through XWayland, because GLFW's native
 Wayland backend has no input method support; that is what lets the script
@@ -295,8 +319,20 @@ Playback:
   --speed FACTOR           Playback speed multiplier (default 1.0)
   --loop N                 Stop after N laps, the first included (default: infinite)
   --no-prompt              Do not start the live "-> " offset prompt
+
+ADB Bridge (keeps adb usable while this program holds the phone):
+  --adb-port N             First port on 127.0.0.1 (default 6555; the next
+                           device gets the next port)
+  --no-adb-bridge          Do not start it (the adb server is left alone)
   -h, --help               Show this text
 ```
+
+The ADB Bridge is the GUI's (see *ADB tab*), but with no tab to switch it,
+`aoa_touch` starts it for every device unless `--no-adb-bridge` is given:
+the adb server is stopped before the devices are opened, each device's
+bridge starts after its HID devices are registered, and
+`adb connect 127.0.0.1:<port>` runs in the background while playback starts.
+Record from another terminal with `aoa_record -s 127.0.0.1:6555`.
 
 With no script path, the `csv/` folder next to the executable is listed for
 interactive selection. A script given on the command line is checked before
@@ -314,7 +350,9 @@ aoa_record [options]
   -o, --output NAME   Recording name or path. A bare name is saved in the
                        csv/ folder next to this program (".csv" is added
                        when missing). Default: record-<date>-<time>
-  -s, --serial ID     adb device serial, for `adb -s ID`
+  -s, --serial ID     adb device serial, for `adb -s ID`. A host:port
+                       serial, such as the ADB Bridge's 127.0.0.1:6555,
+                       is `adb connect`ed first
       --input PATH    Only record /dev/input/eventN; default is every
                        device getevent reports
       --coords MODE   How touch coordinates are written (default: raw)
@@ -456,7 +494,8 @@ ID, `18d1`).
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/Libaoa_hid) (see below)
+- [libaoahid](https://github.com/nemarpuc/Libaoa_hid) 3.0.0 or newer 3.x
+  (see below; the ADB Bridge needs 3.0)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, for example on Debian/Ubuntu:
   `libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev pkg-config`
@@ -565,7 +604,8 @@ target_link_libraries(your_target PRIVATE aoahid_player::aoahid_player_core)
 The main headers in `include/aoahid_player/`:
 
 - `session.hpp` — device discovery, connect and disconnect with a
-  `ProfileSetup`.
+  `ProfileSetup` and optional `AdbBridgeOptions` (the ADB Bridge, owned by
+  each `Device` in `device.hpp`).
 - `player.hpp` — playback with pause, seek, speed, loop limit, live offset,
   and a wall-clock stop time, all callable from any thread; `status()` is
   lock-free, and a `PlaybackObserver` sees every row sent. `set_live_pump()`
@@ -589,6 +629,9 @@ The main headers in `include/aoahid_player/`:
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
   `ABS_MT_TRACKING_ID`); the older Type A `SYN_MT_REPORT` form is not parsed.
 - libaoahid's battery and raw profiles are not exposed.
+- The ADB Bridge has not been verified end to end on real hardware yet
+  (aoahid_adb_proxy and libaoahid both list the ADB Channel alongside HID as
+  not hardware-tested).
 
 ## License
 
@@ -601,6 +644,8 @@ its own licence in `third-party/`:
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
   backing the control API's HTTP server
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 2.0.0
+  (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored
   for the Live tab's reference image

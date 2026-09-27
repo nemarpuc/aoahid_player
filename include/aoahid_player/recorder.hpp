@@ -39,7 +39,8 @@ void append_recorded_rows(std::string& text, const std::vector<EventRecord>& row
 
 struct RecordOptions {
     std::string output_path;  // UTF-8; see resolve_record_path()
-    std::string adb_serial;   // empty: the only device adb sees
+    std::string adb_serial;   // empty: the only device adb sees; "host:port" is
+                              // `adb connect`ed first (an ADB Bridge)
     std::string input_device; // /dev/input/eventN on the phone; empty: every device
     CoordMode coords{CoordMode::raw};
 };

@@ -1,7 +1,7 @@
 # Core library shared by aoa_touch, aoa_record and aoahid_player_gui: device
 # and session management over libaoahid, CSV scripts, the playback engine,
-# high-precision timing, and adb-based recording. It never touches stdin or
-# stdout; status reaches the front ends through EventSink.
+# high-precision timing, adb-based recording, and the ADB Bridge. It never
+# touches stdin or stdout; status reaches the front ends through EventSink.
 add_library(aoahid_player_core STATIC
   adb.cpp
   context.cpp
@@ -17,6 +17,9 @@ add_library(aoahid_player_core STATIC
   recorder.cpp
   session.cpp
   timing.cpp
+  # aoahid_adb_proxy v2.0.0 (MIT), vendored unmodified from
+  # github.com/nemarpuc/aoahid_adb_proxy at d120c56b. It needs libaoahid 3.0.
+  "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy/aoahid_adb_proxy.cpp"
 )
 add_library(aoahid_player::aoahid_player_core ALIAS aoahid_player_core)
 
@@ -25,7 +28,13 @@ target_include_directories(aoahid_player_core PUBLIC
   $<INSTALL_INTERFACE:include>
 )
 
+target_include_directories(aoahid_player_core PRIVATE
+  "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy")
+
 target_link_libraries(aoahid_player_core PUBLIC aoahid::aoahid Threads::Threads)
+if(WIN32)
+  target_link_libraries(aoahid_player_core PRIVATE ws2_32)
+endif()
 target_compile_features(aoahid_player_core PUBLIC cxx_std_20)
 
 if(MSVC)

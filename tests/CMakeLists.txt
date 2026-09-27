@@ -11,8 +11,10 @@ add_executable(aoahid_player_tests
   test_spec_builder.cpp
   test_getevent_parser.cpp
   test_input_state.cpp
+  test_adb_bridge.cpp
 )
-target_include_directories(aoahid_player_tests PRIVATE third_party)
+target_include_directories(aoahid_player_tests PRIVATE third_party
+  "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy")
 target_link_libraries(aoahid_player_tests PRIVATE aoahid_player_core)
 target_compile_features(aoahid_player_tests PRIVATE cxx_std_20)
 

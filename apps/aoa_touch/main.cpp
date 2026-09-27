@@ -323,6 +323,21 @@ int run(int argc, char** argv) {
             return 1;
     }
 
+    // The ADB Bridge claims the phone's ADB interface, so an adb server must
+    // not hold it (-A has already stopped the server).
+    if (options.adb_bridge.enabled && !options.auto_resolution) {
+        bool was_running = false;
+        if (aoap::adb_kill_server(error, &was_running)) {
+            if (was_running) {
+                std::printf("[INFO] stopped the adb server so the ADB Bridge can use the phone\n");
+                std::fflush(stdout);
+                aoap::Timing::sleep_ms(800);
+            }
+        } else if (!aoap::adb_missing(error)) {
+            std::fprintf(stderr, "[WARN] %s\n", error.c_str());
+        }
+    }
+
     aoap::Session session(&sink);
     std::vector<aoap::DeviceEntry> devices;
     if (!session.refresh(devices, error)) {
@@ -345,9 +360,29 @@ int run(int argc, char** argv) {
     if (!script && !load_script(options, script_path, script))
         return 1;
 
-    if (!session.connect(selection, options.profiles, error)) {
+    if (!session.connect(selection, options.profiles, error, options.adb_bridge)) {
         fail(error);
         return 1;
+    }
+
+    // Points adb at each bridge in the background, so playback starts at once.
+    std::vector<std::string> bridges;
+    for (const aoap::DeviceStatus& device : session.group().snapshot()) {
+        if (device.adb_port != 0U)
+            bridges.push_back(aoap::adb_bridge_address(device.adb_port));
+    }
+    std::jthread adb_link;
+    if (!bridges.empty()) {
+        adb_link = std::jthread([&sink, bridges] {
+            for (const std::string& serial : bridges) {
+                std::string link_error;
+                if (aoap::adb_connect(serial, link_error))
+                    sink.message(aoap::Severity::info, "adb connected: adb -s " + serial + " shell");
+                else
+                    sink.message(aoap::Severity::warning,
+                                 "adb could not connect to " + serial + ". " + link_error);
+            }
+        });
     }
 
     // A recording names the space its coordinates were taken in; map it onto
@@ -385,6 +420,8 @@ int run(int argc, char** argv) {
 #endif
     player.run();
     g_player.store(nullptr, std::memory_order_relaxed);
+    if (adb_link.joinable())
+        adb_link.join();
     std::signal(SIGINT, SIG_DFL);
     {
         const std::lock_guard lock(bridge->mutex);

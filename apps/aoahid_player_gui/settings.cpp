@@ -173,6 +173,12 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "pen")
             read_bool(value, settings.use_pen);
+        else if (key.rfind("adb_bridge.port.", 0) == 0 && key.size() > 16) {
+            int port = 0;
+            read_int(value, 1024, 65535, port);
+            if (port != 0)
+                settings.adb_ports[key.substr(16)] = port;
+        }
         else if (key == "api.enabled")
             read_bool(value, settings.api_enabled);
         else if (key == "api.port")
@@ -206,7 +212,7 @@ Settings load_settings(const std::filesystem::path& path) {
         else if (key == "window.height")
             read_int(value, 0, 16384, settings.window_height);
         else if (key == "ui.tab")
-            read_int(value, 0, 3, settings.tab);
+            read_int(value, 0, 4, settings.tab);
         else if (key == "ui.last_script")
             settings.last_script = value;
         else if (key == "ui.log_open")
@@ -271,6 +277,8 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "gamepad.axes = " << axes_text(settings.pad_axes) << '\n';
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
+    for (const auto& [device, port] : settings.adb_ports)
+        out << "adb_bridge.port." << device << " = " << port << '\n';
     out << "api.enabled = " << (settings.api_enabled ? 1 : 0) << '\n';
     out << "api.port = " << settings.api_port << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';

@@ -109,6 +109,8 @@ void App::draw_devices_card() {
         if (device_status != nullptr) {
             counts = device_status->active ? format_count(device_status->reports) + " reports"
                                            : std::string("dropped");
+            if (device_status->active && device_status->adb_port != 0U)
+                counts += "  ·  adb :" + std::to_string(device_status->adb_port);
             ImGui::PushFont(nullptr, theme::font_small);
             counts_width = ImGui::CalcTextSize(counts.c_str()).x;
             ImGui::PopFont();
@@ -429,41 +431,6 @@ void App::draw_connect_card() {
     if (!connect_error_.empty()) {
         gap(2);
         small_colored(theme::danger, connect_error_);
-    }
-    ui::end_card();
-}
-
-// --- Recorder ---------------------------------------------------------------
-
-void App::draw_aoa_link_card() {
-    const bool connected = engine_.connected();
-#if defined(_WIN32)
-    constexpr bool windows = true;
-#else
-    constexpr bool windows = false;
-#endif
-    if (!windows && !connected)
-        return;
-
-    ui::begin_card("##aoa_link");
-    caption_row("AOA connection");
-    const Phase phase = engine_.phase();
-    const float width = px(150);
-    ui::align_right(width);
-    ImGui::BeginDisabled(!connected);
-    if (ui::button(phase == Phase::disconnecting ? "Disconnecting...##aoa_link" : "Disconnect AOA",
-                   ImVec2(width, 0), ui::Tone::danger))
-        engine_.disconnect();
-    ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Unregisters the HID devices and ends the AOA connection.");
-    if (windows) {
-        gap(2);
-        small_colored(connected ? theme::warning : theme::text_dim,
-                      connected
-                          ? "adb cannot see the phone while AOA is connected on Windows. "
-                            "Press Disconnect AOA before using adb."
-                          : "On Windows, adb and AOA cannot be used at the same time. Connecting "
-                            "makes adb lose the phone until you disconnect.");
     }
     ui::end_card();
 }

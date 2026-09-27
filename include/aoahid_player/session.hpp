@@ -27,6 +27,13 @@ struct DeviceEntry {
     std::string key; // stable across refreshes, for keeping a selection
 };
 
+// The ADB Bridge (see Device::start_adb_bridge()). The n-th connected device
+// listens on first_port + n.
+struct AdbBridgeOptions {
+    bool enabled{};
+    uint16_t first_port{default_adb_bridge_port};
+};
+
 // Owns the libaoahid Context, the device list, and the connected DeviceGroup.
 //
 // Connecting builds one Spec per enabled profile and opens a Node for each on
@@ -47,8 +54,11 @@ class Session {
 
     // Opens the given entries of the last refresh. A device that fails is
     // reported through the sink and skipped; false means none could be opened.
+    // With `bridge` enabled, each device's ADB Bridge starts after its Nodes;
+    // a bridge that cannot start is a warning, not a failed device. Stop the
+    // adb server first, or it keeps the ADB interface.
     bool connect(const std::vector<size_t>& selection, const ProfileSetup& setup,
-                 std::string& error);
+                 std::string& error, const AdbBridgeOptions& bridge = {});
 
     // Closes every device; each Node close sends its neutral report first.
     void disconnect() noexcept;

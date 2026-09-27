@@ -332,6 +332,15 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
         }
         break;
     }
+    case Icon::terminal: {
+        const float w = s * 0.34f;
+        const float h = s * 0.18f;
+        const float x = c.x - w;
+        list->AddLine(ImVec2(x, c.y - h), ImVec2(x + w * 0.6f, c.y), color, t);
+        list->AddLine(ImVec2(x + w * 0.6f, c.y), ImVec2(x, c.y + h), color, t);
+        list->AddLine(ImVec2(c.x + w * 0.05f, c.y + h), ImVec2(c.x + w, c.y + h), color, t);
+        break;
+    }
     case Icon::sun: {
         const float r = s * 0.20f;
         list->AddCircle(c, r, color, 24, t);

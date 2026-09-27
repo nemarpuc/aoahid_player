@@ -36,6 +36,15 @@ struct PlaylistStep {
     int64_t loops{1};
 };
 
+// What became of one Engine::adb_bridge() request.
+struct BridgeEvent {
+    size_t device{}; // DeviceGroup::snapshot() index
+    uint16_t port{};
+    bool on{};       // the bridge is running now
+    std::string error;
+    bool adb_stopped{}; // a running adb server was stopped to free the interface
+};
+
 struct PlaylistProgress {
     bool active{};
     size_t index{};
@@ -95,6 +104,14 @@ class Engine final : private aoap::PlaybackObserver {
     [[nodiscard]] bool live_active() const noexcept {
         return live_active_.load(std::memory_order_acquire);
     }
+
+    // Starts or stops one connected device's ADB Bridge on the worker
+    // thread (it opens a Channel, a Context call). Handled while connected
+    // or in Live control; while a script plays it waits for the run to end,
+    // because stopping a bridge can block. Results arrive through
+    // take_bridge_events().
+    void adb_bridge(size_t device, bool on, uint16_t port);
+    std::vector<BridgeEvent> take_bridge_events();
 
     [[nodiscard]] aoap::Player& player() noexcept { return player_; }
     [[nodiscard]] const aoap::Player& player() const noexcept { return player_; }
@@ -171,6 +188,8 @@ class Engine final : private aoap::PlaybackObserver {
     // safe as Player's live pump (see Player::set_live_pump()) as well as
     // run_live()'s own loop. Worker thread only.
     void pump_live();
+    // Serves adb_bridge() requests. Worker thread only.
+    void pump_bridge();
     // Releases everything live_held_ is holding, unconditionally. Worker
     // thread only.
     void release_live();
@@ -190,6 +209,13 @@ class Engine final : private aoap::PlaybackObserver {
     aoap::ProfileSetup setup_;
     PlaylistProgress progress_;
     std::vector<LiveItem> live_inbox_;
+    struct BridgeRequest {
+        size_t device;
+        bool on;
+        uint16_t port;
+    };
+    std::vector<BridgeRequest> bridge_inbox_;
+    std::vector<BridgeEvent> bridge_events_;
     bool live_stop_{}; // exits run_live()'s own loop; see live_stop()
     aoap::InputState live_held_; // what Live currently has pressed; worker thread only
 
@@ -202,6 +228,7 @@ class Engine final : private aoap::PlaybackObserver {
     // Set by live_send()/live_scroll(), cleared once pump_live() has drained
     // the inbox; lets it skip locking mutex_ when there is nothing queued.
     std::atomic<bool> live_pending_{};
+    std::atomic<bool> bridge_pending_{};
 
     // Single-producer (worker) single-consumer (UI) ring of sent events.
     static constexpr size_t ring_size = 4096;
