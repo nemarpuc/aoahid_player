@@ -27,8 +27,8 @@ env:
   # Binaries link libaoahid from its own GitHub Release. Pin the tag so a
   # tagged aoahid-player build stays reproducible; "latest" would silently
   # change what the released binaries link against.
-  AOAHID_REPOSITORY: nemarpuc/Libaoa_hid
-  AOAHID_TAG: v3.0.2
+  AOAHID_REPOSITORY: nemarpuc/libaoahid
+  AOAHID_TAG: v3.0.4
 
 jobs:
   build:

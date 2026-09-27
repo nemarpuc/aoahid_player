@@ -15,7 +15,7 @@ There are three programs, all built on one shared engine:
 - `aoa_record` — the command-line recorder.
 
 All HID, AOA, and USB work is done by
-[libaoahid](https://github.com/nemarpuc/Libaoa_hid); see that repository for
+[libaoahid](https://github.com/nemarpuc/libaoahid); see that repository for
 the protocol, descriptor, and transport details.
 
 ## Download
@@ -501,7 +501,7 @@ ID, `18d1`).
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/Libaoa_hid) 3.0.0 or newer 3.x
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 3.0.0 or newer 3.x
   (see below; the ADB Bridge needs 3.0)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, for example on Debian/Ubuntu:
@@ -552,12 +552,12 @@ one of these two ways.
 
 **Option A — prebuilt release (fastest, no libusb build needed):** download
 the shared-library archive for your platform from
-[libaoahid's releases](https://github.com/nemarpuc/Libaoa_hid/releases)
+[libaoahid's releases](https://github.com/nemarpuc/libaoahid/releases)
 (the same asset the workflows here use), extract it, and point
 `CMAKE_PREFIX_PATH` at the extracted directory:
 
 ```sh
-curl -LO https://github.com/nemarpuc/Libaoa_hid/releases/latest/download/libaoahid-<version>-linux-x86_64-ubuntu22.04-shared.tar.gz
+curl -LO https://github.com/nemarpuc/libaoahid/releases/latest/download/libaoahid-<version>-linux-x86_64-ubuntu22.04-shared.tar.gz
 tar -xzf libaoahid-<version>-linux-x86_64-ubuntu22.04-shared.tar.gz
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_PREFIX_PATH="$PWD/libaoahid-<version>-linux-x86_64-ubuntu22.04-shared"
@@ -566,11 +566,11 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
 **Option B — build libaoahid from source:**
 
 ```sh
-git clone https://github.com/nemarpuc/Libaoa_hid.git
-cmake -S Libaoa_hid -B Libaoa_hid/build -DCMAKE_BUILD_TYPE=Release \
+git clone https://github.com/nemarpuc/libaoahid.git
+cmake -S libaoahid -B libaoahid/build -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_INSTALL_PREFIX="$PWD/libaoahid-staging"
-cmake --build Libaoa_hid/build --config Release
-cmake --install Libaoa_hid/build
+cmake --build libaoahid/build --config Release
+cmake --install libaoahid/build
 ```
 
 libaoahid requires libusb 1.0.30 or newer (`LIBUSB_API_VERSION >=
@@ -715,7 +715,7 @@ steps 1-3, or reinstall the manufacturer's USB driver.
 MIT; see [LICENSE](LICENSE). The release archives also contain, each under
 its own licence in `third-party/`:
 
-- [libaoahid](https://github.com/nemarpuc/Libaoa_hid) (MIT) and libusb-1.0
+- [libaoahid](https://github.com/nemarpuc/libaoahid) (MIT) and libusb-1.0
   (LGPL-2.1-or-later, dynamically linked, with its licence and corresponding
   source), as shipped by libaoahid, under `third-party/libaoahid/`
 - [Dear ImGui](https://github.com/ocornut/imgui) (MIT) and
