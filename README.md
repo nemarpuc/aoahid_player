@@ -514,8 +514,8 @@ one phone instead, for systems without logind.
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/libaoahid) 3.0.0 or newer 3.x
-  (see below; the ADB Bridge needs 3.0)
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 4.0.0 or newer 4.x
+  (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, for example on Debian/Ubuntu:
   `libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev pkg-config`

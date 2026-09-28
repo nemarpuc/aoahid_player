@@ -36,8 +36,6 @@ const char* plain_reason(const aoahid_result result) noexcept {
         return "The device does not support this";
     case AOAHID_ERR_NOT_AOA:
         return "The device does not support Android Open Accessory (AOA)";
-    case AOAHID_ERR_VERSION:
-        return "The device reports an AOA protocol version this program cannot use";
     case AOAHID_ERR_ACCESS:
 #ifdef _WIN32
         return "Access to the USB device was denied. Another program, such as the adb server, "

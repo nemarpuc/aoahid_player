@@ -52,8 +52,8 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
         return false;
 
     aoahid_discovery* found = nullptr;
-    // aoahid_discover already probes AOA request 51 and returns only devices
-    // that answered with a nonzero protocol version.
+    // aoahid_discover probes AOA request 51 and returns only devices that
+    // answered with a nonzero protocol version; connect() checks for HID.
     const aoahid_result result = aoahid_discover(context_.native_handle(), discover_timeout_ms,
                                                  &found);
     if (result != AOAHID_OK) {
@@ -167,6 +167,13 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
             continue;
         }
         const std::string label = device_label(info);
+        // AOA 1.0 has no HID, and libaoahid's open no longer checks.
+        if (info->protocol_version < 2U) {
+            note(Severity::warning, "Could not open " + label + ". It reports AOA version " +
+                                        std::to_string(info->protocol_version) +
+                                        ", which has no HID.");
+            continue;
+        }
         Device device;
         aoahid_result result = device.open(context_, info);
         if (result != AOAHID_OK) {

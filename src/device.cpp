@@ -26,8 +26,6 @@ constexpr uint32_t close_drain_timeout_ms = 1000U;
 aoahid_device_options make_device_options() noexcept {
     aoahid_device_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
-    options.startup_mode = AOAHID_START_CURRENT_USB_MODE;
-    options.accept_future_protocol_versions = 0U;
     options.control_timeout_ms = control_timeout_ms;
     options.send_timeout_ms = send_timeout_ms;
     options.descriptor_fragment_bytes = descriptor_policy_bytes;

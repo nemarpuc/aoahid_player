@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 0.19.1 LANGUAGES C CXX)
+project(aoahid-player VERSION 0.20.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -30,8 +30,11 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # axis-bits slider (build_gamepad(), 2-32 bits) allows 29-32, a combination
 # an older libaoahid always rejected regardless of any other setting.
 # 3.0.0 added AOAHID_CHANNEL_READ_REQUEST, which the vendored
-# aoahid_adb_proxy (the ADB Bridge) opens its Channel with.
-find_package(aoahid 3.0.0 CONFIG REQUIRED)
+# aoahid_adb_proxy (the ADB Bridge) opens its Channel with. 4.0.0 reshaped
+# aoahid_device_info and aoahid_device_options (device.cpp and session.cpp
+# follow) and no longer checks the AOA version at open, so Session::connect
+# checks the discovered protocol_version itself.
+find_package(aoahid 4.0.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree
