@@ -148,8 +148,9 @@ class App {
         bool skipped{};
         AdbStatus status{AdbStatus::unknown};
     };
-    // One `adb connect` / `adb disconnect` for an ADB Bridge, off the UI
-    // thread. `version` is the connection it belongs to (setup_version()).
+    // One `adb connect` / `adb disconnect` for an ADB Bridge, or an
+    // `adb kill-server` when `restart` is set, off the UI thread. `version` is
+    // the connection it belongs to (setup_version()).
     struct AdbJob {
         uint64_t version{};
         size_t device{};
@@ -157,6 +158,7 @@ class App {
         bool connect{};
         bool ok{};
         std::string error;
+        bool restart{};
     };
     // The ADB tab's state for one connected device (snapshot() index).
     // Whether its bridge runs is DeviceStatus::adb_port, not stored here.
@@ -258,6 +260,7 @@ class App {
     // Applies Engine bridge results and finished adb jobs; every frame.
     void update_adb_bridges();
     void run_adb_job(size_t device, const std::string& serial, bool connect);
+    void restart_adb_server();
     void accessory();
     // The Devices card's refresh button: adb kill-server, then a rescan. No
     // adb start-server, no screen size, and no handshake — just a cheap way

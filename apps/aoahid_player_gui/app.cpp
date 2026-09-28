@@ -314,6 +314,12 @@ void App::poll() {
             cursor_ = {};
         if (phase == Phase::connected && last_phase_ == Phase::connecting)
             connect_error_.clear();
+        // Disconnect has released every phone; see restart_adb_server().
+        if (phase == Phase::idle &&
+            (last_phase_ == Phase::disconnecting || last_phase_ == Phase::connected ||
+             last_phase_ == Phase::playing) &&
+            !recording())
+            restart_adb_server();
         last_phase_ = phase;
     }
 

@@ -32,15 +32,30 @@ void App::run_adb_job(const size_t device, const std::string& serial, const bool
         }));
 }
 
+// An adb server started while a bridge held the phone's adb interface never
+// picks the phone up over USB again, so it is stopped once the interface is
+// free; the next adb command starts a fresh one.
+void App::restart_adb_server() {
+    adb_jobs_.push_back(std::async(std::launch::async, [version = bridge_version_, wake = wake_] {
+        AdbJob job{version, 0, {}, false, false, {}, true};
+        job.ok = aoap::adb_kill_server(job.error);
+        wake();
+        return job;
+    }));
+}
+
 void App::update_adb_bridges() {
     // 0 while not connected; setup_version() changes with every Connect.
     const uint64_t version = engine_.connected() ? engine_.setup_version() : 0U;
     if (version != bridge_version_) {
         // The old connection's bridges are closed with its devices; adb
-        // would otherwise keep listing them as offline.
-        for (const BridgeRow& row : bridge_rows_) {
-            if (!row.linked.empty())
-                run_adb_job(0, row.linked, false);
+        // would otherwise keep listing them as offline. Unless recording, the
+        // server is restarted after Disconnect instead, which drops them too.
+        if (version != 0U || recording()) {
+            for (const BridgeRow& row : bridge_rows_) {
+                if (!row.linked.empty())
+                    run_adb_job(0, row.linked, false);
+            }
         }
         bridge_rows_.clear();
         bridge_version_ = version;
@@ -99,6 +114,9 @@ void App::update_adb_bridges() {
             row.note_error = true;
             log_.message(aoap::Severity::warning, "ADB Bridge on " + serial + ": " + event.error +
                                                       ".");
+        } else if (!recording()) {
+            row.linked.clear();
+            restart_adb_server();
         } else if (!row.linked.empty()) {
             run_adb_job(event.device, std::exchange(row.linked, std::string()), false);
         }
@@ -111,6 +129,22 @@ void App::update_adb_bridges() {
         }
         const AdbJob result = job->get();
         job = adb_jobs_.erase(job);
+        if (result.restart) {
+            if (result.ok) {
+                set_adb_status(AdbStatus::stopped);
+                // Bridges still on lost their adb connection with the server.
+                for (size_t index = 0; result.version == version && index < bridge_rows_.size();
+                     ++index) {
+                    BridgeRow& other = bridge_rows_[index];
+                    if (!other.linked.empty())
+                        run_adb_job(index, std::exchange(other.linked, std::string()), true);
+                }
+            } else if (aoap::adb_missing(result.error)) {
+                set_adb_status(AdbStatus::not_found);
+            }
+            refresh_adb_devices();
+            continue;
+        }
         if (!result.connect) {
             refresh_adb_devices();
             continue;
