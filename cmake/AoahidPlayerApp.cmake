@@ -84,6 +84,13 @@ function(aoahid_player_install_runtime)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION .)
     set(CMAKE_INSTALL_SYSTEM_RUNTIME_COMPONENT runtime)
     set(CMAKE_INSTALL_UCRT_LIBRARIES OFF)
+    set(CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS_SKIP TRUE)
     include(InstallRequiredSystemLibraries)
+    # vcruntime140_1.dll only serves x64's exception handling; the copy in the
+    # ARM64 redist is an x64 image, and native ARM64 code never imports it.
+    if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID STREQUAL "ARM64")
+      list(FILTER CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS EXCLUDE REGEX "/vcruntime140_1\\.dll$")
+    endif()
+    install(PROGRAMS ${CMAKE_INSTALL_SYSTEM_RUNTIME_LIBS} DESTINATION . COMPONENT runtime)
   endif()
 endfunction()
