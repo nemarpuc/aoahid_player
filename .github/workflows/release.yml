@@ -299,6 +299,11 @@ jobs:
           path: aoahid-player-*.${{ matrix.archive_ext }}
           if-no-files-found: error
           retention-days: 7
+          # The archive is already compressed. Deflating it again can put the
+          # inner zip's data descriptors into the outer stream at an offset
+          # equal to their size field, which makes download-artifact's
+          # streaming unzip end the entry early; stored bytes never line up.
+          compression-level: 0
 
   release:
     needs: build
