@@ -53,7 +53,8 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
 
     aoahid_discovery* found = nullptr;
     // aoahid_discover probes AOA request 51 and returns only devices that
-    // answered with a nonzero protocol version; connect() checks for HID.
+    // answered with a nonzero protocol version. AOA 1.0 has no HID, so those
+    // are not listed.
     const aoahid_result result = aoahid_discover(context_.native_handle(), discover_timeout_ms,
                                                  &found);
     if (result != AOAHID_OK) {
@@ -66,9 +67,10 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
 
     const size_t count = aoahid_discovery_count(discovery_);
     devices.reserve(count);
+    listed_.clear();
     for (size_t index = 0; index < count; ++index) {
         const aoahid_device_info* info = aoahid_discovery_get(discovery_, index);
-        if (info == nullptr)
+        if (info == nullptr || info->protocol_version < 2U)
             continue;
         DeviceEntry entry;
         entry.label = device_label(info);
@@ -90,6 +92,7 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
         // The serial survives a replug; the bus address is the fallback.
         entry.key = entry.serial.empty() ? std::string(identity) : entry.serial;
         devices.push_back(std::move(entry));
+        listed_.push_back(index);
     }
     return true;
 }
@@ -111,10 +114,9 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
         return false;
 
     bool success = false;
-    const size_t count = aoahid_discovery_count(discovery_);
     for (const size_t index : selection) {
         const aoahid_device_info* info =
-            index < count ? aoahid_discovery_get(discovery_, index) : nullptr;
+            index < listed_.size() ? aoahid_discovery_get(discovery_, listed_[index]) : nullptr;
         if (info == nullptr) {
             note(Severity::warning, "A selected device is no longer in the list; refresh it.");
             continue;
@@ -158,22 +160,14 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
     if (!specs_.build(setup, error))
         return false;
 
-    const size_t count = aoahid_discovery_count(discovery_);
     for (const size_t index : selection) {
         const aoahid_device_info* info =
-            index < count ? aoahid_discovery_get(discovery_, index) : nullptr;
+            index < listed_.size() ? aoahid_discovery_get(discovery_, listed_[index]) : nullptr;
         if (info == nullptr) {
             note(Severity::warning, "A selected device is no longer in the list; refresh it.");
             continue;
         }
         const std::string label = device_label(info);
-        // AOA 1.0 has no HID, and libaoahid's open no longer checks.
-        if (info->protocol_version < 2U) {
-            note(Severity::warning, "Could not open " + label + ". It reports AOA version " +
-                                        std::to_string(info->protocol_version) +
-                                        ", which has no HID.");
-            continue;
-        }
         Device device;
         aoahid_result result = device.open(context_, info);
         if (result != AOAHID_OK) {

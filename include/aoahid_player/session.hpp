@@ -80,6 +80,8 @@ class Session {
     EventSink* sink_;
     Context context_;
     aoahid_discovery* discovery_{};
+    // The discovery index of each listed DeviceEntry.
+    std::vector<size_t> listed_;
     SpecSet specs_;
     ProfileSetup setup_;
     DeviceGroup group_;
