@@ -22,11 +22,13 @@ namespace gui {
 //
 // Off by default (see Settings::api_enabled) and binds 127.0.0.1 only, never
 // a public interface: any local program can reach it once it is on, with no
-// further authentication, so turning it on is a deliberate choice. Query
-// parameters carry every request (GET or POST, either works — cpp-httplib
-// reads both the same way), and responses are small hand-written JSON, so
-// this needs no JSON library. See control_api.cpp's route table for the
-// full list of paths, or GET / for a plain-text summary of them.
+// further authentication, so turning it on is a deliberate choice. Requests
+// from web pages (an Origin header, or a Host other than this address) are
+// refused, so a page open in a browser cannot drive the phone. Every request
+// carries its parameters in the query string (GET / and GET /status, POST
+// for the rest), and responses are small hand-written JSON, so this needs no
+// JSON library. See register_routes() for the full list of paths, or GET /
+// for a plain-text summary of them.
 class ControlApi {
   public:
     explicit ControlApi(Engine& engine);

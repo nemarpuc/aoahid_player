@@ -93,6 +93,7 @@ App::App(std::function<void()> wake)
 
 App::~App() {
     live_capture_pointer(false);
+    live_paste_active_.store(false, std::memory_order_relaxed);
     persist_settings();
     stop_recording();
     if (live_paste_thread_.joinable())
@@ -141,6 +142,7 @@ Settings App::current_settings() const {
     settings.pad_axes = pad_axes_;
     settings.use_pen = use_pen_;
     settings.pen_mode = pen_mode_;
+    settings.use_toggle = use_toggle_;
     settings.adb_ports = adb_ports_;
     settings.api_enabled = api_enabled_;
     settings.api_port = api_port_;
@@ -157,7 +159,7 @@ Settings App::current_settings() const {
     settings.window_width = window_width_;
     settings.window_height = window_height_;
     settings.tab = static_cast<int>(tab_);
-    settings.last_script = script_path_.empty() ? std::string() : script_reference(script_path_);
+    settings.last_script = script_reference_;
     settings.speed = speed_;
     settings.loop_limit = loop_limit_;
     settings.log_open = log_open_;
@@ -165,6 +167,7 @@ Settings App::current_settings() const {
     settings.live_mouse = live_.mouse;
     settings.live_key = live_.key;
     settings.live_gamepad = live_.gamepad;
+    settings.live_toggle = live_.toggle;
     settings.live_ratio_w = live_ratio_w_;
     settings.live_ratio_h = live_ratio_h_;
     settings.live_rotation = live_rotation_;
@@ -195,6 +198,7 @@ void App::apply_settings(const Settings& settings) {
     pad_axes_ = settings.pad_axes;
     use_pen_ = settings.use_pen;
     pen_mode_ = settings.pen_mode;
+    use_toggle_ = settings.use_toggle;
     adb_ports_ = settings.adb_ports;
     api_enabled_ = settings.api_enabled;
     api_port_ = settings.api_port;
@@ -220,6 +224,7 @@ void App::apply_settings(const Settings& settings) {
     live_.mouse = settings.live_mouse;
     live_.key = settings.live_key;
     live_.gamepad = settings.live_gamepad;
+    live_.toggle = settings.live_toggle;
     live_ratio_w_ = settings.live_ratio_w;
     live_ratio_h_ = settings.live_ratio_h;
     live_rotation_ = settings.live_rotation & 3;
@@ -299,7 +304,10 @@ void App::poll() {
     // The Player tab also observes now, so its active-touches list (see
     // draw_transport_card()) stays current even when the Live tab is not
     // the one on screen.
-    engine_.set_observing(tab_ == Tab::live || tab_ == Tab::player);
+    const bool observing = tab_ == Tab::live || tab_ == Tab::player;
+    engine_.set_observing(observing);
+    if (observing)
+        drain_observed();
     const Phase phase = engine_.phase();
     if (phase != last_phase_) {
         if (last_phase_ == Phase::playing)
@@ -384,6 +392,7 @@ void App::delete_script(const std::string& path) {
     if (path == script_path_) {
         script_.reset();
         script_path_.clear();
+        script_reference_.clear();
         script_warnings_.clear();
         timeline_ = {};
         cursor_ = {};
@@ -407,6 +416,7 @@ void App::load_script(const std::string& path) {
         log_.message(aoap::Severity::warning, aoap::display_name(path) + ": " + warning);
     script_ = std::move(script);
     script_path_ = path;
+    script_reference_ = script_reference(path);
     path_input_ = path;
     script_errors_.clear();
     cursor_ = {};

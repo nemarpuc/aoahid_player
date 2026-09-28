@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "cli_options.hpp"
 
+#include <cerrno>
 #include <charconv>
 #include <cstdio>
 #include <cstdlib>
@@ -24,6 +25,16 @@ bool parse_uint32(const std::string_view text, uint32_t& out) noexcept {
         return false;
     out = static_cast<uint32_t>(value);
     return true;
+}
+
+// A decimal or 0x-prefixed hexadecimal HID usage.
+bool parse_usage(const std::string& text, unsigned long& out) noexcept {
+    if (text.empty() || text.front() < '0' || text.front() > '9')
+        return false;
+    char* end = nullptr;
+    errno = 0;
+    out = std::strtoul(text.c_str(), &end, 0);
+    return errno == 0 && *end == '\0';
 }
 
 bool parse_resolution(const std::string_view text, int32_t& width, int32_t& height) noexcept {
@@ -210,11 +221,12 @@ std::optional<Options> parse(const int argc, char** argv) {
                 std::fprintf(stderr, "[ERROR] --key-usage-range format is LO,HI\n");
                 return std::nullopt;
             }
-            unsigned long low = std::strtoul(pieces[0].c_str(), nullptr, 0);
-            unsigned long high = std::strtoul(pieces[1].c_str(), nullptr, 0);
+            unsigned long low = 0;
+            unsigned long high = 0;
             // The NKRO keyboard profile reserves 0xE0..0xE7 for modifiers,
             // which aoahid_kbd routes separately.
-            if (low < 0x04 || high < low || high >= 0xE0) {
+            if (!parse_usage(pieces[0], low) || !parse_usage(pieces[1], high) || low < 0x04 ||
+                high < low || high >= 0xE0) {
                 std::fprintf(stderr, "[ERROR] --key-usage-range must be ordered, start at 0x04 "
                                      "or above, and end below 0xe0\n");
                 return std::nullopt;

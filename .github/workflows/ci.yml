@@ -17,7 +17,7 @@ concurrency:
 
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
-  AOAHID_TAG: v3.0.4
+  AOAHID_TAG: v3.0.5
 
 jobs:
   build:
@@ -29,10 +29,20 @@ jobs:
             preset: linux-release
             platform: linux
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+          - os: ubuntu-22.04-arm
+            preset: linux-release
+            platform: linux
+            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
           - os: windows-2022
             preset: windows-release
             platform: windows
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+          # Cross-built on the x64 runner, so its programs are not run.
+          - os: windows-2022
+            preset: windows-arm64-release
+            platform: windows
+            cross: true
+            aoahid_asset: libaoahid-*-windows-arm64-shared.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -109,9 +119,11 @@ jobs:
         run: cmake --build --preset ${{ matrix.preset }}
 
       - name: Run unit tests
+        if: ${{ !matrix.cross }}
         run: ctest --test-dir build/${{ matrix.preset }} --output-on-failure -C Release
 
       - name: Smoke test the binaries
+        if: ${{ !matrix.cross }}
         shell: bash
         run: |
           set -euo pipefail

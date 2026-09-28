@@ -5,6 +5,7 @@
 
 #include <array>
 #include <cstdint>
+#include <iterator>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -152,6 +153,8 @@ inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
         mask |= profile_bit(Profile::gamepad);
     if (setup.pen.enabled)
         mask |= profile_bit(Profile::pen);
+    if (setup.toggle.enabled)
+        mask |= profile_bit(Profile::toggle);
     return mask;
 }
 
@@ -457,17 +460,21 @@ class SpecSet {
             AOAHID_USAGE_ONE_SHOT,          // AC Pan
             AOAHID_USAGE_SELECTOR_BITMAP    // AC New
         };
+        // Linux hid-input maps AC Pan to the horizontal wheel, not to a key.
         static const char* expected_types[] = {
             "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY",
-            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY"
+            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_REL", "EV_KEY"
         };
         static const char* expected_codes[] = {
             "KEY_NEXTSONG", "KEY_PREVIOUSSONG", "KEY_STOPCD", "KEY_PLAYPAUSE", "KEY_MUTE",
-            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "KEY_PAN", "KEY_NEW"
+            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "REL_HWHEEL", "KEY_NEW"
         };
+        static_assert(std::size(semantics) == std::size(usages) &&
+                      std::size(expected_types) == std::size(usages) &&
+                      std::size(expected_codes) == std::size(usages));
 
         options.allowed_usages = usages;
-        options.allowed_usage_count = 11U;
+        options.allowed_usage_count = std::size(usages);
         options.usage_semantics = semantics;
         options.expected_linux_event_types = expected_types;
         options.expected_linux_codes = expected_codes;
@@ -476,7 +483,6 @@ class SpecSet {
         const aoahid_result result = aoahid_spec_create_toggle(&options, &spec);
         return store(Profile::toggle, result, spec, "toggle", error);
     }
-
 };
 
 } // namespace aoap

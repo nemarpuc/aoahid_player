@@ -35,7 +35,6 @@
 #include <windows.h>
 #endif
 
-#include <atomic>
 std::atomic<int> g_fps_limit{120};
 
 namespace {

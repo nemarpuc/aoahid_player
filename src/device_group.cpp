@@ -208,7 +208,6 @@ aoahid_result DeviceGroup::toggle(const uint16_t usage, const uint8_t value) {
     return AOAHID_OK;
 }
 
-
 bool DeviceGroup::flush() {
     if (dirty_mask_ == 0U)
         return false;

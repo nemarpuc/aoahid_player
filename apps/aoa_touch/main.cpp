@@ -428,6 +428,9 @@ int run(int argc, char** argv) {
     if (adb_link.joinable())
         adb_link.join();
     std::signal(SIGINT, SIG_DFL);
+#if defined(SIGTERM)
+    std::signal(SIGTERM, SIG_DFL);
+#endif
     {
         const std::lock_guard lock(bridge->mutex);
         bridge->player = nullptr;

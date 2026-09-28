@@ -28,7 +28,7 @@ env:
   # tagged aoahid-player build stays reproducible; "latest" would silently
   # change what the released binaries link against.
   AOAHID_REPOSITORY: nemarpuc/libaoahid
-  AOAHID_TAG: v3.0.4
+  AOAHID_TAG: v3.0.5
 
 jobs:
   build:
@@ -44,6 +44,12 @@ jobs:
             platform: linux
             arch: x86_64
             aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+          - os: ubuntu-22.04-arm
+            preset: linux-release
+            archive_ext: tar.gz
+            platform: linux
+            arch: aarch64
+            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
           # Pinned, not windows-latest: CMakePresets.json fixes the generator
           # to "Visual Studio 17 2022", so the runner image must still ship it.
           - os: windows-2022
@@ -51,7 +57,18 @@ jobs:
             archive_ext: zip
             platform: windows
             arch: x86_64
+            pe_machine: "8664"
             aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+          # Cross-built on the x64 runner, so its programs are not run; the
+          # machine type check in Package stands in for the smoke test.
+          - os: windows-2022
+            preset: windows-arm64-release
+            archive_ext: zip
+            platform: windows
+            arch: arm64
+            pe_machine: aa64
+            cross: true
+            aoahid_asset: libaoahid-*-windows-arm64-shared.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -214,11 +231,22 @@ jobs:
             for dll in vcruntime140.dll msvcp140.dll; do
               [ -f "$stage/$dll" ] || { echo "::error::$dll was not bundled."; missing=1; }
             done
+            # Every program and DLL must be built for this archive's CPU:
+            # the PE header's Machine field, found through e_lfanew.
+            for binary in "$stage"/*.exe "$stage"/*.dll; do
+              pe=$(od -An -tu4 -j60 -N4 "$binary" | tr -d ' ')
+              machine=$(od -An -tx2 -j$((pe + 4)) -N2 "$binary" | tr -d ' ')
+              if [ "$machine" != "${{ matrix.pe_machine }}" ]; then
+                echo "::error::${binary##*/} is built for machine $machine."
+                missing=1
+              fi
+            done
           fi
           [ "$missing" -eq 0 ]
           find "$stage" -maxdepth 1 | sort
 
       - name: Smoke test the packaged programs
+        if: ${{ !matrix.cross }}
         shell: bash
         run: |
           set -euo pipefail

@@ -30,6 +30,7 @@ struct Settings {
                                            AOAHID_AXIS_RZ};
     bool use_pen{};
     int pen_mode{}; // 0 direct screen, 1 indirect tablet
+    bool use_toggle{true};
 
     // The ADB tab's bridge port per device key (aoap::DeviceEntry::key).
     std::map<std::string, int> adb_ports;
@@ -65,7 +66,7 @@ struct Settings {
     // 1 normalized.
     int record_coords{};
 
-    // 0 = Player, 1 = Live, 2 = Playlist, 3 = Recorder (App::Tab's order).
+    // 0 = Player, 1 = Live, 2 = Playlist, 3 = Recorder, 4 = ADB (App::Tab's order).
     int tab{};
     // A script reference (see script_reference()/resolve_script_reference()
     // in playlist.hpp), or empty to fall back to the first script found.
@@ -79,6 +80,7 @@ struct Settings {
     bool live_mouse{};
     bool live_key{};
     bool live_gamepad{};
+    bool live_toggle{true};
 
     // The Live preview's shape and orientation; 0/0 ratio follows the
     // connected touchscreen. See App::live_ratio_w_/h_/live_rotation_.

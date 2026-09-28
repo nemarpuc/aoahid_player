@@ -18,12 +18,9 @@
 #include <misc/cpp/imgui_stdlib.h>
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdio>
-#include <algorithm>
-#include <atomic>
-
-extern std::atomic<int> g_fps_limit;
 
 namespace gui {
 namespace {
@@ -164,6 +161,7 @@ void App::live_enable(const bool on) {
         return;
     }
     live_capture_pointer(false);
+    live_paste_active_.store(false, std::memory_order_relaxed);
     engine_.live_stop();
     live_capturing_ = false;
     live_touching_ = false;
@@ -375,6 +373,9 @@ void App::live_paste_clipboard() {
         constexpr int32_t step_delay_ms = 4;
         constexpr uint16_t left_shift = 0xE1;
         for (const char c : text) {
+            // Cleared when Live control stops or the window closes.
+            if (!live_paste_active_.load(std::memory_order_relaxed))
+                break;
             uint16_t usage = 0;
             bool shift = false;
             if (!hid_usage_from_ascii(c, usage, shift))
@@ -486,8 +487,6 @@ void App::live_gamepad() {
 // --- Drawing ---------------------------------------------------------------
 
 void App::draw_live() {
-    drain_observed();
-
     if (!engine_.live_active() && live_ready()) {
         live_enable(true);
     }
@@ -519,7 +518,6 @@ void App::draw_live_surface(const ImVec2 size) {
     const aoap::ProfileSetup setup = engine_.connected_setup();
     const float aspect = live_preview_aspect();
 
-
     ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x000000));
     ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
@@ -532,15 +530,9 @@ void App::draw_live_surface(const ImVec2 size) {
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
 
-    // The phone, centred and as large as it fits. In the normal view it is
-    // framed in a bezel so the preview reads as a phone rather than a plain
-    // rounded rectangle; full screen skips the bezel entirely and keeps the
-    // surface pure black (or the reference image, drawn separately below)
-    // edge to edge, with no gray chrome eating into the one thing full
-    // screen exists to maximize.
+    // The phone, centred and as large as it fits, outlined on a black surface.
     const ImVec2 area = ImGui::GetContentRegionAvail();
-    const float bezel = 0.0f;
-    const float margin = px(10) + bezel;
+    const float margin = px(10);
     float width = area.x - margin * 2;
     float height = width / aspect;
     if (height > area.y - margin * 2) {
@@ -628,11 +620,11 @@ void App::draw_live_surface(const ImVec2 size) {
     // Sticks, drawn small in the bottom-right corner.
     if (live_.gamepad && !live_axes_.empty()) {
         const float radius = px(22);
+        const float extent = static_cast<float>(
+            (int64_t{1} << (std::max<uint32_t>(setup.gamepad.axis_bits, 2) - 1)) - 1);
         ImVec2 centre(p1.x - radius - px(14), p1.y - radius - px(14));
-        for (size_t index = 0; index + 1 < live_axes_.size() && index < 2; index += 2) {
+        for (size_t index = 0; index + 1 < live_axes_.size() && index < 4; index += 2) {
             list->AddCircle(centre, radius, ImGui::GetColorU32(theme::border_strong), 32, px(1.5f));
-            const float extent = static_cast<float>(
-                (int64_t{1} << (engine_.connected_setup().gamepad.axis_bits - 1)) - 1);
             const float ax = static_cast<float>(live_axes_[index]) / extent;
             const float ay = static_cast<float>(live_axes_[index + 1]) / extent;
             list->AddCircleFilled(ImVec2(centre.x + ax * radius, centre.y + ay * radius), px(5),
@@ -703,7 +695,6 @@ void App::draw_live_surface(const ImVec2 size) {
 }
 
 void App::draw_live_fullscreen() {
-    drain_observed();
     if (engine_.live_active()) {
         live_keyboard();
         live_gamepad();
@@ -733,9 +724,7 @@ void App::draw_live_fullscreen() {
 }
 
 void App::draw_live_fullscreen_switches(const float width) {
-    const aoap::ProfileSetup setup = engine_.connected_setup();
     const uint32_t available = engine_.connected_profiles();
-
 
     struct Entry {
         const char* label;
@@ -762,7 +751,6 @@ void App::draw_live_fullscreen_switches(const float width) {
         ImGui::EndDisabled();
     }
 
-
     gap(2);
     if (ui::button("Exit full screen", ImVec2(width, 0)))
         live_fullscreen_ = false;
@@ -771,7 +759,7 @@ void App::draw_live_fullscreen_switches(const float width) {
 void App::draw_live_toggles() {
     const uint32_t available = engine_.connected_profiles();
     const bool present = (available & aoap::profile_bit(aoap::Profile::toggle)) != 0U;
-    
+
     ImGui::BeginDisabled(!present || !engine_.live_active() || !live_.toggle);
 
     // Style for transparent background and colored text (icons)
@@ -969,8 +957,6 @@ void App::draw_live_controls() {
     const uint32_t available = engine_.connected_profiles();
     const bool running = engine_.live_active();
 
-
-
     // What is forwarded; only what the connection actually has.
     struct Entry {
         const char* label;
@@ -1005,10 +991,10 @@ void App::draw_live_controls() {
         if (!present && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("This profile is not part of the connection.");
     }
-    
+
     gap(4);
     draw_live_toggles();
-    
+
     gap(4);
     int current_fps = ::g_fps_limit.load(std::memory_order_relaxed);
     ImGui::SetNextItemWidth(px(160));
@@ -1156,8 +1142,8 @@ void App::draw_live_controls() {
             hint = "Turn on what you want to forward.";
         small_dim(hint.c_str());
     } else {
-        small_dim("Live control sends the pointer, keyboard, and gamepad straight to the phone. "
-                  "It stops when playback starts.");
+        small_dim("Live control sends the pointer, keyboard, and gamepad straight to the phone, "
+                  "also while a script plays.");
     }
     ui::end_card();
 }

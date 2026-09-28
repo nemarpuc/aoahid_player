@@ -26,6 +26,9 @@
 #include <thread>
 #include <vector>
 
+// The GUI's frame-rate cap, 0 for none; owned by main(), set from the Live tab.
+extern std::atomic<int> g_fps_limit;
+
 namespace gui {
 
 // The whole window: device and profile setup on the left, the player and the
@@ -372,6 +375,9 @@ class App {
     // Scripts.
     std::vector<ScriptFile> scripts_;
     std::string script_path_;
+    // script_reference(script_path_), kept so saving settings each frame does
+    // not resolve paths on disk.
+    std::string script_reference_;
     std::shared_ptr<const aoap::EventScript> script_;
     aoap::Timeline timeline_;
     std::vector<std::string> script_errors_;   // every problem of the last failed load

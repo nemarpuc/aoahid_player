@@ -12,6 +12,9 @@
 #include <httplib.h>
 
 #include <cctype>
+#include <cerrno>
+#include <cstdint>
+#include <cstdio>
 #include <cstdlib>
 #include <filesystem>
 #include <memory>
@@ -212,6 +215,25 @@ std::string ControlApi::start(const int port) {
         stop();
     }
     server_ = std::make_unique<httplib::Server>();
+    // One waiting thread is enough for a local control surface; more start
+    // only while several requests are in progress.
+    server_->new_task_queue = [] { return new httplib::ThreadPool(1, 8); };
+    // A browser names the page's own host in Host and adds Origin to a
+    // cross-site request, so this keeps web pages (and DNS rebinding) out.
+    server_->set_pre_routing_handler([port](const httplib::Request& req, httplib::Response& res) {
+        std::string host = req.get_header_value("Host");
+        for (char& c : host)
+            c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        const std::string suffix = ":" + std::to_string(port);
+        if (req.has_header("Origin") ||
+            (host != "127.0.0.1" + suffix && host != "localhost" + suffix)) {
+            res.status = 403;
+            res.set_content(json_error("Requests from web pages are refused."),
+                            "application/json");
+            return httplib::Server::HandlerResponse::Handled;
+        }
+        return httplib::Server::HandlerResponse::Unhandled;
+    });
     register_routes();
     // set_address_family is not needed: passing "127.0.0.1" already binds
     // that interface alone, never a public one.
@@ -242,8 +264,8 @@ void ControlApi::register_routes() {
     svr.Get("/", [](const Req&, Res& res) {
         res.set_content(
             "aoahid_player control API. See README.md's \"Control API\" section for the "
-            "full route list. Every route takes plain query parameters (GET or POST) and "
-            "answers with a small JSON object.\n",
+            "full route list. Parameters go in the query string; GET /status reports the "
+            "state, every other route is a POST, and each answers with a small JSON object.\n",
             "text/plain");
     });
 

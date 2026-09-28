@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/session.hpp"
 
+#include <algorithm>
 #include <cstdio>
 #include <cstring>
 #include <utility>
@@ -76,8 +77,10 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
         entry.vendor_id = info->vendor_id;
         entry.product_id = info->product_id;
         entry.bus = info->bus_number;
-        entry.port_path_length = info->port_path_length;
-        std::memcpy(entry.port_path, info->port_path, std::min<size_t>(sizeof(entry.port_path), info->port_path_length));
+        const size_t ports = std::min<size_t>(sizeof(entry.port_path), info->port_path_length);
+        entry.port_path_length = static_cast<uint8_t>(ports);
+        if (ports != 0U)
+            std::memcpy(entry.port_path, info->port_path, ports);
         char identity[48];
         std::snprintf(identity, sizeof identity, "%04x:%04x@%u.%u",
                       static_cast<unsigned>(info->vendor_id),
@@ -122,7 +125,7 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
         opt.strings.manufacturer = "aoahid_player";
         opt.strings.model = "aoahid_player";
         opt.strings.description = "aoahid_player accessory mode";
-        
+
         const aoahid_result res = aoahid_accessory_start(context_.native_handle(), info, &opt);
         if (res == AOAHID_OK) {
             note(Severity::info, "Requested accessory mode for " + device_label(info));
@@ -131,7 +134,6 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
             note(Severity::error, "Accessory request failed: " + explain_error(res));
         }
     }
-    
     return success;
 }
 

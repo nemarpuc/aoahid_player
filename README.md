@@ -5,7 +5,8 @@
 
 Plays scripted touch, mouse, keyboard, gamepad, and pen input to Android
 devices over USB with AOA 2.0 HID, and records real touches and key presses
-into the same script format with `adb`. Linux and Windows, C++20.
+into the same script format with `adb`. Linux and Windows, x86_64 and ARM64,
+C++20.
 
 There are three programs, all built on one shared engine:
 
@@ -21,10 +22,11 @@ the protocol, descriptor, and transport details.
 ## Download
 
 Each [release](https://github.com/nemarpuc/aoahid_player/releases) has one
-archive per platform with everything in a single folder:
+archive per platform and CPU (`linux-x86_64`, `linux-aarch64`,
+`windows-x86_64`, `windows-arm64`) with everything in a single folder:
 
 ```
-aoahid-player-<version>-<platform>-x86_64/
+aoahid-player-<version>-<platform>-<cpu>/
   aoahid_player_gui[.exe]   aoa_touch[.exe]   aoa_record[.exe]
   libaoahid + libusb runtime (.so / .dll)
   MSVC runtime DLLs (Windows only)
@@ -36,7 +38,8 @@ aoahid-player-<version>-<platform>-x86_64/
 Keep the folder together: the programs find the libraries and `csv/` next to
 themselves. On Linux, install the udev rule first (see
 [Linux permissions](#linux-permissions-udev)). Recording needs `adb`
-(Android SDK Platform-Tools) on PATH; playback does not.
+(Android SDK Platform-Tools) on PATH; playback does not. The Windows ARM64
+archive is cross-compiled, so CI checks its contents but does not run it.
 
 ## The GUI
 
@@ -114,15 +117,16 @@ without stopping playback for the others.
 **Live tab**
 
 A black preview with the phone's shape, for using the phone from the computer
-and watching what the scripts do. Turn on *Live control*, then choose what to
-forward: *Touch* (drag inside the preview), *Mouse* (motion, buttons, and the
-wheel), *Keyboard*, *Gamepad* (any controller GLFW recognises), and *Toggle*
-(media and system keys). Only profiles the connection actually has can be
-turned on, and touch and mouse
-preview lists what is held and what was sent, including an *Active touches*
-line per finger currently down — Live's own included, called out from the
-rest — since a script can now be playing at the same time (see below); the
-same list also appears on the Player tab while a script plays. The Live
+and watching what the scripts do. Live control starts as soon as the tab is
+open while a phone is connected, and the switches under the preview choose
+what it forwards: *Touch* (drag inside the preview), *Mouse* (motion, buttons,
+and the wheel), *Keyboard*, *Gamepad* (any controller GLFW recognises), and
+*Toggle* (media and system keys). Only profiles the connection actually has
+can be turned on, and touch and mouse share the pointer, so only one of them
+is on at a time. The panel beside the preview lists what is held and what was
+sent, including an *Active touches* line per finger currently down — Live's
+own included, called out from the rest — since a script can be playing at the
+same time (see below); the same list also appears on the Player tab. The Live
 finger itself appears on the preview with its coordinates, held keys along
 its bottom. *Rotate* turns the preview a quarter
 turn at a time for landscape use, and the two numbers beside it set its shape
@@ -183,8 +187,9 @@ Linux-only for now; on Windows these five keys still do not reach the phone.
 preview, by path or by dropping the file on the preview while this tab is
 open. While unlocked, drag inside it to move, its corner handle to resize,
 and its top handle to rotate; *Lock image* freezes it in place and lets
-touches and clicks pass straight through to the phone. It is not saved
-between runs.
+touches and clicks pass straight through to the phone. Its path, position,
+size, rotation, and opacity are saved between runs, and the image is loaded
+again at the next start while the file is still there.
 
 **Playlist tab**
 
@@ -263,15 +268,21 @@ authentication: any program running on this machine can reach it once it is
 on, so turning it on is a deliberate choice, same as opening a debug port.
 
 Every route takes plain query parameters — `curl -X POST
-"http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — whether the request
-is a GET or a POST; there is no request body to build and nothing to parse
-one with. Every route answers `200` with a small JSON object, at least
+"http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — with no request body
+to build. `GET /` and `GET /status` are the only GET routes; every other route
+is POST. A route answers `200` with a small JSON object, at least
 `{"ok":true}` or `{"ok":false,"error":"..."}`; a malformed request answers
 `400`, and a route that needs a precondition that is not met (seeking while
-nothing plays, for instance) answers `409`. `GET /` lists the routes as
-plain text.
+nothing plays, for instance) answers `409`. `GET /` describes the API as plain
+text.
 
-Touch, mouse, keyboard, gamepad, and media-key routes all forward through
+A request that carries an `Origin` header, which browsers add for web pages,
+or whose `Host` is not `127.0.0.1:<port>` or `localhost:<port>`, is refused
+with `403`. That keeps a web page open in a browser from driving the phone
+through the API, including through DNS rebinding; programs such as `curl` or a
+script send neither and are unaffected.
+
+Touch, mouse, keyboard, and gamepad routes all forward through
 Live control (see the Live tab, above): call `POST /live/start` once first,
 same as turning the Live tab's own toggle on, or they are silently no-ops.
 The API's own touch contact is the second-to-last one the connection
@@ -292,7 +303,7 @@ both touch the screen at once without colliding.
 | `POST /mouse/move` | `dx`, `dy` | Relative, like a physical mouse. |
 | `POST /mouse/button` | `button` (1-based), `down` (default `true`) | |
 | `POST /mouse/wheel` | `delta` | |
-| `POST /key` | `usage` (HID keyboard usage, decimal or `0x..`), `down` (default `true`) | See [Key names](#key-names). |
+| `POST /key` | `usage` (HID keyboard usage, decimal or `0x..`), `down` (default `true`) | A number; the CSV [key names](#key-names) are not accepted here. |
 | `POST /gamepad/button` | `index` (1-based), `down` (default `true`) | |
 | `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
@@ -309,7 +320,7 @@ Device selection:
 
 Profile setup (all explicit; there are no presets):
   --touch-res WxH          Touch surface resolution, e.g. 1080x1920
-  --touch-max-contacts N   Max simultaneous touch contacts (1-16)
+  --touch-max-contacts N   Max simultaneous touch contacts (1-16, default 16)
   --gamepad-buttons N      Number of gamepad buttons
   --gamepad-axes LIST      Comma-separated axis roles, e.g. x,y,rx,ry
                            (x y z rx ry rz slider dial wheel rudder
@@ -481,9 +492,10 @@ the left one). A bare number is always a usage number, so write digit keys as
 
 ## Linux permissions (udev)
 
-On Linux, raw USB devices are root-only by default, so the programs cannot
-open the phone even when `adb` can already see it. Install the rule shipped in
-this repository, then unplug and replug the phone:
+The programs open the phone's USB device directly, so the user running them
+needs write access to it. The logged-in user often has it already; if
+connecting fails with an access error, install the rule shipped in this
+repository (the same one libaoahid ships), then unplug and replug the phone:
 
 ```sh
 sudo cp udev/51-aoahid.rules /etc/udev/rules.d/
@@ -491,10 +503,11 @@ sudo udevadm control --reload-rules
 sudo udevadm trigger
 ```
 
-See the comments in [`udev/51-aoahid.rules`](udev/51-aoahid.rules) for the
-group your user needs to be in and for adding your phone's pre-switch vendor
-ID (the rule as shipped covers the post-AOA-switch Google accessory vendor
-ID, `18d1`).
+The phone keeps its own vendor and product IDs, so the rule gives the user at
+the local seat access to USB devices through systemd-logind's `uaccess` tag
+rather than matching one ID. The comments in
+[`udev/51-aoahid.rules`](udev/51-aoahid.rules) show a group-based rule for
+one phone instead, for systems without logind.
 
 ## Building from source
 
@@ -524,13 +537,14 @@ cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DCMAKE_PREFIX_PATH=/path/to/liba
 cmake --build build --config Release
 ```
 
-On Linux/macOS, `make AOAHID_PREFIX=/path/to/libaoahid` does the same first
+On Linux, `make AOAHID_PREFIX=/path/to/libaoahid` does the same first
 configure and build in one step (`make` alone once configured); `make test`
 and `make run` build first, then run the unit tests or launch the GUI.
 `make help` lists every target. It is a thin wrapper around the commands
 above — nothing it does is unavailable through CMake directly — and it is
 not meant for Windows, which has no `make` by default; use the Visual
-Studio generator there (`windows-release` in `CMakePresets.json`).
+Studio generator there (`windows-release`, or `windows-arm64-release` for
+ARM64, in `CMakePresets.json`).
 
 Every program lands in `build/out/<config>/`, next to a copy of `csv/` (and,
 on Windows, the libaoahid DLLs), so it runs straight from there. To lay out
@@ -722,7 +736,7 @@ its own licence in `third-party/`:
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
   backing the control API's HTTP server
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 2.0.0
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 2.1.0
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored

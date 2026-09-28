@@ -209,6 +209,7 @@ class Engine final : private aoap::PlaybackObserver {
     aoap::ProfileSetup setup_;
     PlaylistProgress progress_;
     std::vector<LiveItem> live_inbox_;
+    std::vector<LiveItem> live_batch_; // swapped with live_inbox_; worker thread only
     struct BridgeRequest {
         size_t device;
         bool on;

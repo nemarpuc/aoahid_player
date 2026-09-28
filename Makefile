@@ -1,5 +1,5 @@
 # Convenience wrapper around the CMake build documented in README.md's
-# "Building from source" section, for Linux/macOS shells. Windows uses the
+# "Building from source" section, for Linux shells. Windows uses the
 # Visual Studio generator directly (see CMakePresets.json's windows-release
 # preset) and has no `make` by default, so this is not meant for it.
 #
@@ -7,8 +7,8 @@
 # "Getting libaoahid"); leave it unset if it is already findable (installed
 # system-wide, or already on CMAKE_PREFIX_PATH in the environment).
 #
-#   make AOAHID_PREFIX=/path/to/libaoahid-0.5.3-linux-x86_64-...   # first configure
-#   make                                                            # rebuild after
+#   make AOAHID_PREFIX=/path/to/libaoahid   # first configure
+#   make                                    # rebuild after
 #   make test
 #   make run
 #   make clean

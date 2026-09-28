@@ -130,7 +130,7 @@ inline void append_touch_row(std::string& out, const int finger_id, const bool s
     char line[96];
     const int written = std::snprintf(line, sizeof line, "t,%d,%d,%d,%d,%.3f\n", finger_id,
                                       state ? 1 : 0, x, y, wait_ms);
-    if (written > 0)
+    if (written > 0 && static_cast<size_t>(written) < sizeof line)
         out.append(line, static_cast<size_t>(written));
 }
 
@@ -140,7 +140,7 @@ inline void append_touch_row_fraction(std::string& out, const int finger_id, con
     char line[112];
     const int written = std::snprintf(line, sizeof line, "t,%d,%d,%.6f,%.6f,%.3f\n", finger_id,
                                       state ? 1 : 0, x, y, wait_ms);
-    if (written > 0)
+    if (written > 0 && static_cast<size_t>(written) < sizeof line)
         out.append(line, static_cast<size_t>(written));
 }
 
@@ -149,7 +149,7 @@ inline void append_key_row(std::string& out, const uint16_t usage, const bool do
     char line[64];
     const int written = std::snprintf(line, sizeof line, "k,0x%02x,%d,%.3f\n",
                                       static_cast<unsigned>(usage), down ? 1 : 0, wait_ms);
-    if (written > 0)
+    if (written > 0 && static_cast<size_t>(written) < sizeof line)
         out.append(line, static_cast<size_t>(written));
 }
 

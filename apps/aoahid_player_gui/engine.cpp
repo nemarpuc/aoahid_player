@@ -6,7 +6,9 @@
 #include "aoahid_player/timing.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstdio>
+#include <thread>
 #include <type_traits>
 
 namespace gui {
@@ -28,6 +30,7 @@ Engine::Engine(aoap::EventSink& sink, std::function<void()> wake)
     // script that never turns Live on pays only one relaxed load per wake.
     player_.set_live_pump([this] { pump_live(); });
     live_inbox_.reserve(256);
+    live_batch_.reserve(256);
     worker_ = std::thread([this] { loop(); });
 }
 
@@ -81,7 +84,7 @@ void Engine::connect(std::vector<size_t> selection, aoap::ProfileSetup setup) {
 }
 
 void Engine::accessory(std::vector<size_t> selection) {
-    if (selection.empty() || busy())
+    if (selection.empty() || phase() != Phase::idle)
         return;
     Command command{};
     command.kind = Command::Kind::accessory;
@@ -437,15 +440,16 @@ void Engine::pump_live() {
     }
     if (!live_pending_.exchange(false, std::memory_order_acq_rel))
         return; // nothing queued since the last drain
-    std::vector<LiveItem> batch;
+    // Swapping two reserved vectors keeps this path free of allocation.
+    live_batch_.clear();
     {
         const std::lock_guard lock(mutex_);
-        batch.swap(live_inbox_);
+        live_batch_.swap(live_inbox_);
     }
-    if (batch.empty())
+    if (live_batch_.empty())
         return;
     aoap::DeviceGroup& group = session_.group();
-    for (const LiveItem& item : batch) {
+    for (const LiveItem& item : live_batch_) {
         if (item.wheel) {
             aoahid_result result = group.scroll(item.wheel_delta);
             if (result == AOAHID_ERR_BUSY) {
@@ -615,20 +619,15 @@ void Engine::execute(Command& command) {
         break;
     }
     case Command::Kind::accessory: {
-        session_.disconnect();
-        
-        bool success = session_.accessory(command.selection, error);
-        if (!success && !error.empty()) {
+        const bool success = session_.accessory(command.selection, error);
+        if (!success && !error.empty())
             note(aoap::Severity::error, error);
-        }
-        if (success) {
-            // Re-fetch list to update UI, but the device will disconnect soon
+        // Give the switched devices a moment to drop off before the rescan.
+        if (success)
             std::this_thread::sleep_for(std::chrono::milliseconds(200));
-        }
-        Command cmd{};
-        cmd.kind = Command::Kind::refresh;
-        push(std::move(cmd), Phase::refreshing);
-        set_phase(Phase::idle);
+        push(Command{Command::Kind::refresh, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::refreshing);
+        if (wake_)
+            wake_();
         break;
     }
     case Command::Kind::disconnect:

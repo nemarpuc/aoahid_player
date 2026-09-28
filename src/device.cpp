@@ -22,8 +22,6 @@ constexpr uint32_t descriptor_policy_bytes = 4096U;
 constexpr uint32_t report_policy_bytes = 1024U;
 constexpr uint32_t pool_slots = 8U;
 constexpr uint32_t close_drain_timeout_ms = 1000U;
-constexpr uint32_t first_report_attempts = 20U;
-constexpr uint32_t first_report_backoff_us = 1000U;
 
 aoahid_device_options make_device_options() noexcept {
     aoahid_device_options options{};
@@ -36,8 +34,6 @@ aoahid_device_options make_device_options() noexcept {
     options.transfer_pool_slots = pool_slots;
     options.maximum_report_bytes = report_policy_bytes;
     options.close_drain_timeout_ms = close_drain_timeout_ms;
-    options.first_report_attempts = first_report_attempts;
-    options.first_report_backoff_us = first_report_backoff_us;
     // The specs this player builds are fixed and already range-checked by the
     // profile factories, so the second wire-image scan is not run per report.
     options.validate_reports = 0U;
@@ -166,6 +162,8 @@ std::string explain_adb_bridge_error(const int code, const uint16_t port) {
     case -3:
     case -5:
         return "could not listen on " + at;
+    case -6:
+        return "out of memory, or no thread could be started";
     default:
         return "failed (code " + std::to_string(code) + ")";
     }

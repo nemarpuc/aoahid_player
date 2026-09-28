@@ -79,6 +79,7 @@ uint16_t hid_usage_from_glfw(const int key) noexcept {
     case GLFW_KEY_LEFT_SHIFT: return 0xE1;
     case GLFW_KEY_LEFT_ALT: return 0xE2;
     case GLFW_KEY_LEFT_SUPER: return 0xE3;
+    case GLFW_KEY_RIGHT_CONTROL: return 0xE4;
     case GLFW_KEY_RIGHT_SHIFT: return 0xE5;
     case GLFW_KEY_RIGHT_ALT: return 0xE6;
     case GLFW_KEY_RIGHT_SUPER: return 0xE7;

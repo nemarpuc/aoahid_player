@@ -2,6 +2,7 @@
 #include "settings.hpp"
 
 #include "aoahid_player/paths.hpp"
+#include "aoahid_player/player.hpp"
 #include "aoahid_player/spec_builder.hpp"
 
 #include <algorithm>
@@ -173,6 +174,8 @@ Settings load_settings(const std::filesystem::path& path) {
         }
         else if (key == "pen")
             read_bool(value, settings.use_pen);
+        else if (key == "toggle")
+            read_bool(value, settings.use_toggle);
         else if (key.rfind("adb_bridge.port.", 0) == 0 && key.size() > 16) {
             int port = 0;
             read_int(value, 1024, 65535, port);
@@ -218,9 +221,10 @@ Settings load_settings(const std::filesystem::path& path) {
         else if (key == "ui.log_open")
             read_bool(value, settings.log_open);
         else if (key == "player.speed")
-            read_float(value, 0.01f, 100.0f, settings.speed);
+            read_float(value, static_cast<float>(aoap::Player::min_speed),
+                       static_cast<float>(aoap::Player::max_speed), settings.speed);
         else if (key == "player.loop_limit")
-            read_int(value, 0, 1000000, settings.loop_limit);
+            read_int(value, 0, INT32_MAX, settings.loop_limit);
         else if (key == "live.touch")
             read_bool(value, settings.live_touch);
         else if (key == "live.mouse")
@@ -229,6 +233,8 @@ Settings load_settings(const std::filesystem::path& path) {
             read_bool(value, settings.live_key);
         else if (key == "live.gamepad")
             read_bool(value, settings.live_gamepad);
+        else if (key == "live.toggle")
+            read_bool(value, settings.live_toggle);
         else if (key == "live.ratio_w")
             read_int(value, 0, INT32_MAX, settings.live_ratio_w);
         else if (key == "live.ratio_h")
@@ -277,6 +283,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "gamepad.axes = " << axes_text(settings.pad_axes) << '\n';
     out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
+    out << "toggle = " << (settings.use_toggle ? 1 : 0) << '\n';
     for (const auto& [device, port] : settings.adb_ports)
         out << "adb_bridge.port." << device << " = " << port << '\n';
     out << "api.enabled = " << (settings.api_enabled ? 1 : 0) << '\n';
@@ -301,6 +308,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live.mouse = " << (settings.live_mouse ? 1 : 0) << '\n';
     out << "live.key = " << (settings.live_key ? 1 : 0) << '\n';
     out << "live.gamepad = " << (settings.live_gamepad ? 1 : 0) << '\n';
+    out << "live.toggle = " << (settings.live_toggle ? 1 : 0) << '\n';
     out << "live.ratio_w = " << settings.live_ratio_w << '\n';
     out << "live.ratio_h = " << settings.live_ratio_h << '\n';
     out << "record.coords = " << (settings.record_coords == 1 ? "normalized" : "raw") << '\n';
