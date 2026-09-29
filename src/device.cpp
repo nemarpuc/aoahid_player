@@ -37,8 +37,8 @@ aoahid_device_options make_device_options() noexcept {
     options.validate_reports = 0U;
     options.aoa_descriptor_wire_policy_bytes = descriptor_policy_bytes;
     options.linux_descriptor_policy_bytes = descriptor_policy_bytes;
-    // These five name the audited Linux HID parser revision in libaoahid's
-    // docs/FACT_AUDIT.md.
+    // These five are the Linux HID parser limits listed in libaoahid's
+    // docs/LIMITS.md.
     options.linux_hid_fields_per_report_policy = 256U;
     options.linux_hid_global_stack_depth_policy = 4U;
     options.linux_hid_usages_policy = 12288U;

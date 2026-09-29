@@ -21,6 +21,11 @@ All HID, AOA, and USB work is done by
 [libaoahid](https://github.com/nemarpuc/libaoahid); see that repository for
 the protocol, descriptor, and transport details.
 
+Tested on real hardware: touchscreen, keyboard, mouse, gamepad, and media keys
+(the *toggle* profile) on a Samsung Galaxy Tab S11 and a POCO F6 Pro, from
+Windows 10 x64 and Arch Linux. The pen profile has not been tested on hardware
+yet.
+
 ## Download
 
 Each [release](https://github.com/nemarpuc/aoahid_player/releases) has one
@@ -172,18 +177,19 @@ chosen), including in full screen, so it stays visible without looking away
 from the phone.
 
 Keyboard forwarding recognises the extra keys a JIS (Japanese) keyboard has
-that a US layout does not — Henkan, Muhenkan, Kana, Zenkaku/Hankaku, and Ro —
+that a US layout does not — Henkan, Muhenkan, Katakana/Hiragana,
+Zenkaku/Hankaku, Ro, and Yen —
 on Linux, by their physical scancode rather than by name: GLFW has no
 `GLFW_KEY_*` constant for any of them on any platform, so without this they
 would never reach the phone at all. This was a gap in this app talking to
 GLFW, not a limitation of the phone or Android — once a usage reaches the
 connection it is forwarded like any other key. The connection's *Usages*
-range (in the Keyboard profile settings) has to include 87-94 for these to
-actually reach the phone; raise its upper end from the default 65 if you
+range (in the Keyboard profile settings) has to include 0x87-0x94 for these
+to actually reach the phone; raise its upper end from the default 0x65 if you
 need them. ISO keyboards (the extra key beside left Shift, common outside
 the US) are already covered by the default range on every platform. Windows
 uses a different scancode numbering than Linux, so this recognition is
-Linux-only for now; on Windows these five keys still do not reach the phone.
+Linux-only for now; on Windows these keys still do not reach the phone.
 
 *Reference image* loads a picture (a screenshot works well) over the
 preview, by path or by dropping the file on the preview while this tab is
@@ -251,10 +257,12 @@ phone worked as plugged in, while the Samsung tablet first needed its driver
 switched to WinUSB. If a bridge does not start on Windows, see
 [Troubleshooting](#troubleshooting).
 
-On a Wayland session the GUI opens through XWayland, because GLFW's native
-Wayland backend has no input method support; that is what lets the script
-search (and every other text field) take Japanese and other IME input via
-fcitx5 or ibus (`XMODIFIERS` is set to `@im=fcitx` when unset).
+On a Wayland session with XWayland available, the GUI opens through
+XWayland, because GLFW's native Wayland backend has no input method support;
+that is what lets the script search (and every other text field) take
+Japanese and other IME input via fcitx5 or ibus. When `XMODIFIERS` is unset it
+is set to `@im=ibus` if `GTK_IM_MODULE` is `ibus`, and to `@im=fcitx`
+otherwise.
 
 The window only redraws when something changes, so an idle window uses no
 CPU. It follows the monitor's scale factor on Windows and X11 and the
@@ -272,8 +280,9 @@ on, so turning it on is a deliberate choice, same as opening a debug port.
 
 Every route takes plain query parameters — `curl -X POST
 "http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — with no request body
-to build. `GET /` and `GET /status` are the only GET routes; every other route
-is POST. A route answers `200` with a small JSON object, at least
+to build. Boolean parameters take `true`/`false`, `1`/`0`, `on`/`off`, or
+`yes`/`no`. `GET /` and `GET /status` are the only GET routes; every other
+route is POST. A route answers `200` with a small JSON object, at least
 `{"ok":true}` or `{"ok":false,"error":"..."}`; a malformed request answers
 `400`, and a route that needs a precondition that is not met (seeking while
 nothing plays, for instance) answers `409`. `GET /` describes the API as plain
@@ -295,11 +304,11 @@ both touch the screen at once without colliding.
 
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | Phase, connected device count, active profiles, `live_active`, and the playback state/position/loops/reports. |
+| `GET /status` | — | Phase, `connected`, device count, active profiles, `live_active`, and the playback state/lap/time/loops/reports. |
 | `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing). |
 | `POST /stop` | — | |
 | `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
-| `POST /seek` | `lap` (`first`/`repeat`), `time_ms` | 409 if nothing is playing. |
+| `POST /seek` | `lap` (`first`/`repeat`, default `first`), `time_ms` | 409 if nothing is playing. |
 | `POST /live/start` | — | 409 if not connected. |
 | `POST /live/stop` | — | |
 | `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Device coordinates, not a fraction. |
@@ -418,13 +427,14 @@ lines and a UTF-8 byte-order mark are ignored. Lines starting with `@` are
 | `p`    | pen            | `in_range,tip,x,y,pressure,wait_ms`         |
 
 `state`, `down`, `pressed`, `in_range`, `tip`, and the four dpad directions
-are `0` or `1`. `axis_index` is the position of the axis in the gamepad axis
+are `0` or `1`. Mouse and gamepad `button_no` are 1-based. A pen row with
+`tip` 1 needs `in_range` 1. `axis_index` is the position of the axis in the gamepad axis
 list (0-based). `wait_ms` is the delay after the row; rows with `0` are sent
 in the same report as the next row. Every row runs at an absolute time
 measured from the start of its lap, so a slow USB transfer never makes the
 script drift. Keyboard modifiers (usages `0xE0`–`0xE7`) are always available,
-whatever the usage range. The keyboard profile is full N-Key Rollover (as of
-libaoahid 0.2.0), so every usage in the configured range can be held down at
+whatever the usage range. libaoahid's keyboard profile is full N-Key
+Rollover, so every usage in the configured range can be held down at
 the same time with no limit on simultaneous keys. See `csv/example.csv`.
 
 ### Laps: which rows run when
@@ -456,7 +466,7 @@ without directives are read as before.
 |-----------|---------|
 | `@format 1` / `@format 2` | Optional. The format version; 1 and 2 are the same language, and anything newer is refused. Before the first row. |
 | `@screen WxH` | The size of the coordinate space the touch and pen `x,y` are written in (each from 1 to 65536). The older `# screen WxH` comment still works; `@screen` wins when both are present. Before the first row, once. |
-| `@coords normalized` / `@coords integer` | With `normalized`, touch and pen `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen pressure stays an integer. Before the first row, once; not combined with `@screen`. |
+| `@coords normalized` / `@coords integer` | With `normalized`, touch and pen `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen pressure stays an integer. Before the first row, once; `normalized` cannot be combined with `@screen`. |
 | `@once` … `@end` | Every row inside is once-only, whatever its case. Blocks do not nest. |
 | `@once keep-time` … `@end` | The same, and later laps still wait the rows' `wait_ms`, so every lap has the same length. |
 
@@ -479,8 +489,8 @@ stored as a 65536 × 65536 space.
 `CapsLock`, `PrintScreen`, `ScrollLock`, `Pause`, `Insert`, `Delete`, `Home`,
 `End`, `PageUp`, `PageDown`, `Up`, `Down`, `Left`, `Right`, `NumLock`, `Menu`,
 and the modifiers `LCtrl`, `LShift`, `LAlt`, `LGui`, `RCtrl`, `RShift`,
-`RAlt`, `RGui` (`Ctrl`, `Shift`, `Alt`, and `Gui`, `Win`, `Meta`, `Super` mean
-the left one). A bare number is always a usage number, so write digit keys as
+`RAlt`, `RGui` (`Ctrl`, `Control`, `Shift`, `Alt`, and `Gui`, `Win`, `LWin`,
+`Meta`, `Super` mean the left one; `RWin` is `RGui`). A bare number is always a usage number, so write digit keys as
 `Digit1`.
 
 ### Checks
@@ -738,7 +748,7 @@ its own licence in `third-party/`:
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
   backing the control API's HTTP server
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 2.1.0
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.0.1
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored
