@@ -243,7 +243,8 @@ Bridges cannot be switched while a script plays, since stopping one can take
 up to a second.
 
 The bridge has been verified end to end on real hardware with a Samsung
-tablet and a HyperOS phone, on both Linux and Windows. On Windows the HyperOS
+Galaxy Tab S11 and a POCO F6 Pro (HyperOS), on both Windows 10 x64 and Arch
+Linux, with the phone's driver on WinUSB and on libusbK. On Windows the HyperOS
 phone worked as plugged in, while the Samsung tablet first needed its driver
 switched to WinUSB. If a bridge does not start on Windows, see
 [Troubleshooting](#troubleshooting).
@@ -708,11 +709,10 @@ Other manufacturers that ship their own dedicated USB driver can be handled
 the same way. A phone whose adb interface is already WinUSB, like the HyperOS
 phone, needs none of this.
 
-After the change, Windows `adb` on its own no longer sees the phone over USB,
-Windows no longer shows the phone for file transfer (MTP), since the whole
-phone is on WinUSB, and tools that need the manufacturer's driver (such as
-Samsung Smart Switch) may stop working with it. Use `adb` through the ADB Bridge. To undo, repeat
-steps 1-3, or reinstall the manufacturer's USB driver.
+After the change, Windows `adb` still sees the phone over USB as before.
+Tools that need the manufacturer's driver (such as Samsung Smart Switch) may
+stop working with it, and Windows file transfer (MTP) may too; MTP was not
+checked. To undo, repeat steps 1-3, or reinstall the manufacturer's USB driver.
 
 ## Known limitations
 
