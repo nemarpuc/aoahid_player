@@ -5,13 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [0.20.3] - 2026-09-29
+
 - GUI: the Speed and Loops fields (and every other text field) take typed
   input while Live control forwards keys. Before, the forwarding cleared all
   keyboard input every frame, so nothing could be typed.
 - GUI: in Live mouse mode, only a click on the preview captures the pointer.
   Before, a mouse button a script was holding made a click anywhere in the
   window capture it.
-- README: a place for the demo video.
+- README: a demo video.
 - README: Windows `adb` keeps seeing the phone after its driver is switched to
   WinUSB; the README said it no longer did. Only tools that need the
   manufacturer's driver (and possibly MTP) are affected.
