@@ -14,6 +14,7 @@ were reconstructed from the commit history.
   Before, a mouse button a script was holding made a click anywhere in the
   window capture it.
 - README: a demo video.
+- The vendored aoahid_adb_proxy is 3.0.1 (documentation-only release).
 - README: Windows `adb` keeps seeing the phone after its driver is switched to
   WinUSB; the README said it no longer did. Only tools that need the
   manufacturer's driver (and possibly MTP) are affected.
