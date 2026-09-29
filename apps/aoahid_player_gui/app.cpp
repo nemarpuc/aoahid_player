@@ -894,8 +894,9 @@ void App::frame() {
     // The pointer capture's own release key is handled in on_key(), straight
     // from the window system, so it works whichever key is configured and
     // whether or not Keyboard forwarding is on.
-    // Live control owns the keyboard while it is forwarding keys.
-    if (forwarding_keys)
+    // Live control owns the keyboard while it is forwarding keys, except
+    // while a text field is being edited (on_key() then forwards nothing).
+    if (forwarding_keys && !io.WantTextInput)
         io.ClearInputKeys();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);

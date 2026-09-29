@@ -271,7 +271,7 @@ class App {
     void stop_playback();
     void play_playlist();
     void live_enable(bool on);
-    void live_pointer(ImVec2 surface_min, ImVec2 surface_size);
+    void live_pointer(ImVec2 surface_min, ImVec2 surface_size, bool hovered);
     // Grabs or releases the OS pointer for relative mouse forwarding.
     void live_capture_pointer(bool captured);
     // Preview fractions to device fractions and back, following the rotation.

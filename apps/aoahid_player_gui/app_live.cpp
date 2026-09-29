@@ -265,7 +265,7 @@ void App::drain_observed() {
     }
 }
 
-void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
+void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size, const bool hovered) {
     if (!engine_.live_active() || surface_size.x <= 0.0f || surface_size.y <= 0.0f)
         return;
     const ImGuiIO& io = ImGui::GetIO();
@@ -300,12 +300,15 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size) {
         // key forwarding; here only capturing on a click is left to do. The
         // release key is still forwarded to the phone afterwards like any
         // other key, same as before it released the capture.
-        if (!live_mouse_captured_ && ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
+        if (!live_mouse_captured_) {
+            // Only a click on the preview grabs the pointer. live_buttons_
+            // also holds a script's buttons, which keeps this running while
+            // the pointer is off the preview.
+            if (!hovered || !ImGui::IsMouseClicked(ImGuiMouseButton_Left))
+                return;
             live_capture_pointer(true);
             live_swallow_left_ = true;
         }
-        if (!live_mouse_captured_)
-            return;
 
         // Relative motion is sent straight from on_cursor() as the window
         // system reports it, not from here: waiting for this once-per-frame
@@ -570,7 +573,7 @@ void App::draw_live_surface(const ImVec2 size) {
     if (running && !image_active &&
         !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId | ImGuiPopupFlags_AnyPopupLevel) &&
         (hovered || ImGui::IsItemActive() || held_state || live_mouse_captured_))
-        live_pointer(p0, ImVec2(width, height));
+        live_pointer(p0, ImVec2(width, height), hovered);
 
     live_image_.draw(list, p0, ImVec2(width, height));
 

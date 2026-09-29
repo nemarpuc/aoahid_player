@@ -8,6 +8,8 @@ devices over USB with AOA 2.0 HID, and records real touches and key presses
 into the same script format with `adb`. Linux and Windows, x86_64 and ARM64,
 C++20.
 
+<!-- demo video -->
+
 There are three programs, all built on one shared engine:
 
 - `aoahid_player_gui` — a desktop app for connecting, playing, seeking, and
