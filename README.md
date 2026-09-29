@@ -8,7 +8,11 @@ devices over USB with AOA 2.0 HID, and records real touches and key presses
 into the same script format with `adb`. Linux and Windows, x86_64 and ARM64,
 C++20.
 
-<!-- demo video -->
+
+
+https://github.com/user-attachments/assets/779f3291-c6d5-4dd7-8fb8-72f95e8a70cf
+
+
 
 There are three programs, all built on one shared engine:
 
