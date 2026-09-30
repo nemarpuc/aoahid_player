@@ -51,7 +51,10 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
             } else if constexpr (std::is_same_v<T, GamepadDpad>) {
                 return device.gamepad().dpad(value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, MediaKey>) {
-                return device.toggle().set(value.usage, value.down);
+                // Usage 0 releases whichever key is held. Live control, the
+                // Live tab's buttons, and a script share the one field, so
+                // the key this row names may already have been replaced.
+                return device.toggle().set(value.down ? value.usage : uint16_t{0}, value.down);
             } else {
                 aoahid_pen_sample sample{};
                 sample.in_range = value.in_range ? 1U : 0U;

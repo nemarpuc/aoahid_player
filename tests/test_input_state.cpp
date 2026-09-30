@@ -197,7 +197,8 @@ TEST_CASE("A held media key is released on stop, and a press replaces it") {
     CHECK(release->usage == 0x00EA);
     CHECK_FALSE(release->down);
 
-    held.apply(aoap::MediaKey{0x00EA, false});
+    // Any release clears the one field, whichever key it names.
+    held.apply(aoap::MediaKey{0x00E9, false});
     CHECK(held.neutral());
 }
 

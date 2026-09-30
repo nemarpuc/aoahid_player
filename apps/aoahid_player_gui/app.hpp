@@ -16,11 +16,13 @@
 #include "aoahid_player/spec_builder.hpp"
 
 #include <atomic>
+#include <deque>
 #include <filesystem>
 #include <functional>
 #include <future>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <set>
 #include <string>
 #include <thread>
@@ -260,6 +262,10 @@ class App {
     // Applies Engine bridge results and finished adb jobs; every frame.
     void update_adb_bridges();
     void run_adb_job(size_t device, const std::string& serial, bool connect);
+    // Turns the bridge of connected device `index` on or off, as its switch
+    // on the ADB tab does; an explanation when that is not possible now.
+    // `port` (nonzero) replaces the row's port when the bridge is turned on.
+    [[nodiscard]] std::string request_bridge(size_t index, bool wanted, int port = 0);
     void restart_adb_server();
     void accessory();
     // The Devices card's refresh button: adb kill-server, then a rescan. No
@@ -311,11 +317,28 @@ class App {
     void persist_settings();
     [[nodiscard]] bool settings_locked() const;
     [[nodiscard]] bool recording() const;
+    // The control API's UiRequests: queued from its thread, carried out by
+    // handle_ui_requests() at the start of the next frame.
+    UiReply post_ui_request(const UiRequest& request);
+    void handle_ui_requests();
+    UiReply run_ui_request(const UiRequest& request);
 
     std::function<void()> wake_;
     ActivityLog log_;
     Engine engine_;
-    ControlApi control_api_{engine_};
+    struct PendingUi {
+        uint64_t id{};
+        UiRequest request;
+        std::promise<UiReply> reply;
+    };
+    std::mutex ui_requests_mutex_;
+    std::deque<PendingUi> ui_requests_;
+    bool ui_closing_{};       // guarded by ui_requests_mutex_
+    uint64_t ui_request_id_{}; // guarded by ui_requests_mutex_
+    std::atomic<bool> recording_flag_{};
+    ControlApi control_api_{
+        engine_, [this](const UiRequest& request) { return post_ui_request(request); },
+        recording_flag_};
     // Persisted intent: whether the control API should be listening.
     // control_api_.running() is the actual live state; this is only read
     // again at the next startup (see the constructor) and written back

@@ -3,6 +3,7 @@
 
 #include "aoahid_player/device.hpp"
 #include "aoahid_player/event_script.hpp"
+#include "aoahid_player/key_names.hpp"
 #include "aoahid_player/paths.hpp"
 #include "aoahid_player/spec_builder.hpp"
 
@@ -145,6 +146,47 @@ bool parse_int(const std::string& text, int64_t& out) noexcept {
     return true;
 }
 
+// A usage number, or a name looked up by `from_name` (the CSV names).
+bool parse_usage(const std::string& text, bool (*from_name)(std::string_view, uint16_t&) noexcept,
+                 uint16_t& out) noexcept {
+    int64_t value = 0;
+    if (parse_int(text, value)) {
+        if (value < 0 || value > 0xFFFF)
+            return false;
+        out = static_cast<uint16_t>(value);
+        return true;
+    }
+    return !text.empty() && from_name(text, out);
+}
+
+UiRequest ui_request(const UiRequest::Kind kind) {
+    UiRequest request;
+    request.kind = kind;
+    return request;
+}
+
+// "all", or 1-based numbers such as "1,3" (the Devices card's order).
+bool parse_device_list(const std::string& text, std::vector<size_t>& out, bool& all) {
+    out.clear();
+    all = text == "all";
+    if (all)
+        return true;
+    size_t start = 0;
+    while (start <= text.size()) {
+        const size_t comma = text.find(',', start);
+        const std::string item =
+            text.substr(start, comma == std::string::npos ? std::string::npos : comma - start);
+        int64_t number = 0;
+        if (!parse_int(item, number) || number < 1)
+            return false;
+        out.push_back(static_cast<size_t>(number - 1));
+        if (comma == std::string::npos)
+            break;
+        start = comma + 1;
+    }
+    return !out.empty();
+}
+
 bool parse_int32(const std::string& text, int32_t& out) noexcept {
     int64_t value = 0;
     if (!parse_int(text, value) || value < INT32_MIN || value > INT32_MAX)
@@ -199,7 +241,8 @@ std::string resolve_script_path(const std::string& script) {
 
 } // namespace
 
-ControlApi::ControlApi(Engine& engine) : engine_(engine) {}
+ControlApi::ControlApi(Engine& engine, UiHandler ui, const std::atomic<bool>& recording)
+    : engine_(engine), ui_(std::move(ui)), recording_(recording) {}
 
 ControlApi::~ControlApi() { stop(); }
 
@@ -295,15 +338,93 @@ void ControlApi::register_routes() {
             .num("loops", static_cast<int64_t>(status.loops))
             .num("reports", static_cast<int64_t>(status.reports));
 
+        std::string available = "[";
+        for (const aoap::DeviceEntry& entry : engine_.devices()) {
+            if (available.size() > 1)
+                available += ',';
+            available += '"' + json_escape(entry.label) + '"';
+        }
+        available += ']';
+        const std::vector<aoap::DeviceStatus> connected = engine_.device_status();
+        std::string bridges = "[";
+        for (const aoap::DeviceStatus& device : connected) {
+            if (bridges.size() > 1)
+                bridges += ',';
+            bridges += std::to_string(device.adb_port);
+        }
+        bridges += ']';
+
         JsonWriter writer;
         writer.boolean("ok", true)
             .str("phase", phase_name(phase))
             .boolean("connected", engine_.connected())
-            .num("devices", static_cast<int64_t>(engine_.device_status().size()))
+            .num("devices", static_cast<int64_t>(connected.size()))
+            .raw("available", available)
             .raw("profiles", profiles_json)
+            .raw("bridges", bridges)
             .boolean("live_active", engine_.live_active())
+            .boolean("recording", recording_.load(std::memory_order_relaxed))
             .raw("playback", playback.done());
         res.set_content(writer.done(), "application/json");
+    });
+
+    // --- Connection, recording, and the ADB Bridge: carried out by the UI
+    // thread (see UiRequest), exactly as its buttons do. ----------------
+    const auto run_ui = [this](const UiRequest& request, Res& res) {
+        const UiReply reply = ui_(request);
+        res.status = reply.status;
+        res.set_content(reply.error.empty() ? json_ok() : json_error(reply.error),
+                        "application/json");
+    };
+    svr.Post("/refresh", [run_ui](const Req&, Res& res) {
+        run_ui(ui_request(UiRequest::Kind::refresh), res);
+    });
+    svr.Post("/connect", [run_ui](const Req& req, Res& res) {
+        UiRequest request = ui_request(UiRequest::Kind::connect);
+        if (req.has_param("devices") &&
+            !parse_device_list(req.get_param_value("devices"), request.devices,
+                               request.all_devices)) {
+            res.status = 400;
+            res.set_content(json_error("\"devices\" must be \"all\" or numbers such as 1,3."),
+                            "application/json");
+            return;
+        }
+        run_ui(request, res);
+    });
+    svr.Post("/disconnect", [this](const Req&, Res& res) {
+        if (!engine_.connected()) {
+            res.status = 409;
+            res.set_content(json_error("Not connected."), "application/json");
+            return;
+        }
+        engine_.disconnect();
+        res.set_content(json_ok(), "application/json");
+    });
+    svr.Post("/record/start", [run_ui](const Req& req, Res& res) {
+        UiRequest request = ui_request(UiRequest::Kind::record_start);
+        request.name = req.get_param_value("name");
+        run_ui(request, res);
+    });
+    svr.Post("/record/stop", [run_ui](const Req&, Res& res) {
+        run_ui(ui_request(UiRequest::Kind::record_stop), res);
+    });
+    svr.Post("/bridge", [run_ui](const Req& req, Res& res) {
+        UiRequest request = ui_request(UiRequest::Kind::bridge);
+        int64_t device = 0;
+        int64_t port = 0;
+        if (!parse_int(req.get_param_value("device"), device) || device < 1 ||
+            (req.has_param("port") &&
+             (!parse_int(req.get_param_value("port"), port) || port < 1024 || port > 65535))) {
+            res.status = 400;
+            res.set_content(json_error("Missing or invalid \"device\" (1-based) or \"port\" "
+                                       "(1024-65535)."),
+                            "application/json");
+            return;
+        }
+        request.device = static_cast<size_t>(device - 1);
+        request.on = parse_bool(req.get_param_value("on"), true);
+        request.port = static_cast<int>(port);
+        run_ui(request, res);
     });
 
     // --- Playback ------------------------------------------------------
@@ -430,15 +551,15 @@ void ControlApi::register_routes() {
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/key", [this](const Req& req, Res& res) {
-        int64_t usage = 0;
-        if (!parse_int(req.get_param_value("usage"), usage) || usage < 0 || usage > 0xFFFF) {
+        uint16_t usage = 0;
+        if (!parse_usage(req.get_param_value("usage"), aoap::key_usage_from_name, usage)) {
             res.status = 400;
-            res.set_content(json_error("Missing or invalid \"usage\" (HID keyboard usage)."),
-                            "application/json");
+            res.set_content(
+                json_error("Missing or invalid \"usage\" (a HID keyboard usage or key name)."),
+                "application/json");
             return;
         }
-        engine_.live_send(aoap::KeyEvent{static_cast<uint16_t>(usage),
-                                         parse_bool(req.get_param_value("down"), true)});
+        engine_.live_send(aoap::KeyEvent{usage, parse_bool(req.get_param_value("down"), true)});
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/gamepad/button", [this](const Req& req, Res& res) {
@@ -471,6 +592,48 @@ void ControlApi::register_routes() {
                                             parse_bool(req.get_param_value("down"), false),
                                             parse_bool(req.get_param_value("right"), false),
                                             parse_bool(req.get_param_value("left"), false)});
+        res.set_content(json_ok(), "application/json");
+    });
+    svr.Post("/media", [this](const Req& req, Res& res) {
+        uint16_t usage = 0;
+        if (!parse_usage(req.get_param_value("key"), aoap::media_usage_from_name, usage) ||
+            !aoap::media_usage_supported(usage)) {
+            res.status = 400;
+            res.set_content(json_error("Missing or invalid \"key\" (a media key name or one "
+                                       "of the toggle profile's usages)."),
+                            "application/json");
+            return;
+        }
+        // Without "down" it is a tap: press, then release in the next report.
+        if (req.has_param("down")) {
+            engine_.live_send(aoap::MediaKey{usage, parse_bool(req.get_param_value("down"), true)});
+        } else {
+            engine_.live_send(aoap::MediaKey{usage, true});
+            engine_.live_send(aoap::MediaKey{usage, false});
+        }
+        res.set_content(json_ok(), "application/json");
+    });
+    svr.Post("/pen", [this](const Req& req, Res& res) {
+        int32_t x = 0;
+        int32_t y = 0;
+        int32_t pressure = 0;
+        if (!parse_int32(req.get_param_value("x"), x) ||
+            !parse_int32(req.get_param_value("y"), y) ||
+            (req.has_param("pressure") &&
+             !parse_int32(req.get_param_value("pressure"), pressure))) {
+            res.status = 400;
+            res.set_content(json_error("Missing or invalid \"x\"/\"y\"/\"pressure\"."),
+                            "application/json");
+            return;
+        }
+        const bool in_range = parse_bool(req.get_param_value("in_range"), true);
+        const bool tip = parse_bool(req.get_param_value("tip"), false);
+        if (tip && !in_range) {
+            res.status = 400;
+            res.set_content(json_error("\"tip\" needs \"in_range\"."), "application/json");
+            return;
+        }
+        engine_.live_send(aoap::PenSample{in_range, tip, x, y, pressure});
         res.set_content(json_ok(), "application/json");
     });
 }

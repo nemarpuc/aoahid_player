@@ -9,6 +9,9 @@ were reconstructed from the commit history.
   (`c,usage_or_name,down,wait_ms`), by name (`VolumeUp`, `PlayPause`, ...) or
   Consumer usage. Stop, pause, and seek release a held media key like any
   other control. `aoa_touch --toggle` enables the profile.
+- Control API: `POST /refresh`, `/connect`, `/disconnect`, `/record/start`,
+  `/record/stop`, `/bridge`, `/pen`, and `/media`; `/key` also takes key
+  names; `GET /status` adds `available`, `bridges`, and `recording`.
 
 ## [0.20.3] - 2026-09-29
 

@@ -178,6 +178,40 @@ void App::update_adb_bridges() {
     }
 }
 
+std::string App::request_bridge(const size_t index, const bool wanted, const int port) {
+    if (!engine_.connected())
+        return "Not connected.";
+    if (engine_.phase() == Phase::playing)
+        return "Bridges cannot be switched while a script plays.";
+    const std::vector<aoap::DeviceStatus> status = engine_.device_status();
+    if (index >= status.size() || index >= bridge_rows_.size())
+        return "No connected device " + std::to_string(index + 1) + ".";
+    const aoap::DeviceStatus& device = status[index];
+    BridgeRow& row = bridge_rows_[index];
+    if (!device.active)
+        return "That device was dropped.";
+    if (row.busy)
+        return "Its bridge is already starting or stopping.";
+    const bool on = device.adb_port != 0U;
+    if (wanted && on && port != 0 && port != device.adb_port)
+        return "The bridge is already on port " + std::to_string(device.adb_port) +
+               "; turn it off first.";
+    if (wanted == on)
+        return {};
+    const int wanted_port = wanted && port != 0 ? port : row.port;
+    const bool clash = wanted && std::any_of(status.begin(), status.end(), [&](const auto& other) {
+                           return &other != &device && other.adb_port == wanted_port;
+                       });
+    if (clash)
+        return "Port " + std::to_string(wanted_port) + " is used by another phone.";
+    row.note.clear();
+    row.note_error = false;
+    row.port = wanted_port;
+    row.busy = true;
+    engine_.adb_bridge(index, wanted, static_cast<uint16_t>(row.port));
+    return {};
+}
+
 void App::draw_adb() {
     ui::begin_card("##adb_bridge");
     caption_row("ADB Bridge");
@@ -213,18 +247,10 @@ void App::draw_adb() {
         ImGui::BeginDisabled(row.busy || playing || !device.active);
         bool wanted = on;
         if (ui::toggle("Bridge", &wanted) && wanted != on) {
-            row.note.clear();
-            row.note_error = false;
-            const bool clash =
-                wanted && std::any_of(status.begin(), status.end(), [&](const auto& other) {
-                    return &other != &device && other.adb_port == row.port;
-                });
-            if (clash) {
-                row.note = "Port " + std::to_string(row.port) + " is used by another phone.";
+            const std::string error = request_bridge(index, wanted);
+            if (!error.empty()) {
+                row.note = error;
                 row.note_error = true;
-            } else {
-                row.busy = true;
-                engine_.adb_bridge(index, wanted, static_cast<uint16_t>(row.port));
             }
         }
         ImGui::EndDisabled();

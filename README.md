@@ -276,9 +276,9 @@ compositor's scale on Wayland.
 
 ## Control API
 
-A local HTTP server another program can use to drive the connected phone —
-the same things Live control and the Player tab do, callable over plain
-HTTP. Off by default; turn it on from the sidebar's *Control API* card
+A local HTTP server another program can use to drive the phone — the same
+things the Devices card, Live control, the Player tab, the Recorder, and the
+ADB tab do, callable over plain HTTP. Off by default; turn it on from the sidebar's *Control API* card
 (*Enabled*, and the *Port* it listens on, 47821 by default). It binds
 `127.0.0.1` only, never a public interface, but has no further
 authentication: any program running on this machine can reach it once it is
@@ -300,7 +300,7 @@ with `403`. That keeps a web page open in a browser from driving the phone
 through the API, including through DNS rebinding; programs such as `curl` or a
 script send neither and are unaffected.
 
-Touch, mouse, keyboard, and gamepad routes all forward through
+Touch, mouse, keyboard, gamepad, pen, and media-key routes all forward through
 Live control (see the Live tab, above): call `POST /live/start` once first,
 same as turning the Live tab's own toggle on, or they are silently no-ops.
 The API's own touch contact is the second-to-last one the connection
@@ -308,9 +308,19 @@ declares — one below the Live tab's own (see *Contacts* under *Profiles*,
 above) — so a program using the API and a person using the Live tab can
 both touch the screen at once without colliding.
 
+`/refresh`, `/connect`, `/record/*`, and `/bridge` are carried out by the
+window on its next frame, exactly as its buttons are, with the settings the
+window shows (profiles, Recorder device, bridge port). The request waits for
+that frame and answers `503` if the window does not respond within 5 seconds.
+Connecting and refreshing finish in the background: poll `GET /status` until
+`phase` is `connected` (or `idle`).
+
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | Phase, `connected`, device count, active profiles, `live_active`, and the playback state/lap/time/loops/reports. |
+| `GET /status` | — | `phase`, `connected`, `devices` (connected count), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state/lap/time/loops/reports. |
+| `POST /refresh` | — | The Devices card's refresh: stops the adb server (unless recording), then rescans. 409 unless idle. |
+| `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects with the profiles the window has set; `devices` also becomes the window's selection. 409 unless idle; 400 for an unknown device number or invalid profile settings. |
+| `POST /disconnect` | — | 409 if not connected. |
 | `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing). |
 | `POST /stop` | — | |
 | `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
@@ -321,10 +331,15 @@ both touch the screen at once without colliding.
 | `POST /mouse/move` | `dx`, `dy` | Relative, like a physical mouse. |
 | `POST /mouse/button` | `button` (1-based), `down` (default `true`) | |
 | `POST /mouse/wheel` | `delta` | |
-| `POST /key` | `usage` (HID keyboard usage, decimal or `0x..`), `down` (default `true`) | A number; the CSV [key names](#key-names) are not accepted here. |
+| `POST /key` | `usage` (HID keyboard usage, decimal or `0x..`, or a CSV [key name](#key-names)), `down` (default `true`) | |
 | `POST /gamepad/button` | `index` (1-based), `down` (default `true`) | |
 | `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
+| `POST /pen` | `x`, `y`, `pressure` (default 0), `in_range` (default `true`), `tip` (default `false`) | Pen surface coordinates. `tip` needs `in_range`. |
+| `POST /media` | `key` (a [media key name](#media-key-names) or usage), `down` | Without `down`, a tap: press, then release in the next report. One media key is held at a time. |
+| `POST /record/start` | `name` (optional file name; default: the Recorder's name field, else a timestamp) | Records from the Recorder's adb device into `csv/`. 409 if already recording; 400 for an invalid name. |
+| `POST /record/stop` | — | Stops and saves (nothing is saved if nothing was captured). 409 if not recording. |
+| `POST /bridge` | `device` (1-based, connected order), `on` (default `true`), `port` (1024-65535; default: the ADB tab's) | Same as the ADB tab's switch, including `adb connect` / the adb server restart. 409 while a script plays, for a dropped device, or a port another phone uses. |
 
 ## aoa_touch — usage
 
@@ -445,8 +460,8 @@ whatever the usage range. libaoahid's keyboard profile is full N-Key
 Rollover, so every usage in the configured range can be held down at
 the same time with no limit on simultaneous keys. Media keys are different:
 the toggle profile has a single Consumer Control field, so one media key is
-held at a time; pressing another replaces it, and a `c` release must name the
-key that is held. See `csv/example.csv`.
+held at a time; pressing another replaces it, and a `c` release (`down` 0)
+releases whichever media key is held. See `csv/example.csv`.
 
 ### Laps: which rows run when
 

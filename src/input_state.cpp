@@ -75,11 +75,9 @@ void InputState::apply(const EventPayload& payload) {
                 pen_ = value;
             } else if constexpr (std::is_same_v<T, MediaKey>) {
                 // The toggle profile has one Consumer field: a press replaces
-                // whatever was held, and a release clears it.
-                if (value.down)
-                    media_ = value.usage;
-                else if (value.usage == media_)
-                    media_ = 0U;
+                // whatever was held, and any release clears it (see mutate()
+                // in device_group.cpp).
+                media_ = value.down ? value.usage : uint16_t{0};
             }
             // MouseMove is relative and leaves no state behind.
         },

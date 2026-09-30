@@ -92,6 +92,15 @@ App::App(std::function<void()> wake)
 }
 
 App::~App() {
+    {
+        // The frame loop has ended, so nothing else will answer these.
+        const std::lock_guard lock(ui_requests_mutex_);
+        ui_closing_ = true;
+        for (PendingUi& pending : ui_requests_)
+            pending.reply.set_value(UiReply{503, "The application is closing."});
+        ui_requests_.clear();
+    }
+    control_api_.stop();
     live_capture_pointer(false);
     live_paste_active_.store(false, std::memory_order_relaxed);
     persist_settings();
@@ -289,6 +298,108 @@ aoap::ProfileSetup App::build_setup() const {
     return setup;
 }
 
+// --- Control API requests -------------------------------------------------
+
+UiReply App::post_ui_request(const UiRequest& request) {
+    std::future<UiReply> reply;
+    uint64_t id = 0;
+    {
+        const std::lock_guard lock(ui_requests_mutex_);
+        if (ui_closing_)
+            return UiReply{503, "The application is closing."};
+        id = ++ui_request_id_;
+        ui_requests_.push_back(PendingUi{id, request, {}});
+        reply = ui_requests_.back().reply.get_future();
+    }
+    wake_();
+    // The UI thread answers on its next frame; this only bounds a window
+    // that has stopped drawing.
+    if (reply.wait_for(std::chrono::seconds(5)) != std::future_status::ready) {
+        const std::lock_guard lock(ui_requests_mutex_);
+        const auto queued = std::find_if(ui_requests_.begin(), ui_requests_.end(),
+                                         [id](const PendingUi& pending) { return pending.id == id; });
+        if (queued != ui_requests_.end()) {
+            // Never started, and now never will: the caller is told so.
+            ui_requests_.erase(queued);
+            return UiReply{503, "The window did not answer in time; nothing was done."};
+        }
+        // The UI thread took it and is running it now; its reply follows.
+    }
+    try {
+        return reply.get();
+    } catch (const std::future_error&) {
+        return UiReply{503, "The application is closing."};
+    }
+}
+
+void App::handle_ui_requests() {
+    std::deque<PendingUi> batch;
+    {
+        const std::lock_guard lock(ui_requests_mutex_);
+        batch.swap(ui_requests_);
+    }
+    for (PendingUi& pending : batch)
+        pending.reply.set_value(run_ui_request(pending.request));
+}
+
+UiReply App::run_ui_request(const UiRequest& request) {
+    switch (request.kind) {
+    case UiRequest::Kind::refresh:
+        if (engine_.phase() != Phase::idle || startup_prep_task_.valid() || retry_task_.valid())
+            return UiReply{409, "Busy: connected, connecting, or already refreshing."};
+        retry();
+        return {};
+    case UiRequest::Kind::connect: {
+        if (engine_.phase() != Phase::idle)
+            return UiReply{409, "Not idle (already connected, or busy)."};
+        if (request.all_devices || !request.devices.empty()) {
+            std::set<std::string> selection;
+            for (size_t index = 0; index < devices_.size(); ++index) {
+                if (request.all_devices)
+                    selection.insert(devices_[index].key);
+            }
+            for (const size_t index : request.devices) {
+                if (index >= devices_.size())
+                    return UiReply{400, "No device " + std::to_string(index + 1) + " in the list (" +
+                                            std::to_string(devices_.size()) + " listed)."};
+                selection.insert(devices_[index].key);
+            }
+            selected_ = std::move(selection);
+        }
+        connect();
+        if (!connect_error_.empty())
+            return UiReply{400, connect_error_};
+        return {};
+    }
+    case UiRequest::Kind::record_start: {
+        if (recording())
+            return UiReply{409, "Already recording."};
+        if (!request.name.empty()) {
+            const std::string problem = record_name_problem(request.name);
+            if (!problem.empty())
+                return UiReply{400, problem};
+            record_name_ = request.name;
+        }
+        start_recording();
+        if (!recording())
+            return UiReply{400, "Recording did not start; see the activity log."};
+        return {};
+    }
+    case UiRequest::Kind::record_stop:
+        if (!recording())
+            return UiReply{409, "Not recording."};
+        stop_recording();
+        return {};
+    case UiRequest::Kind::bridge: {
+        const std::string error = request_bridge(request.device, request.on, request.port);
+        if (!error.empty())
+            return UiReply{409, error};
+        return {};
+    }
+    }
+    return UiReply{400, "Unknown request."};
+}
+
 // --- Actions ---------------------------------------------------------------
 
 void App::poll() {
@@ -300,6 +411,8 @@ void App::poll() {
         if (devices_.size() == 1 && selected_.empty())
             selected_.insert(devices_.front().key);
     }
+    handle_ui_requests();
+    recording_flag_.store(recording(), std::memory_order_relaxed);
 
     // The Player tab also observes now, so its active-touches list (see
     // draw_transport_card()) stays current even when the Live tab is not
