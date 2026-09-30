@@ -20,6 +20,9 @@ were reconstructed from the commit history.
   reports an invalid name or missing adb instead of a misleading 400.
 - Recorder: touchscreens' BTN_TOUCH and BTN_TOOL_* are no longer reported as
   skipped keys.
+- Vendored aoahid_adb_proxy: a payload whose header already reached the
+  phone is always written, so a bridge client disconnecting mid-transfer no
+  longer desynchronises adbd.
 - A device dropped for a STALL is reported as refusing a report (usually
   input sent while Android is still registering the device), not as
   "stopped responding".
