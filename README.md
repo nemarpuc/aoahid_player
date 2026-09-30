@@ -795,7 +795,7 @@ its own licence in `third-party/`:
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
   backing the control API's HTTP server
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.0.1
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.0.3
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored

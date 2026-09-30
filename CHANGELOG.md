@@ -5,6 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [0.20.5] - 2026-09-30
+
+- Update the vendored aoahid_adb_proxy to 3.0.3. The code is the same as 3.0.2;
+  only the version in its header was wrong.
+- CI and release builds link libaoahid 4.0.2 (was 4.0.0), which no longer spins
+  in `aoahid_node_submit_blocking` when every transfer slot is in use.
+
+## [0.20.4] - 2026-09-30
+
 - CSV: `c` rows send media keys through the toggle profile
   (`c,usage_or_name,down,wait_ms`), by name (`VolumeUp`, `PlayPause`, ...) or
   Consumer usage. Stop, pause, and seek release a held media key like any
@@ -26,10 +35,6 @@ were reconstructed from the commit history.
 - A device dropped for a STALL is reported as refusing a report (usually
   input sent while Android is still registering the device), not as
   "stopped responding".
-
-## [0.20.4] - 2026-09-30
-
-- Update the vendored aoahid_adb_proxy to 3.0.2: a payload whose header already reached the device is always written, even when the client disconnects or stop() runs in between.
 
 ## [0.20.3] - 2026-09-29
 
