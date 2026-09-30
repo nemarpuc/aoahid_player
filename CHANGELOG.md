@@ -7,8 +7,8 @@ were reconstructed from the commit history.
 
 ## [0.20.5] - 2026-09-30
 
-- Update the vendored aoahid_adb_proxy to 3.0.3. The code is the same as 3.0.2;
-  only the version in its header was wrong.
+- Update the vendored aoahid_adb_proxy to 3.0.3. The bridge code is
+  unchanged; the vendored header in 0.20.4 still reported version 3.0.1.
 - CI and release builds link libaoahid 4.0.2 (was 4.0.0), which no longer spins
   in `aoahid_node_submit_blocking` when every transfer slot is in use.
 
