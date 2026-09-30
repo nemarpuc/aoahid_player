@@ -11,7 +11,18 @@ were reconstructed from the commit history.
   other control. `aoa_touch --toggle` enables the profile.
 - Control API: `POST /refresh`, `/connect`, `/disconnect`, `/record/start`,
   `/record/stop`, `/bridge`, `/pen`, and `/media`; `/key` also takes key
-  names; `GET /status` adds `available`, `bridges`, and `recording`.
+  names; `GET /status` adds `available`, `bridges`, `recording`, `active`,
+  and `busy`.
+- Control API: window routes keep working while the window is minimized;
+  `/connect` answers 409 while the device list is still being prepared;
+  numbers with a leading zero are decimal (they were octal); an invalid
+  `/play` `loop` is a 400 instead of repeating forever; `/record/start`
+  reports an invalid name or missing adb instead of a misleading 400.
+- Recorder: touchscreens' BTN_TOUCH and BTN_TOOL_* are no longer reported as
+  skipped keys.
+- A device dropped for a STALL is reported as refusing a report (usually
+  input sent while Android is still registering the device), not as
+  "stopped responding".
 
 ## [0.20.3] - 2026-09-29
 

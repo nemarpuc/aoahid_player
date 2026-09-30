@@ -13,13 +13,14 @@
 #include <httplib.h>
 
 #include <cctype>
-#include <cerrno>
+#include <charconv>
 #include <cstdint>
 #include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <system_error>
 #include <utility>
 
 namespace gui {
@@ -132,17 +133,29 @@ bool parse_bool(const std::string& text, const bool default_value) noexcept {
     return default_value;
 }
 
-// Accepts decimal or a "0x"/"0" prefix (matching how the GUI's own hex
-// fields, e.g. keyboard usages, are typically written).
+// Decimal, or hex with a "0x" prefix, as in CSV scripts; a leading zero is
+// still decimal.
 bool parse_int(const std::string& text, int64_t& out) noexcept {
-    if (text.empty())
+    std::string_view rest(text);
+    const bool negative = !rest.empty() && rest.front() == '-';
+    if (!rest.empty() && (rest.front() == '-' || rest.front() == '+'))
+        rest.remove_prefix(1);
+    int base = 10;
+    if (rest.size() > 2 && rest[0] == '0' && (rest[1] == 'x' || rest[1] == 'X')) {
+        base = 16;
+        rest.remove_prefix(2);
+    }
+    if (rest.empty())
         return false;
-    char* end = nullptr;
-    errno = 0;
-    const long long value = std::strtoll(text.c_str(), &end, 0);
-    if (end != text.c_str() + text.size() || errno == ERANGE)
+    uint64_t magnitude = 0;
+    const char* last = rest.data() + rest.size();
+    const auto [end, error] = std::from_chars(rest.data(), last, magnitude, base);
+    if (error != std::errc{} || end != last)
         return false;
-    out = value;
+    const uint64_t limit = negative ? uint64_t{1} << 63 : (uint64_t{1} << 63) - 1U;
+    if (magnitude > limit)
+        return false;
+    out = negative ? static_cast<int64_t>(0U - magnitude) : static_cast<int64_t>(magnitude);
     return true;
 }
 
@@ -241,8 +254,8 @@ std::string resolve_script_path(const std::string& script) {
 
 } // namespace
 
-ControlApi::ControlApi(Engine& engine, UiHandler ui, const std::atomic<bool>& recording)
-    : engine_(engine), ui_(std::move(ui)), recording_(recording) {}
+ControlApi::ControlApi(Engine& engine, UiHandler ui, const UiStatus& status)
+    : engine_(engine), ui_(std::move(ui)), status_(status) {}
 
 ControlApi::~ControlApi() { stop(); }
 
@@ -346,8 +359,10 @@ void ControlApi::register_routes() {
         }
         available += ']';
         const std::vector<aoap::DeviceStatus> connected = engine_.device_status();
+        int64_t active = 0;
         std::string bridges = "[";
         for (const aoap::DeviceStatus& device : connected) {
+            active += device.active ? 1 : 0;
             if (bridges.size() > 1)
                 bridges += ',';
             bridges += std::to_string(device.adb_port);
@@ -359,11 +374,13 @@ void ControlApi::register_routes() {
             .str("phase", phase_name(phase))
             .boolean("connected", engine_.connected())
             .num("devices", static_cast<int64_t>(connected.size()))
+            .num("active", active)
+            .boolean("busy", status_.busy.load(std::memory_order_relaxed))
             .raw("available", available)
             .raw("profiles", profiles_json)
             .raw("bridges", bridges)
             .boolean("live_active", engine_.live_active())
-            .boolean("recording", recording_.load(std::memory_order_relaxed))
+            .boolean("recording", status_.recording.load(std::memory_order_relaxed))
             .raw("playback", playback.done());
         res.set_content(writer.done(), "application/json");
     });
@@ -452,7 +469,13 @@ void ControlApi::register_routes() {
             return;
         }
         int64_t loops = 0;
-        parse_int(req.get_param_value("loop"), loops);
+        if (req.has_param("loop") &&
+            (!parse_int(req.get_param_value("loop"), loops) || loops < 0)) {
+            res.status = 400;
+            res.set_content(json_error("\"loop\" must be 0 (repeat until stopped) or a lap count."),
+                            "application/json");
+            return;
+        }
         engine_.play(script, aoap::display_name(script_param), {}, loops);
         res.set_content(json_ok(), "application/json");
     });

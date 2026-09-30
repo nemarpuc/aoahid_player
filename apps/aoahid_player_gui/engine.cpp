@@ -555,7 +555,7 @@ void Engine::run_live() {
         pump_live();
         pump_bridge();
         if (group.active_count() == 0) {
-            note(aoap::Severity::error, "Every device stopped responding; live control stopped.");
+            note(aoap::Severity::error, "Every device was dropped; live control stopped.");
             stopped = true;
             break;
         }

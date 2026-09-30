@@ -38,6 +38,13 @@ struct UiReply {
 // Runs `request` on the UI thread and waits for its reply.
 using UiHandler = std::function<UiReply(const UiRequest&)>;
 
+// Window state the API reports; the UI thread keeps it current.
+struct UiStatus {
+    std::atomic<bool> recording{};
+    // The startup adb pre-flight or a refresh is running; Connect waits.
+    std::atomic<bool> busy{};
+};
+
 // A small local HTTP control surface for driving the connected phone from
 // another program: refresh, connect, and disconnect; play/stop/seek a script;
 // forward touch/mouse/keyboard/gamepad/pen/media-key input; record; switch
@@ -58,9 +65,7 @@ using UiHandler = std::function<UiReply(const UiRequest&)>;
 // for a plain-text summary of them.
 class ControlApi {
   public:
-    // `recording` mirrors whether the Recorder is running; the UI thread
-    // keeps it current.
-    ControlApi(Engine& engine, UiHandler ui, const std::atomic<bool>& recording);
+    ControlApi(Engine& engine, UiHandler ui, const UiStatus& status);
     ~ControlApi();
 
     ControlApi(const ControlApi&) = delete;
@@ -86,7 +91,7 @@ class ControlApi {
 
     Engine& engine_;
     UiHandler ui_;
-    const std::atomic<bool>& recording_;
+    const UiStatus& status_;
     std::unique_ptr<httplib::Server> server_;
     std::thread thread_;
     int port_{};

@@ -161,3 +161,31 @@ TEST_CASE("parse_touch_range reads the multi-touch axis range from getevent -lp"
         " ABS_MT_POSITION_Y : value 0, min 0, max 100\n",
         "", width, height));
 }
+
+TEST_CASE("GeteventParser ignores touchscreen BTN_TOUCH and BTN_TOOL_* keys") {
+    GeteventParser parser;
+    std::vector<EventRecord> out;
+
+    feed_lines(parser,
+               {
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_SLOT          00000000",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_TRACKING_ID   00000005",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_X    00000064",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_Y    000000c8",
+                   "[   100.100000] /dev/input/event4: EV_KEY       BTN_TOUCH            DOWN",
+                   "[   100.100000] /dev/input/event4: EV_KEY       BTN_TOOL_FINGER      DOWN",
+                   "[   100.100000] /dev/input/event4: EV_SYN       SYN_REPORT           00000000",
+                   "[   100.200000] /dev/input/event4: EV_ABS       ABS_MT_TRACKING_ID   ffffffff",
+                   "[   100.200000] /dev/input/event4: EV_KEY       BTN_TOUCH            UP",
+                   "[   100.200000] /dev/input/event4: EV_KEY       BTN_TOOL_FINGER      UP",
+                   "[   100.200000] /dev/input/event4: EV_SYN       SYN_REPORT           00000000",
+               },
+               out);
+    parser.finish(out);
+
+    REQUIRE(out.size() == 2);
+    CHECK(std::holds_alternative<TouchEvent>(out[0].payload));
+    CHECK(std::holds_alternative<TouchEvent>(out[1].payload));
+    CHECK(parser.unmapped_keys() == 0);
+    CHECK(parser.first_unmapped_key().empty());
+}

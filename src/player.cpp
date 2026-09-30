@@ -448,7 +448,7 @@ void Player::run(const PlaybackPosition start) {
         if (group_.active_count() == 0) {
             if (sink_ != nullptr)
                 sink_->message(Severity::error,
-                               "Every device stopped responding; playback stopped.");
+                               "Every device was dropped; playback stopped.");
             break;
         }
         // Scripts made only of zero waits never reach wait_to(), so the time

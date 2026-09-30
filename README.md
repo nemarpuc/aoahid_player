@@ -287,7 +287,8 @@ on, so turning it on is a deliberate choice, same as opening a debug port.
 Every route takes plain query parameters — `curl -X POST
 "http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — with no request body
 to build. Boolean parameters take `true`/`false`, `1`/`0`, `on`/`off`, or
-`yes`/`no`. `GET /` and `GET /status` are the only GET routes; every other
+`yes`/`no`. Numbers are decimal, or hex with a `0x` prefix (a leading zero
+is still decimal, as in CSV scripts). `GET /` and `GET /status` are the only GET routes; every other
 route is POST. A route answers `200` with a small JSON object, at least
 `{"ok":true}` or `{"ok":false,"error":"..."}`; a malformed request answers
 `400`, and a route that needs a precondition that is not met (seeking while
@@ -311,17 +312,19 @@ both touch the screen at once without colliding.
 `/refresh`, `/connect`, `/record/*`, and `/bridge` are carried out by the
 window on its next frame, exactly as its buttons are, with the settings the
 window shows (profiles, Recorder device, bridge port). The request waits for
-that frame and answers `503` if the window does not respond within 5 seconds.
-Connecting and refreshing finish in the background: poll `GET /status` until
-`phase` is `connected` (or `idle`).
+that frame and answers `503` if the window does not respond within 5 seconds;
+a minimized window still answers. Refreshing finishes in the background: poll
+`GET /status` until `busy` is `false` before connecting. Connecting also
+finishes in the background: poll until `phase` is `connected` (or back to
+`idle` if it failed).
 
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | `phase`, `connected`, `devices` (connected count), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state/lap/time/loops/reports. |
-| `POST /refresh` | — | The Devices card's refresh: stops the adb server (unless recording), then rescans. 409 unless idle. |
-| `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects with the profiles the window has set; `devices` also becomes the window's selection. 409 unless idle; 400 for an unknown device number or invalid profile settings. |
+| `GET /status` | — | `phase`, `connected`, `devices` (connected devices, dropped ones included, in the order `/bridge` numbers them), `active` (those still responding), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state/lap/time/loops/reports. |
+| `POST /refresh` | — | The Devices card's refresh: stops the adb server (unless recording), then rescans; `busy` is `true` until the new list is in `available`. 409 unless idle and not already busy. |
+| `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects with the profiles the window has set; `devices` also becomes the window's selection. 409 unless idle and not `busy`; 400 for an unknown device number or invalid profile settings. |
 | `POST /disconnect` | — | 409 if not connected. |
-| `POST /play` | `script`, `loop` (0 = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing). |
+| `POST /play` | `script`, `loop` (laps, the first included; 0 or omitted = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing); 400 for a `loop` that is not a non-negative number. |
 | `POST /stop` | — | |
 | `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
 | `POST /seek` | `lap` (`first`/`repeat`, default `first`), `time_ms` | 409 if nothing is playing. |
@@ -337,7 +340,7 @@ Connecting and refreshing finish in the background: poll `GET /status` until
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
 | `POST /pen` | `x`, `y`, `pressure` (default 0), `in_range` (default `true`), `tip` (default `false`) | Pen surface coordinates. `tip` needs `in_range`. |
 | `POST /media` | `key` (a [media key name](#media-key-names) or usage), `down` | Without `down`, a tap: press, then release in the next report. One media key is held at a time. |
-| `POST /record/start` | `name` (optional file name; default: the Recorder's name field, else a timestamp) | Records from the Recorder's adb device into `csv/`. 409 if already recording; 400 for an invalid name. |
+| `POST /record/start` | `name` (optional file name; default: the Recorder's name field, else a timestamp) | Records from the Recorder's adb device into `csv/`. 409 if already recording or adb was not found; 400 for an invalid name. A failure after it starts (for example no phone on adb) is written to the activity log and `recording` in `/status` turns `false`. |
 | `POST /record/stop` | — | Stops and saves (nothing is saved if nothing was captured). 409 if not recording. |
 | `POST /bridge` | `device` (1-based, connected order), `on` (default `true`), `port` (1024-65535; default: the ADB tab's) | Same as the ADB tab's switch, including `adb connect` / the adb server restart. 409 while a script plays, for a dropped device, or a port another phone uses. |
 

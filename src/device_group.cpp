@@ -117,9 +117,20 @@ void DeviceGroup::fail(Slot& slot, const aoahid_result result) {
     active_count_.fetch_sub(1, std::memory_order_relaxed);
     slot.device.close();
     slot.adb_port.store(0U, std::memory_order_relaxed);
-    if (sink_ != nullptr)
-        sink_->message(Severity::warning, slot.label + " stopped responding and was dropped. " +
-                                              detail);
+    if (sink_ == nullptr)
+        return;
+    if (result == AOAHID_ERR_STALL) {
+        // A STALL is the phone refusing the report, not silence. Right after
+        // connecting it usually means Android is still registering the HID.
+        sink_->message(Severity::warning,
+                       slot.label + " refused a report and was dropped. Right after connecting, "
+                                    "Android may still be registering the device; start input "
+                                    "about 100 ms after connecting. " +
+                           detail);
+    } else {
+        sink_->message(Severity::warning,
+                       slot.label + " stopped responding and was dropped. " + detail);
+    }
 }
 
 aoahid_result DeviceGroup::apply(const EventPayload& payload) {

@@ -352,6 +352,10 @@ UiReply App::run_ui_request(const UiRequest& request) {
     case UiRequest::Kind::connect: {
         if (engine_.phase() != Phase::idle)
             return UiReply{409, "Not idle (already connected, or busy)."};
+        // Same as the disabled Connect button: the device list is not final yet.
+        if (startup_prep_task_.valid() || retry_task_.valid())
+            return UiReply{409, "Still preparing the device list; retry once /status busy is "
+                                "false."};
         if (request.all_devices || !request.devices.empty()) {
             std::set<std::string> selection;
             for (size_t index = 0; index < devices_.size(); ++index) {
@@ -374,15 +378,18 @@ UiReply App::run_ui_request(const UiRequest& request) {
     case UiRequest::Kind::record_start: {
         if (recording())
             return UiReply{409, "Already recording."};
-        if (!request.name.empty()) {
-            const std::string problem = record_name_problem(request.name);
-            if (!problem.empty())
-                return UiReply{400, problem};
-            record_name_ = request.name;
-        }
+        // start_recording() returns silently on these, so they are answered
+        // here; a failure after it starts (no phone on adb, for instance) is
+        // logged and turns /status recording false.
+        const std::string& name = request.name.empty() ? record_name_ : request.name;
+        const std::string problem = record_name_problem(name);
+        if (!problem.empty())
+            return UiReply{400, problem};
+        if (adb_status_ == AdbStatus::not_found)
+            return UiReply{409, "adb was not found; recording needs Android SDK Platform-Tools "
+                                "on PATH."};
+        record_name_ = name;
         start_recording();
-        if (!recording())
-            return UiReply{400, "Recording did not start; see the activity log."};
         return {};
     }
     case UiRequest::Kind::record_stop:
@@ -412,7 +419,9 @@ void App::poll() {
             selected_.insert(devices_.front().key);
     }
     handle_ui_requests();
-    recording_flag_.store(recording(), std::memory_order_relaxed);
+    ui_status_.recording.store(recording(), std::memory_order_relaxed);
+    ui_status_.busy.store(startup_prep_task_.valid() || retry_task_.valid(),
+                          std::memory_order_relaxed);
 
     // The Player tab also observes now, so its active-touches list (see
     // draw_transport_card()) stays current even when the Live tab is not

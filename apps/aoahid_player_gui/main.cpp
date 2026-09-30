@@ -395,6 +395,9 @@ int run() {
             pending_frames = std::max(pending_frames, 2);
         }
         if (glfwGetWindowAttrib(window, GLFW_ICONIFIED) == GLFW_TRUE) {
+            // Nothing is drawn, but API requests and finished jobs still are
+            // handled (on Wayland GLFW never reports iconified; see its docs).
+            app->background();
             glfwWaitEventsTimeout(0.25);
             continue;
         }

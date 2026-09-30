@@ -285,6 +285,11 @@ void GeteventParser::feed(std::string_view line, const int64_t host_now_ns,
                 return; // key repeat (2) is not an edge
             down = raw == 1;
         }
+        // Touchscreens report contact and tool state as keys too (Linux
+        // Documentation/input/event-codes.rst: BTN_TOUCH, BTN_TOOL_<name>);
+        // the MT events above already carry it, so these are not keys.
+        if (code == "BTN_TOUCH" || code.rfind("BTN_TOOL_", 0) == 0)
+            return;
         uint16_t usage = 0;
         if (!key_usage(code, usage)) {
             ++unmapped_keys_;

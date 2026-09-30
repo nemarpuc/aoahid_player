@@ -56,6 +56,10 @@ class App {
     App& operator=(const App&) = delete;
 
     void frame();
+    // The non-drawing part of frame(): control API requests, finished jobs,
+    // recording and bridge results. The main loop calls it alone while the
+    // window is minimized and nothing is drawn.
+    void background() { poll(); }
     void on_drop(std::vector<std::string> paths);
     void on_focus();
     // The window lost input focus; release a captured pointer so it does not
@@ -335,10 +339,10 @@ class App {
     std::deque<PendingUi> ui_requests_;
     bool ui_closing_{};       // guarded by ui_requests_mutex_
     uint64_t ui_request_id_{}; // guarded by ui_requests_mutex_
-    std::atomic<bool> recording_flag_{};
+    UiStatus ui_status_;
     ControlApi control_api_{
         engine_, [this](const UiRequest& request) { return post_ui_request(request); },
-        recording_flag_};
+        ui_status_};
     // Persisted intent: whether the control API should be listening.
     // control_api_.running() is the actual live state; this is only read
     // again at the next startup (see the constructor) and written back
