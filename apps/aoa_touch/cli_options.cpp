@@ -113,6 +113,7 @@ void print_usage(const char* program) {
         "  --key-usage-range LO,HI  Keyboard HID usage range (default 0x04,0x65)\n"
         "  --mouse-buttons N        Number of mouse buttons\n"
         "  --pen-mode MODE          direct|indirect\n"
+        "  --toggle                 Media keys (Consumer Control; needed by c rows)\n"
         "\n"
         "Playback:\n"
         "  -A                       Auto-detect touch resolution via `adb shell wm size`\n"
@@ -309,6 +310,10 @@ std::optional<Options> parse(const int argc, char** argv) {
             options.profiles.pen.enabled = true;
             continue;
         }
+        if (argument == "--toggle") {
+            options.profiles.toggle.enabled = true;
+            continue;
+        }
         if (argument == "-A") {
             options.auto_resolution = true;
             continue;
@@ -390,7 +395,7 @@ std::optional<Options> parse(const int argc, char** argv) {
 
     if (!options.profiles.touch.enabled && !options.profiles.mouse.enabled &&
         !options.profiles.key.enabled && !options.profiles.gamepad.enabled &&
-        !options.profiles.pen.enabled) {
+        !options.profiles.pen.enabled && !options.profiles.toggle.enabled) {
         std::fprintf(stderr, "[ERROR] no profile was configured; see --help\n");
         return std::nullopt;
     }

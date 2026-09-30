@@ -280,6 +280,31 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         payload = PenSample{in_range, tip, x, y, static_cast<int32_t>(values[4])};
         return true;
     }
+    case 'c': {
+        if (count != 3) {
+            reason = "media key needs usage_or_name,down,wait_ms";
+            return false;
+        }
+        bool down = false;
+        uint16_t usage = 0;
+        if (!parse_flag(field[1], down)) {
+            reason = "media key down must be 0 or 1";
+            return false;
+        }
+        if (parse_int64(field[0], values[0])) {
+            if (values[0] < 0 || values[0] > 0xFFFF ||
+                !media_usage_supported(static_cast<uint16_t>(values[0]))) {
+                reason = "media key usage is not one the toggle profile declares";
+                return false;
+            }
+            usage = static_cast<uint16_t>(values[0]);
+        } else if (!media_usage_from_name(field[0], usage)) {
+            reason = "unknown media key name \"" + std::string(field[0]) + "\"";
+            return false;
+        }
+        payload = MediaKey{usage, down};
+        return true;
+    }
     default:
         reason = "unknown row prefix";
         return false;
@@ -307,8 +332,10 @@ uint64_t batch_key(const EventPayload& payload) noexcept {
                 return (uint64_t{5} << 56) | value.axis_index;
             else if constexpr (std::is_same_v<T, GamepadDpad>)
                 return uint64_t{6} << 56;
-            else
+            else if constexpr (std::is_same_v<T, PenSample>)
                 return uint64_t{7} << 56;
+            else
+                return uint64_t{8} << 56; // one Consumer field: any two rows conflict
         },
         payload);
 }

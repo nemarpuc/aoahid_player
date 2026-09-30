@@ -34,3 +34,7 @@ h,0,0,0,0,16
 
 p,1,1,500,500,200,16
 p,0,0,500,500,0,16
+
+# Media keys need the toggle profile (one held at a time).
+c,VolumeUp,1,16
+c,VolumeUp,0,16

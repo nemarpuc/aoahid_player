@@ -349,6 +349,7 @@ Profile setup (all explicit; there are no presets):
   --key-usage-range LO,HI  Keyboard HID usage range (default 0x04,0x65)
   --mouse-buttons N        Number of mouse buttons
   --pen-mode MODE          direct|indirect
+  --toggle                 Media keys (Consumer Control; needed by c rows)
 
 Playback:
   -A                       Auto-detect touch resolution via `adb shell wm size`
@@ -431,6 +432,7 @@ lines and a UTF-8 byte-order mark are ignored. Lines starting with `@` are
 | `a`    | gamepad axis   | `axis_index,value,wait_ms`                  |
 | `h`    | gamepad dpad   | `up,down,right,left,wait_ms`                |
 | `p`    | pen            | `in_range,tip,x,y,pressure,wait_ms`         |
+| `c`    | media key (toggle) | `usage_or_name,down,wait_ms` (a Consumer usage number, or a [media key name](#media-key-names)) |
 
 `state`, `down`, `pressed`, `in_range`, `tip`, and the four dpad directions
 are `0` or `1`. Mouse and gamepad `button_no` are 1-based. A pen row with
@@ -441,7 +443,10 @@ measured from the start of its lap, so a slow USB transfer never makes the
 script drift. Keyboard modifiers (usages `0xE0`–`0xE7`) are always available,
 whatever the usage range. libaoahid's keyboard profile is full N-Key
 Rollover, so every usage in the configured range can be held down at
-the same time with no limit on simultaneous keys. See `csv/example.csv`.
+the same time with no limit on simultaneous keys. Media keys are different:
+the toggle profile has a single Consumer Control field, so one media key is
+held at a time; pressing another replaces it, and a `c` release must name the
+key that is held. See `csv/example.csv`.
 
 ### Laps: which rows run when
 
@@ -452,7 +457,7 @@ Rows keep the order they are written in, and the script plays in laps:
   `wait_ms`, so it is shorter by the time those rows took (`keep-time`, below,
   keeps that time).
 
-A row is once-only when its prefix is uppercase (`T,M,B,K,G,A,H,P`) or when it
+A row is once-only when its prefix is uppercase (`T,M,B,K,G,A,H,P,C`) or when it
 sits between `@once` and `@end`; lowercase rows outside a block run on every
 lap. A once-only row can be anywhere in the file: first, in the middle, or
 last. A script whose rows are all once-only plays one lap and ends. *Loops*
@@ -498,6 +503,24 @@ and the modifiers `LCtrl`, `LShift`, `LAlt`, `LGui`, `RCtrl`, `RShift`,
 `RAlt`, `RGui` (`Ctrl`, `Control`, `Shift`, `Alt`, and `Gui`, `Win`, `LWin`,
 `Meta`, `Super` mean the left one; `RWin` is `RGui`). A bare number is always a usage number, so write digit keys as
 `Digit1`.
+
+### Media key names
+
+`c` rows take a name, ignoring case, or the Consumer page (`0x0C`) usage
+number: `Next` (`0xB5`), `Prev` / `Previous` (`0xB6`), `Stop` (`0xB7`),
+`PlayPause` (`0xCD`), `Mute` (`0xE2`), `VolumeUp` (`0xE9`), `VolumeDown`
+(`0xEA`), `Home` (AC Home, `0x223`), `Back` (AC Back, `0x224`), and `New`
+(AC New, `0x201`). The number `0x238` (AC Pan) is also accepted; Linux maps it
+to a horizontal wheel step rather than a key. Any other usage is an error when
+the file is loaded, because the toggle profile does not declare it. The rows
+need the toggle profile (*Profiles* → toggle in the GUI, or `aoa_touch --toggle`).
+
+```csv
+c,VolumeUp,1,50
+c,VolumeUp,0,500
+c,PlayPause,1,50
+c,PlayPause,0,0
+```
 
 ### Checks
 

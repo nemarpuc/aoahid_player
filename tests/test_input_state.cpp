@@ -180,3 +180,38 @@ TEST_CASE("lap_warnings is quiet for balanced scripts") {
     once_only.rows.push_back({aoap::TouchEvent{0, true, 5, 5}, true, 1'000'000});
     CHECK(aoap::lap_warnings(once_only, aoap::build_timeline(once_only)).empty());
 }
+
+TEST_CASE("A held media key is released on stop, and a press replaces it") {
+    InputState held;
+    held.apply(aoap::MediaKey{0x00E9, true});
+    CHECK_FALSE(held.neutral());
+    held.apply(aoap::MediaKey{0x00EA, true}); // one Consumer field: replaces Vol Up
+
+    std::vector<EventPayload> releases;
+    std::vector<EventPayload> presses;
+    InputState::transition(held, InputState{}, releases, presses);
+    CHECK(presses.empty());
+    REQUIRE(releases.size() == 1);
+    const auto* release = std::get_if<aoap::MediaKey>(&releases.front());
+    REQUIRE(release != nullptr);
+    CHECK(release->usage == 0x00EA);
+    CHECK_FALSE(release->down);
+
+    held.apply(aoap::MediaKey{0x00EA, false});
+    CHECK(held.neutral());
+}
+
+TEST_CASE("A seek between two held media keys releases one and presses the other") {
+    InputState from;
+    from.apply(aoap::MediaKey{0x00B5, true});
+    InputState to;
+    to.apply(aoap::MediaKey{0x00B6, true});
+
+    std::vector<EventPayload> releases;
+    std::vector<EventPayload> presses;
+    InputState::transition(from, to, releases, presses);
+    REQUIRE(releases.size() == 1);
+    REQUIRE(presses.size() == 1);
+    CHECK(std::get<aoap::MediaKey>(releases.front()).usage == 0x00B5);
+    CHECK(std::get<aoap::MediaKey>(presses.front()).usage == 0x00B6);
+}

@@ -73,6 +73,13 @@ void InputState::apply(const EventPayload& payload) {
                 dpad_ = value;
             } else if constexpr (std::is_same_v<T, PenSample>) {
                 pen_ = value;
+            } else if constexpr (std::is_same_v<T, MediaKey>) {
+                // The toggle profile has one Consumer field: a press replaces
+                // whatever was held, and a release clears it.
+                if (value.down)
+                    media_ = value.usage;
+                else if (value.usage == media_)
+                    media_ = 0U;
             }
             // MouseMove is relative and leaves no state behind.
         },
@@ -87,6 +94,7 @@ void InputState::clear() noexcept {
     axes_.fill(0);
     dpad_ = {};
     pen_ = {};
+    media_ = 0U;
 }
 
 bool InputState::neutral() const noexcept {
@@ -99,7 +107,7 @@ bool InputState::neutral() const noexcept {
             return false;
     }
     return keys_.none() && mouse_buttons_.empty() && pad_buttons_.empty() && dpad_neutral(dpad_) &&
-           !pen_.in_range;
+           !pen_.in_range && media_ == 0U;
 }
 
 void InputState::transition(const InputState& from, const InputState& to,
@@ -138,6 +146,13 @@ void InputState::transition(const InputState& from, const InputState& to,
 
     if (!same_dpad(from.dpad_, to.dpad_))
         (dpad_neutral(to.dpad_) ? releases : presses).push_back(to.dpad_);
+
+    if (from.media_ != to.media_) {
+        if (from.media_ != 0U)
+            releases.push_back(MediaKey{from.media_, false});
+        if (to.media_ != 0U)
+            presses.push_back(MediaKey{to.media_, true});
+    }
 
     if (!same_pen(from.pen_, to.pen_)) {
         if (to.pen_.in_range)
@@ -187,6 +202,12 @@ std::string control_name(const EventPayload& payload) {
                 return "the D-pad";
             else if constexpr (std::is_same_v<T, PenSample>)
                 return "the pen";
+            else if constexpr (std::is_same_v<T, MediaKey>) {
+                char text[24];
+                std::snprintf(text, sizeof text, "media key 0x%03x",
+                              static_cast<unsigned>(value.usage));
+                return text;
+            }
             else
                 return "an input";
         },

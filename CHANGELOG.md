@@ -5,6 +5,11 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+- CSV: `c` rows send media keys through the toggle profile
+  (`c,usage_or_name,down,wait_ms`), by name (`VolumeUp`, `PlayPause`, ...) or
+  Consumer usage. Stop, pause, and seek release a held media key like any
+  other control. `aoa_touch --toggle` enables the profile.
+
 ## [0.20.3] - 2026-09-29
 
 - GUI: the Speed and Loops fields (and every other text field) take typed

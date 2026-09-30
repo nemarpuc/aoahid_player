@@ -13,6 +13,7 @@
 
 #include "context.hpp"
 #include "device.hpp"
+#include "key_names.hpp"
 
 // Turns the chosen profile settings into the immutable aoahid_spec objects a
 // connection uses. Specs are built once when connecting and reused for every
@@ -434,19 +435,11 @@ class SpecSet {
         options.application_usage = 0x01U; // Consumer Control
         options.field_page = 0x0CU;
 
-        static const uint16_t usages[] = {
-            0x00B5U, // Next
-            0x00B6U, // Prev
-            0x00B7U, // Stop
-            0x00CDU, // Play/Pause
-            0x00E2U, // Mute
-            0x00E9U, // Vol Up
-            0x00EAU, // Vol Down
-            0x0223U, // AC Home
-            0x0224U, // AC Back
-            0x0238U, // AC Pan
-            0x0201U  // AC New
-        };
+        // media_usages (key_names.hpp) is the one list the CSV parser also
+        // checks media key rows against; the arrays below follow its order:
+        // Next, Prev, Stop, Play/Pause, Mute, Vol Up, Vol Down, AC Home,
+        // AC Back, AC Pan, AC New.
+        const auto& usages = media_usages;
         static const aoahid_usage_semantic semantics[] = {
             AOAHID_USAGE_ONE_SHOT,          // Next
             AOAHID_USAGE_ONE_SHOT,          // Prev

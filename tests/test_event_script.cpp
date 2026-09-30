@@ -520,3 +520,42 @@ TEST_CASE("Directive words and options ignore case") {
     REQUIRE(script.rows.size() == 2);
     CHECK(script.rows[0].keep_time);
 }
+
+TEST_CASE("EventScript::load parses media key rows by name or usage") {
+    const std::string path = write_temp_csv("media",
+        "c,VolumeUp,1,5\n"
+        "c,volumeup,0,5\n"
+        "C,0xcd,1,0\n"
+        "c,PlayPause,0,5\n"
+        "c,Prev,1,5\n");
+
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(path, error));
+    REQUIRE(script.rows.size() == 5);
+    const auto& up = std::get<aoap::MediaKey>(script.rows[0].payload);
+    CHECK(up.usage == 0x00E9);
+    CHECK(up.down == true);
+    CHECK(std::get<aoap::MediaKey>(script.rows[1].payload).down == false);
+    CHECK(std::get<aoap::MediaKey>(script.rows[2].payload).usage == 0x00CD);
+    CHECK(script.rows[2].once == true);
+    CHECK(std::get<aoap::MediaKey>(script.rows[4].payload).usage == 0x00B6);
+    // One Consumer field: every media row conflicts with every other.
+    CHECK(aoap::batch_key(script.rows[0].payload) == aoap::batch_key(script.rows[2].payload));
+    CHECK(aoap::batch_key(script.rows[0].payload) != 0U);
+    CHECK(script.required_profiles() == (uint32_t{1} << 5)); // Profile::toggle
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("EventScript::load rejects media keys the toggle profile does not declare") {
+    for (const char* row : {"c,Louder,1,5\n", "c,0x00E8,1,5\n", "c,VolumeUp,2,5\n",
+                            "c,VolumeUp,1\n"}) {
+        const std::string path = write_temp_csv("media_bad", row);
+        aoap::EventScript script;
+        std::string error;
+        CHECK_FALSE(script.load(path, error));
+        CHECK_FALSE(error.empty());
+        std::filesystem::remove(path);
+    }
+}

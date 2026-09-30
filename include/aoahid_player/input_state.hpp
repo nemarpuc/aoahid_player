@@ -13,7 +13,8 @@
 namespace aoap {
 
 // The absolute input state a sequence of script rows leaves behind: active
-// contacts, held keys and buttons, axis values, the D-pad, and the pen.
+// contacts, held keys and buttons, axis values, the D-pad, the pen, and the
+// media key held down.
 //
 // libaoahid has no release-all call and rejects lifting a contact that is not
 // down, so the player keeps one of these for what it has actually sent. On
@@ -54,6 +55,7 @@ class InputState {
     std::array<int32_t, max_axes> axes_{};
     GamepadDpad dpad_{};
     PenSample pen_{};
+    uint16_t media_{}; // the Consumer usage held down, 0 for none
 };
 
 // The state uninterrupted playback holds at `row` of `lap`, once `loops` laps

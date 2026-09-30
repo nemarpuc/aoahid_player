@@ -24,9 +24,11 @@ struct GamepadButton{ uint32_t button; bool pressed; };
 struct GamepadAxis  { size_t axis_index; int32_t value; };
 struct GamepadDpad  { bool up, down, right, left; };
 struct PenSample    { bool in_range, tip; int32_t x, y, pressure; };
+struct MediaKey     { uint16_t usage; bool down; }; // Consumer page, toggle profile
 
 using EventPayload = std::variant<TouchEvent, MouseMove, MouseButton, KeyEvent,
-                                   GamepadButton, GamepadAxis, GamepadDpad, PenSample>;
+                                   GamepadButton, GamepadAxis, GamepadDpad, PenSample,
+                                   MediaKey>;
 
 struct EventRecord {
     EventPayload payload;
