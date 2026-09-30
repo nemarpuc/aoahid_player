@@ -27,6 +27,10 @@ were reconstructed from the commit history.
   input sent while Android is still registering the device), not as
   "stopped responding".
 
+## [0.20.4] - 2026-09-30
+
+- Update the vendored aoahid_adb_proxy to 3.0.2: a payload whose header already reached the device is always written, even when the client disconnects or stop() runs in between.
+
 ## [0.20.3] - 2026-09-29
 
 - GUI: the Speed and Loops fields (and every other text field) take typed
