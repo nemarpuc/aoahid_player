@@ -246,7 +246,10 @@ an adb server holds that interface, the server is stopped and the bridge
 tried once more (the other bridges are then reconnected to adb); a driver
 problem (`libusb status -12`) skips this, since stopping adb cannot fix it.
 Finally `adb connect` runs off the UI thread. Turning it off, or disconnecting,
-closes the bridge before the phone is closed and runs `adb disconnect`.
+closes the bridge before the phone is closed and runs `adb disconnect`, then
+stops the adb server (unless a recording is running): a server started while
+the bridge held the phone never picks it up over USB again, so the next adb
+command has to start a fresh one.
 Bridges cannot be switched while a script plays, since stopping one can take
 up to a second.
 
