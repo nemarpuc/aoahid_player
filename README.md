@@ -247,9 +247,12 @@ tried once more (the other bridges are then reconnected to adb); a driver
 problem (`libusb status -12`) skips this, since stopping adb cannot fix it.
 Finally `adb connect` runs off the UI thread. Turning it off, or disconnecting,
 closes the bridge before the phone is closed and runs `adb disconnect`, then
-stops the adb server (unless a recording is running): a server started while
-the bridge held the phone never picks it up over USB again, so the next adb
-command has to start a fresh one.
+stops the adb server (unless a recording is running). adb's libusb backend,
+the default on Linux and macOS, tries to claim a phone's adb interface only
+when the phone first appears; if the bridge held it then, the server never
+retries, so the next adb command has to start a fresh server. See
+[aoahid_adb_proxy's USAGE.md](https://github.com/nemarpuc/aoahid_adb_proxy/blob/main/docs/USAGE.md)
+for the adb source references.
 Bridges cannot be switched while a script plays, since stopping one can take
 up to a second.
 

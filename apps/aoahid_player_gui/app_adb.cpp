@@ -32,9 +32,10 @@ void App::run_adb_job(const size_t device, const std::string& serial, const bool
         }));
 }
 
-// An adb server started while a bridge held the phone's adb interface never
-// picks the phone up over USB again, so it is stopped once the interface is
-// free; the next adb command starts a fresh one.
+// adb's libusb backend (the default except on Windows) claims a phone's adb
+// interface only when the phone first appears and never retries, so a server
+// that saw it while a bridge held it is stopped once the interface is free;
+// the next adb command starts a fresh one.
 void App::restart_adb_server() {
     adb_jobs_.push_back(std::async(std::launch::async, [version = bridge_version_, wake = wake_] {
         AdbJob job{version, 0, {}, false, false, {}, true};
