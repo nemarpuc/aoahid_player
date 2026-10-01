@@ -438,7 +438,8 @@ class SpecSet {
         // media_usages (key_names.hpp) is the one list the CSV parser also
         // checks media key rows against; the arrays below follow its order:
         // Next, Prev, Stop, Play/Pause, Mute, Vol Up, Vol Down, AC Home,
-        // AC Back, AC Pan, AC New.
+        // AC Back, AC Pan, AC New, Brightness Up, Brightness Down. Brightness
+        // Increment/Decrement are RTC (HUT 1.5, 15.5).
         const auto& usages = media_usages;
         static const aoahid_usage_semantic semantics[] = {
             AOAHID_USAGE_ONE_SHOT,          // Next
@@ -451,16 +452,20 @@ class SpecSet {
             AOAHID_USAGE_ONE_SHOT,          // AC Home
             AOAHID_USAGE_ONE_SHOT,          // AC Back
             AOAHID_USAGE_ONE_SHOT,          // AC Pan
-            AOAHID_USAGE_SELECTOR_BITMAP    // AC New
+            AOAHID_USAGE_SELECTOR_BITMAP,   // AC New
+            AOAHID_USAGE_RETRIGGER,         // Brightness Up
+            AOAHID_USAGE_RETRIGGER          // Brightness Down
         };
         // Linux hid-input maps AC Pan to the horizontal wheel, not to a key.
         static const char* expected_types[] = {
             "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY",
-            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_REL", "EV_KEY"
+            "EV_KEY", "EV_KEY", "EV_KEY", "EV_KEY", "EV_REL", "EV_KEY",
+            "EV_KEY", "EV_KEY"
         };
         static const char* expected_codes[] = {
             "KEY_NEXTSONG", "KEY_PREVIOUSSONG", "KEY_STOPCD", "KEY_PLAYPAUSE", "KEY_MUTE",
-            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "REL_HWHEEL", "KEY_NEW"
+            "KEY_VOLUMEUP", "KEY_VOLUMEDOWN", "KEY_HOMEPAGE", "KEY_BACK", "REL_HWHEEL", "KEY_NEW",
+            "KEY_BRIGHTNESSUP", "KEY_BRIGHTNESSDOWN"
         };
         static_assert(std::size(semantics) == std::size(usages) &&
                       std::size(expected_types) == std::size(usages) &&

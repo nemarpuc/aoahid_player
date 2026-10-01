@@ -93,10 +93,11 @@ bool media_usage_supported(const uint16_t usage) noexcept {
 }
 
 bool media_usage_from_name(const std::string_view name, uint16_t& usage) noexcept {
-    static constexpr std::array<Named, 11> media{{
+    static constexpr std::array<Named, 13> media{{
         {"next", 0x00B5},     {"prev", 0x00B6},       {"previous", 0x00B6}, {"stop", 0x00B7},
         {"playpause", 0x00CD}, {"mute", 0x00E2},      {"volumeup", 0x00E9}, {"volumedown", 0x00EA},
         {"home", 0x0223},     {"back", 0x0224},       {"new", 0x0201},
+        {"brightnessup", 0x006F}, {"brightnessdown", 0x0070},
     }};
     for (const Named& entry : media) {
         if (same(name, entry.name)) {

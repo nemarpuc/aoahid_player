@@ -548,9 +548,31 @@ TEST_CASE("EventScript::load parses media key rows by name or usage") {
     std::filesystem::remove(path);
 }
 
+TEST_CASE("EventScript::load parses the brightness keys by name or usage") {
+    const std::string path = write_temp_csv("media_brightness",
+        "c,BrightnessUp,1,5\n"
+        "c,brightnessup,0,5\n"
+        "c,BrightnessDown,1,5\n"
+        "c,0x70,0,5\n");
+
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(path, error));
+    REQUIRE(script.rows.size() == 4);
+    CHECK(std::get<aoap::MediaKey>(script.rows[0].payload).usage == 0x006F);
+    CHECK(std::get<aoap::MediaKey>(script.rows[0].payload).down == true);
+    CHECK(std::get<aoap::MediaKey>(script.rows[1].payload).usage == 0x006F);
+    CHECK(std::get<aoap::MediaKey>(script.rows[2].payload).usage == 0x0070);
+    CHECK(std::get<aoap::MediaKey>(script.rows[3].payload).usage == 0x0070);
+    CHECK(std::get<aoap::MediaKey>(script.rows[3].payload).down == false);
+
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("EventScript::load rejects media keys the toggle profile does not declare") {
     for (const char* row : {"c,Louder,1,5\n", "c,0x00E8,1,5\n", "c,VolumeUp,2,5\n",
-                            "c,VolumeUp,1\n"}) {
+                            "c,VolumeUp,1\n", "c,FastForward,1,5\n", "c,0x00B3,1,5\n",
+                            "c,Rewind,1,5\n", "c,0x00B4,1,5\n"}) {
         const std::string path = write_temp_csv("media_bad", row);
         aoap::EventScript script;
         std::string error;
