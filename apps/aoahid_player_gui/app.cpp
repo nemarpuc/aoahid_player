@@ -671,7 +671,23 @@ bool App::playlist_playable() const {
     return true;
 }
 
-void App::refresh_playlists() { playlist_names_ = list_playlists(); }
+void App::refresh_playlists() {
+    playlist_files_.clear();
+    for (std::string& name : list_playlists()) {
+        Playlist loaded;
+        std::string error;
+        PlaylistFile file;
+        if (load_playlist(name, loaded, error)) {
+            const size_t count = loaded.entries.size();
+            file.meta = std::to_string(count) + (count == 1 ? " script" : " scripts");
+        } else {
+            file.meta = "Cannot be read";
+        }
+        file.lower = fold(name);
+        file.name = std::move(name);
+        playlist_files_.push_back(std::move(file));
+    }
+}
 
 void App::load_playlist_named(const std::string& name) {
     Playlist loaded;

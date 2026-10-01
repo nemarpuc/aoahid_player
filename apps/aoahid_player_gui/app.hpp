@@ -270,7 +270,7 @@ class App {
     // with their loops and the time limit. Playing is the transport card's job.
     void draw_playlist_file_card();
     void draw_playlist_scripts_card();
-    void draw_playlist_picker();
+    void draw_playlist_picker(float width);
     void draw_recorder();
     void draw_record_coords(bool locked);
     void draw_log(float height);
@@ -564,13 +564,26 @@ class App {
     std::atomic<bool> live_paste_active_{};
 
     // Playlist.
-    std::vector<std::string> playlist_names_;
+    // A saved playlist as the picker lists it.
+    struct PlaylistFile {
+        std::string name;
+        std::string lower; // for searching
+        std::string meta;  // "3 scripts"
+    };
+    std::vector<PlaylistFile> playlist_files_;
+    // The playlist picker: the same search, cursor, and delete confirmation
+    // as the script picker's.
+    std::string playlist_filter_;
+    std::string playlist_pending_delete_;
+    int playlist_cursor_{};
+    bool playlist_follow_{};
+    bool playlist_focus_search_{};
+    bool playlist_typing_{};
     Playlist playlist_;
     std::string playlist_name_input_;
     std::string playlist_error_;
     bool playlist_dirty_{};
     int playlist_add_choice_{};
-    bool open_playlist_picker_{};
     // The running step the list last scrolled to, so it follows the run once
     // per step and leaves the user's own scrolling alone in between.
     size_t playlist_shown_step_{SIZE_MAX};

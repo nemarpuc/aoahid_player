@@ -17,8 +17,9 @@ were reconstructed from the commit history.
 - Player tab: the Playlist tab is now the Player's *Playlist* mode (the
   *Script | Playlist* switch), sharing one play bar; pause, seek, speed, and
   offset act on the script that is running. `.csv` files dropped on the
-  Playlist join its list. A saved Playlist tab opens in this mode. The key
-  settings are a folded *Keys* row.
+  Playlist join its list. A saved Playlist tab opens in this mode. Saved
+  playlists open from a searchable list like the script one. The key settings
+  are a folded *Keys* row.
 - Profiles: each row is a switch, a summary, and an arrow that opens its
   settings. A touchscreen size that could not be read from the phone is shown
   in the warning colour. *Connect* needs at least one profile on.

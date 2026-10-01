@@ -106,7 +106,8 @@ without stopping playback for the others.
   focus.
 - Play/pause (also **Space**), stop (**Esc** or **Ctrl+S**), and back-to-start
   (**Home** or **Backspace**) buttons. Each key can be remapped with the
-  *Set...* buttons in the folded *Keys* row under the transport; a remapped action answers to that one
+  *Set...* buttons in the folded *Keys* row under the transport; a remapped
+  action answers to that one
   key only, and *Reset* restores the defaults. One bar shows
   the whole cycle: the first lap (rows that run only once in purple, repeated
   rows in green, in the order the file writes them), a gap, then the repeat
@@ -227,11 +228,14 @@ loops, with an optional limit in minutes on the whole run. It uses the same
 play bar as a single script: the bar shows the script that is running (for
 example *2/5*), and play/pause, stop, speed, offset, and seeking act on that
 script. *Loops* is set for each script in the list instead. Playlists are
-saved as `playlists/<name>.playlist` next to the program and reopened from
-*Open*. With room, the list sits on the left and the play bar on the right;
-in a narrow window they stack. `.csv` files dropped on the Playlist join the
-end of the list. The switch is locked while something plays; **Ctrl+F** and
-*Open in player* switch back to *Script*.
+saved as `playlists/<name>.playlist` next to the program. The *Playlist* box
+shows the open one; click it for the list of saved playlists, which works
+like the script list (type to search, **Up/Down**, **Enter**, **Esc**, and a
+trash button with an inline confirmation). With room, the list sits on the
+left and the play bar on the right; in a narrow window they stack. `.csv`
+files dropped on the Playlist join the end of the list. The switch is locked
+while something plays; **Ctrl+F** and *Open in player* switch back to
+*Script*.
 
 **Recorder tab**
 
@@ -306,8 +310,9 @@ compositor's scale on Wayland.
 
 A local HTTP server another program can use to drive the phone — the same
 things the Devices card, Live control, the Player tab, the Recorder, and the
-ADB tab do, callable over plain HTTP. Off by default; turn it on with the sidebar's *Control API* switch
-(its arrow opens the *Port* it listens on, 47821 by default). It binds
+ADB tab do, callable over plain HTTP. Off by default; turn it on with the
+sidebar's *Control API* switch (its arrow opens the *Port* it listens on,
+47821 by default). It binds
 `127.0.0.1` only, never a public interface, but has no further
 authentication: any program running on this machine can reach it once it is
 on, so turning it on is a deliberate choice, same as opening a debug port.
