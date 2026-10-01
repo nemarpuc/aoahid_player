@@ -26,6 +26,11 @@ were reconstructed from the commit history.
 - Defaults: every profile starts off; Live forwards Touch and Keyboard; the
   touchscreen size is 1440 x 2560 until it is read from the phone; the app
   opens on the Live tab. Saved settings are not changed.
+- Live: the window handles events while it waits out the frame-rate cap, so
+  pointer motion (mouse moves, a touch being dragged) and key releases reach
+  the phone when they arrive instead of up to one frame later (8.3 ms at
+  120 fps). Key presses, button presses, and the start and end of a touch
+  still go out with the next frame.
 - Tabs are ordered Live, Player, Recorder, ADB.
 - ADB and Recorder: the long explanations became one line with the detail in
   a tooltip.

@@ -19,13 +19,11 @@
 
 #include <algorithm>
 #include <atomic>
-#include <chrono>
 #include <cstdio>
 #include <cstdlib>
 #include <exception>
 #include <memory>
 #include <string>
-#include <thread>
 #include <vector>
 
 #if defined(_WIN32)
@@ -415,12 +413,19 @@ int run() {
             app->set_window_geometry(win_x, win_y, win_width, win_height);
         }
         {
+            // The frame cap is waited out handling events, not asleep: input
+            // that arrives meanwhile reaches its callback, and from there the
+            // phone, at once instead of when the next frame is due.
             const int fps = g_fps_limit.load(std::memory_order_relaxed);
             if (fps > 0) {
                 const int64_t target_frame_ns = 1'000'000'000 / fps;
-                const int64_t since = aoap::Timing::now_ns() - last_frame;
-                if (since < target_frame_ns)
-                    std::this_thread::sleep_for(std::chrono::nanoseconds(target_frame_ns - since));
+                for (;;) {
+                    const int64_t remaining =
+                        target_frame_ns - (aoap::Timing::now_ns() - last_frame);
+                    if (remaining <= 0)
+                        break;
+                    glfwWaitEventsTimeout(static_cast<double>(remaining) * 1e-9);
+                }
             }
         }
         if (g_scale_changed.exchange(false)) {
