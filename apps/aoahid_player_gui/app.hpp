@@ -16,6 +16,7 @@
 #include "aoahid_player/spec_builder.hpp"
 
 #include <atomic>
+#include <cstdint>
 #include <deque>
 #include <filesystem>
 #include <functional>
@@ -45,7 +46,7 @@ namespace gui {
 //   app_devices.cpp   — Devices/Profiles cards and their per-profile settings
 //   app_player.cpp    — the Player tab: script picker, transport, keys
 //   app_live.cpp      — the Live tab
-//   app_playlist.cpp  — the Playlist tab
+//   app_playlist.cpp  — the Player tab's Playlist mode
 //   app_recorder.cpp  — the Recorder tab
 class App {
   public:
@@ -100,7 +101,11 @@ class App {
     [[nodiscard]] bool consume_theme_change() noexcept;
 
   private:
-    enum class Tab : int { player = 0, live = 1, playlist = 2, recorder = 3, adb = 4 };
+    // The numbers are what settings.hpp saves; 2 was the Playlist tab, which is
+    // now the Player tab's Playlist mode.
+    enum class Tab : int { player = 0, live = 1, recorder = 3, adb = 4 };
+    // What the Player tab plays: the one loaded script, or a playlist.
+    enum class PlayerMode : int { script = 0, playlist = 1 };
     // The Player tab actions whose key can be remapped; the value indexes
     // player_keys_ and player_key_default().
     enum class PlayerAction : int { play = 0, stop = 1, restart = 2, none = 3 };
@@ -115,9 +120,9 @@ class App {
     struct LiveToggles {
         bool touch{true};
         bool mouse{};
-        bool key{};
+        bool key{true};
         bool gamepad{};
-        bool toggle{true};
+        bool toggle{};
     };
     // One line of the Live tab's input log.
     struct LiveLogEntry {
@@ -197,7 +202,7 @@ class App {
     void draw_sidebar();
     void draw_sidebar_collapsed();
     void draw_sidebar_splitter(float height);
-    // The Player/Live/Playlist/Recorder switch, as a left icon rail (not a
+    // The Live/Player/Recorder/ADB switch, as a left icon rail (not a
     // top segmented control), so it reads as part of the window's chrome
     // rather than a tab bar competing with each screen's own content.
     void draw_nav_rail();
@@ -225,7 +230,21 @@ class App {
     // while a script plays, so multi-finger playback and Live's own touch
     // (which now runs alongside it) are both visible in detail.
     void draw_touch_contacts();
-    void draw_live_controls();
+    // The right-hand panel: what is forwarded, the folded settings, and the
+    // input log.
+    void draw_live_controls(ImVec2 size);
+    // The phone-style side keys (volume, brightness), drawn right of the
+    // preview, and the media keys and status line below it.
+    void draw_live_side_keys(ImVec2 origin, float width, float phone_top, float phone_height);
+    void draw_live_media_bar(float width);
+    void draw_live_status();
+    // Whether a Toggle key press would reach the phone right now.
+    [[nodiscard]] bool live_toggle_usable() const;
+    void live_tap_key(uint16_t usage);
+    // Volume and brightness stay down while their button is held, as on the
+    // phone; the frame loop lets go of the key (see release_held_live_key()).
+    void live_hold_key(uint16_t usage);
+    void release_held_live_key();
     // The "Mouse release key" row: shows the configured key, a button to
     // pick a new one, and a note that only that exact key releases the
     // captured pointer once changed.
@@ -245,7 +264,12 @@ class App {
     // right-click menu of the full screen view.
     void draw_live_fullscreen_switches(float width);
     void draw_live_toggles();
-    void draw_playlist();
+    // The Script | Playlist switch at the top of the Player tab.
+    void draw_player_mode_switch();
+    // The Playlist mode's cards: the file (name, Open, Save) and the scripts
+    // with their loops and the time limit. Playing is the transport card's job.
+    void draw_playlist_file_card();
+    void draw_playlist_scripts_card();
     void draw_playlist_picker();
     void draw_recorder();
     void draw_record_coords(bool locked);
@@ -349,6 +373,7 @@ class App {
     // whenever draw_control_api_card() changes it.
     bool api_enabled_{};
     int api_port_{47821};
+    bool control_api_open_{}; // the Control API card's folded settings
     // ADB Bridge port per device key (DeviceEntry::key), saved between runs.
     std::map<std::string, int> adb_ports_;
     std::vector<BridgeRow> bridge_rows_;
@@ -356,7 +381,8 @@ class App {
     std::vector<std::future<AdbJob>> adb_jobs_;
     // Selected in the Recorder once the next adb device list contains it.
     std::string prefer_adb_serial_;
-    Tab tab_{Tab::player};
+    Tab tab_{Tab::live};
+    PlayerMode player_mode_{PlayerMode::script};
 
     // Devices.
     std::vector<aoap::DeviceEntry> devices_;
@@ -382,14 +408,21 @@ class App {
     AdbStatus adb_status_{AdbStatus::unknown};
 
     // Profile settings; frozen while connected.
-    bool use_touch_{true};
+    bool use_touch_{};
     bool use_mouse_{};
     bool use_key_{};
     bool use_gamepad_{};
     bool use_pen_{};
-    bool use_toggle_{true};
-    int touch_width_{1080};
-    int touch_height_{2400};
+    bool use_toggle_{};
+    // Which profile rows have their settings unfolded (same order as the card).
+    bool profile_open_[6]{};
+    // Where the touchscreen size came from: the startup adb read, the user's
+    // own typing, or neither (the saved or built-in value, which may not
+    // match the phone).
+    enum class TouchSize : uint8_t { pending, from_phone, not_read, typed };
+    TouchSize touch_size_{TouchSize::pending};
+    int touch_width_{1440};
+    int touch_height_{2560};
     // 16 by default (the maximum) so the Live tab's reserved top slot (see
     // live_finger()) is always available alongside whatever a script uses.
     int touch_contacts_{16};
@@ -410,6 +443,13 @@ class App {
     std::string script_reference_;
     std::shared_ptr<const aoap::EventScript> script_;
     aoap::Timeline timeline_;
+    // The scripts of the playlist being played, each with its timeline, so the
+    // transport can draw the step that is running (see play_playlist()).
+    struct RunStep {
+        std::shared_ptr<const aoap::EventScript> script;
+        aoap::Timeline timeline;
+    };
+    std::vector<RunStep> run_steps_;
     std::vector<std::string> script_errors_;   // every problem of the last failed load
     std::vector<std::string> script_warnings_; // aoap::lap_warnings() of script_
     std::string path_input_;
@@ -452,6 +492,7 @@ class App {
     // back-to-start actions; 0 means "not set", which keeps the default
     // key(s) (see player_key()).
     int player_keys_[3]{};
+    bool player_keys_open_{}; // the transport card's folded key settings
     // The action whose "Set..." is armed; the next key press becomes its key.
     PlayerAction player_key_picking_{PlayerAction::none};
     // Shown while picking when the last press could not be assigned.
@@ -474,6 +515,11 @@ class App {
     int live_ratio_h_{};
     int live_rotation_{};
     bool live_fullscreen_{};
+    // Which folded rows of the Live panel are open.
+    uint16_t live_held_key_{}; // the side key held down now, 0 for none
+    bool live_fold_image_{};
+    bool live_fold_release_{};
+    bool live_fold_shape_{};
     // The phone rectangle as last drawn, so full screen knows where its side
     // margins are.
     ImVec2 live_phone_min_{};
@@ -525,6 +571,9 @@ class App {
     bool playlist_dirty_{};
     int playlist_add_choice_{};
     bool open_playlist_picker_{};
+    // The running step the list last scrolled to, so it follows the run once
+    // per step and leaves the user's own scrolling alone in between.
+    size_t playlist_shown_step_{SIZE_MAX};
 
     // Recorder.
     std::vector<aoap::AdbDevice> adb_devices_;

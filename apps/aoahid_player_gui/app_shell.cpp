@@ -135,7 +135,7 @@ void App::draw_header() {
     ui::status_item(playback, playback_dot);
 }
 
-// The Player/Live/Playlist/Recorder switch, drawn as a left icon rail
+// The Live/Player/Recorder/ADB switch, drawn as a left icon rail
 // instead of a top segmented control: it sits in the window's own chrome
 // (beside the sidebar, spanning the full body height) rather than floating
 // as a pill above each screen's content.
@@ -146,9 +146,8 @@ void App::draw_nav_rail() {
         Tab tab;
     };
     static constexpr Item items[] = {
-        {"Player", ui::Icon::play, Tab::player},
         {"Live", ui::Icon::monitor, Tab::live},
-        {"Playlist", ui::Icon::list, Tab::playlist},
+        {"Player", ui::Icon::play, Tab::player},
         {"Recorder", ui::Icon::record, Tab::recorder},
         {"ADB", ui::Icon::terminal, Tab::adb},
     };
@@ -213,8 +212,8 @@ void App::draw_sidebar_splitter(const float height) {
 
 void App::draw_sidebar() {
     // Puts Devices/Profiles/Connect away once they are not needed for a
-    // while, so Player/Live/Playlist/Recorder can use the full width.
-    if (ui::icon_button("##collapse_sidebar", ui::Icon::collapse, ImGui::GetFrameHeight(),
+    // while, so Live/Player/Recorder/ADB can use the full width.
+    if (ui::icon_button("##collapse_sidebar", ui::Icon::chevron_left, ImGui::GetFrameHeight(),
                         ui::Tone::quiet, "Collapse"))
         sidebar_collapsed_ = true;
     gap(2);
@@ -241,7 +240,7 @@ void App::draw_sidebar_collapsed() {
     const float button = ImGui::GetFrameHeight();
     ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
                          (ImGui::GetContentRegionAvail().x - button) * 0.5f);
-    if (ui::icon_button("##expand_sidebar", ui::Icon::expand, button, ui::Tone::quiet,
+    if (ui::icon_button("##expand_sidebar", ui::Icon::chevron_right, button, ui::Tone::quiet,
                         "Devices, profiles, and Connect"))
         sidebar_collapsed_ = false;
     gap(3);

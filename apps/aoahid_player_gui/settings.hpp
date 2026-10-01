@@ -13,9 +13,9 @@ namespace gui {
 // What the GUI remembers between runs: the profile choices and the adb
 // option. Defaults are what a first run shows.
 struct Settings {
-    bool use_touch{true};
-    int touch_width{1080};
-    int touch_height{2400};
+    bool use_touch{};
+    int touch_width{1440};
+    int touch_height{2560};
     int touch_contacts{16};
     bool use_mouse{};
     int mouse_buttons{5};
@@ -30,7 +30,7 @@ struct Settings {
                                            AOAHID_AXIS_RZ};
     bool use_pen{};
     int pen_mode{}; // 0 direct screen, 1 indirect tablet
-    bool use_toggle{true};
+    bool use_toggle{};
 
     // The ADB tab's bridge port per device key (aoap::DeviceEntry::key).
     std::map<std::string, int> adb_ports;
@@ -66,8 +66,11 @@ struct Settings {
     // 1 normalized.
     int record_coords{};
 
-    // 0 = Player, 1 = Live, 2 = Playlist, 3 = Recorder, 4 = ADB (App::Tab's order).
-    int tab{};
+    // 0 = Player, 1 = Live, 3 = Recorder, 4 = ADB (App::Tab's numbers); Live by
+    // default. 2 was the Playlist tab and opens the Player in Playlist mode.
+    int tab{1};
+    // 0 = Script, 1 = Playlist (App::PlayerMode).
+    int player_mode{};
     // A script reference (see script_reference()/resolve_script_reference()
     // in playlist.hpp), or empty to fall back to the first script found.
     std::string last_script;
@@ -78,9 +81,9 @@ struct Settings {
     // The Live tab's forwarding toggles.
     bool live_touch{true};
     bool live_mouse{};
-    bool live_key{};
+    bool live_key{true};
     bool live_gamepad{};
-    bool live_toggle{true};
+    bool live_toggle{};
 
     // The Live preview's shape and orientation; 0/0 ratio follows the
     // connected touchscreen. See App::live_ratio_w_/h_/live_rotation_.

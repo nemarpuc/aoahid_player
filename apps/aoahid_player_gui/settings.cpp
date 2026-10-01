@@ -214,6 +214,8 @@ Settings load_settings(const std::filesystem::path& path) {
             read_int(value, 0, 16384, settings.window_width);
         else if (key == "window.height")
             read_int(value, 0, 16384, settings.window_height);
+        else if (key == "ui.player_mode")
+            read_int(value, 0, 1, settings.player_mode);
         else if (key == "ui.tab")
             read_int(value, 0, 4, settings.tab);
         else if (key == "ui.last_script")
@@ -300,6 +302,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "window.width = " << settings.window_width << '\n';
     out << "window.height = " << settings.window_height << '\n';
     out << "ui.tab = " << settings.tab << '\n';
+    out << "ui.player_mode = " << settings.player_mode << '\n';
     out << "ui.last_script = " << settings.last_script << '\n';
     out << "ui.log_open = " << (settings.log_open ? 1 : 0) << '\n';
     out << "player.speed = " << settings.speed << '\n';

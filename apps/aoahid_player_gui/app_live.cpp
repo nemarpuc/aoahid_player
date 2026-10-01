@@ -489,6 +489,23 @@ void App::live_gamepad() {
 
 // --- Drawing ---------------------------------------------------------------
 
+namespace {
+
+ui::Icon live_key_icon(const uint16_t usage) {
+    switch (usage) {
+    case 0x00B6U:
+        return ui::Icon::prev;
+    case 0x00B5U:
+        return ui::Icon::next;
+    case 0x00CDU:
+        return ui::Icon::play_pause;
+    default:
+        return ui::Icon::stop;
+    }
+}
+
+} // namespace
+
 void App::draw_live() {
     if (!engine_.live_active() && live_ready()) {
         live_enable(true);
@@ -500,21 +517,26 @@ void App::draw_live() {
         live_gamepad();
     }
 
-    // The surface takes the height left over above the controls, and the log
-    // a fixed column beside it.
-    const float controls = ImGui::GetFrameHeight() * 2 + px(64);
-    const float available = ImGui::GetContentRegionAvail().y - controls -
-                            ImGui::GetStyle().ItemSpacing.y;
-    const float height = std::max(available, px(200));
-    const float log_width = px(210);
+    // The preview, with the media keys and a status line under it, takes
+    // what the fixed-width panel on the right leaves over.
+    const ImVec2 available = ImGui::GetContentRegionAvail();
     const float spacing = px(10);
-    const float surface_width =
-        std::max(ImGui::GetContentRegionAvail().x - log_width - spacing, px(200));
-    draw_live_surface(ImVec2(surface_width, height));
+    // The panel gives way in a narrow window so the two always fit side by
+    // side; its own rows adapt to the width (see draw_live_controls()).
+    const float panel_width = std::clamp(available.x * 0.42f, px(240), px(300));
+    const float left_width = std::max(available.x - panel_width - spacing, px(160));
+    const float row = ImGui::GetFrameHeight();
+    const float status = ImGui::GetTextLineHeight();
+    const float item_spacing = ImGui::GetStyle().ItemSpacing.y;
+    const float surface_height =
+        std::max(available.y - row - status - item_spacing * 2, px(200));
+    ImGui::BeginGroup();
+    draw_live_surface(ImVec2(left_width, surface_height));
+    draw_live_media_bar(left_width);
+    draw_live_status();
+    ImGui::EndGroup();
     ImGui::SameLine(0, spacing);
-    draw_live_log(ImVec2(log_width, height));
-    gap(2);
-    draw_live_controls();
+    draw_live_controls(ImVec2(panel_width, available.y));
 }
 
 void App::draw_live_surface(const ImVec2 size) {
@@ -528,28 +550,37 @@ void App::draw_live_surface(const ImVec2 size) {
     // scrolls on the phone), never to this child window. Without this, a
     // captured pointer's wheel could scroll the surface itself once its
     // content (the phone rectangle) is taller than the available space.
-    ImGui::BeginChild("##live_surface", size, ImGuiChildFlags_Borders,
+    ImGui::BeginChild("##live_surface", size,
+                      live_fullscreen_ ? ImGuiChildFlags_None : ImGuiChildFlags_Borders,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     ImGui::PopStyleColor(2);
 
     // The phone, centred and as large as it fits, outlined on a black surface.
     const ImVec2 area = ImGui::GetContentRegionAvail();
-    const float margin = px(10);
-    float width = area.x - margin * 2;
+    // Full screen keeps just 5px around the phone, so the ratio is kept and
+    // an edge shows on both axes even when it fits almost exactly.
+    const float margin = live_fullscreen_ ? px(5) : px(10);
+    // The side keys sit right of the phone like the buttons on its frame;
+    // full screen keeps the whole surface for the phone.
+    const bool side_keys = !live_fullscreen_;
+    const float rail_gap = side_keys ? px(12) : 0.0f;
+    const float rail_width = side_keys ? px(72) : 0.0f;
+    float width = area.x - rail_gap - rail_width - margin * 2;
     float height = width / aspect;
     if (height > area.y - margin * 2) {
         height = area.y - margin * 2;
         width = height * aspect;
     }
     const ImVec2 origin = ImGui::GetCursorScreenPos();
-    const ImVec2 p0(origin.x + (area.x - width) * 0.5f, origin.y + (area.y - height) * 0.5f);
+    const ImVec2 p0(origin.x + (area.x - width - rail_gap - rail_width) * 0.5f,
+                    origin.y + (area.y - height) * 0.5f);
     const ImVec2 p1(p0.x + width, p0.y + height);
     live_phone_min_ = p0;
     live_phone_max_ = p1;
     ImDrawList* list = ImGui::GetWindowDrawList();
 
-    // A simple, clean white border
+    // A simple, clean white border on all four edges.
     list->AddRect(p0, p1, ImGui::GetColorU32(IM_COL32(255, 255, 255, 200)), 0.0f, px(1.5f));
 
     const bool running = engine_.live_active();
@@ -694,6 +725,8 @@ void App::draw_live_surface(const ImVec2 size) {
                       text);
         ImGui::PopFont();
     }
+    if (side_keys)
+        draw_live_side_keys(ImVec2(p1.x + rail_gap, p0.y), rail_width, p0.y, height);
     ImGui::EndChild();
 }
 
@@ -759,56 +792,210 @@ void App::draw_live_fullscreen_switches(const float width) {
         live_fullscreen_ = false;
 }
 
-void App::draw_live_toggles() {
-    const uint32_t available = engine_.connected_profiles();
-    const bool present = (available & aoap::profile_bit(aoap::Profile::toggle)) != 0U;
+namespace {
 
-    ImGui::BeginDisabled(!present || !engine_.live_active() || !live_.toggle);
+// One Toggle key button: its label, Consumer usage, and tooltip.
+struct LiveKey {
+    const char* label;
+    uint16_t usage;
+    const char* tip;
+};
 
-    // Style for transparent background and colored text (icons)
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0, 0, 0, 0));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImGui::GetStyleColorVec4(ImGuiCol_HeaderHovered));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImGui::GetStyleColorVec4(ImGuiCol_HeaderActive));
-    ImGui::PushStyleColor(ImGuiCol_Text, theme::accent);
+constexpr LiveKey key_prev{"Prev", 0x00B6U, "Previous Track"};
+constexpr LiveKey key_play{"Play/Pause", 0x00CDU, "Play / Pause"};
+constexpr LiveKey key_next{"Next", 0x00B5U, "Next Track"};
+constexpr LiveKey key_stop{"Stop", 0x00B7U, "Stop"};
+constexpr LiveKey key_vol_up{"Vol +", 0x00E9U, "Volume Up"};
+constexpr LiveKey key_vol_down{"Vol -", 0x00EAU, "Volume Down"};
+constexpr LiveKey key_mute{"Mute", 0x00E2U, "Mute"};
+constexpr LiveKey key_bri_up{"Bri +", 0x006FU, "Brightness Up"};
+constexpr LiveKey key_bri_down{"Bri -", 0x0070U, "Brightness Down"};
+constexpr LiveKey key_home{"Home", 0x0223U, "AC Home"};
+constexpr LiveKey key_back{"Back", 0x0224U, "AC Back"};
+constexpr LiveKey key_pan{"Pan", 0x0238U, "AC Pan"};
+constexpr LiveKey key_new{"New", 0x0201U, "AC New"};
 
-    const ImVec2 size(px(60), px(28));
+} // namespace
 
-    auto toggle_btn = [&](const char* label, uint16_t usage, const char* tooltip) {
-        if (ImGui::Button(label, size)) {
-            engine_.live_toggle(usage, 1U);
-            engine_.live_toggle(usage, 0U);
-        }
+bool App::live_toggle_usable() const {
+    const bool present =
+        (engine_.connected_profiles() & aoap::profile_bit(aoap::Profile::toggle)) != 0U;
+    return present && engine_.live_active() && live_.toggle;
+}
+
+void App::live_tap_key(const uint16_t usage) {
+    engine_.live_toggle(usage, 1U);
+    engine_.live_toggle(usage, 0U);
+}
+
+void App::live_hold_key(const uint16_t usage) {
+    release_held_live_key();
+    engine_.live_toggle(usage, 1U);
+    live_held_key_ = usage;
+}
+
+void App::release_held_live_key() {
+    if (live_held_key_ == 0)
+        return;
+    engine_.live_toggle(live_held_key_, 0U);
+    live_held_key_ = 0;
+}
+
+void App::draw_live_side_keys(const ImVec2 origin, const float width, const float phone_top,
+                              const float phone_height) {
+    const float row = ImGui::GetFrameHeight();
+    const float spacing = ImGui::GetStyle().ItemSpacing.y;
+    const float section_gap = px(14);
+    const float half = (width - px(4)) * 0.5f;
+    ImGui::PushFont(nullptr, theme::font_small);
+    const float label_height = ImGui::GetTextLineHeight() + px(2);
+    ImGui::PopFont();
+    const float total = label_height * 2 + row * 3 + spacing + section_gap;
+    float y = phone_top + std::max((phone_height - total) * 0.5f, 0.0f);
+
+    auto label = [&](const char* text) {
+        ImGui::PushFont(nullptr, theme::font_small);
+        // text_faint reads on the black surface in both themes.
+        ImGui::GetWindowDrawList()->AddText(ImVec2(origin.x, y),
+                                            ImGui::GetColorU32(theme::text_faint), text);
+        ImGui::PopFont();
+        y += label_height;
+    };
+    // A plus and a minus button side by side; each is held, not tapped.
+    auto pair = [&](const char* id_up, const LiveKey& up, const char* id_down,
+                    const LiveKey& down) {
+        ImGui::SetCursorScreenPos(ImVec2(origin.x, y));
+        if (ui::icon_key_down(id_up, ui::Icon::plus, ImVec2(half, row)))
+            live_hold_key(up.usage);
         if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("%s", tooltip);
+            ImGui::SetTooltip("%s", up.tip);
+        ImGui::SetCursorScreenPos(ImVec2(origin.x + width - half, y));
+        if (ui::icon_key_down(id_down, ui::Icon::minus, ImVec2(half, row)))
+            live_hold_key(down.usage);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", down.tip);
+        y += row;
     };
 
-    ImGui::TextDisabled("Media");
-    ImGui::SameLine(px(70));
-    toggle_btn("Prev", 0x00B6U, "Previous Track");
-    ImGui::SameLine();
-    toggle_btn("Play", 0x00CDU, "Play / Pause");
-    ImGui::SameLine();
-    toggle_btn("Next", 0x00B5U, "Next Track");
-    ImGui::SameLine();
-    toggle_btn("Stop", 0x00B7U, "Stop");
-    ImGui::SameLine();
-    toggle_btn("Vol-", 0x00EAU, "Volume Down");
-    ImGui::SameLine();
-    toggle_btn("Vol+", 0x00E9U, "Volume Up");
-    ImGui::SameLine();
-    toggle_btn("Mute", 0x00E2U, "Mute");
+    ImGui::BeginDisabled(!live_toggle_usable());
+    label("Volume");
+    pair("##vol_up", key_vol_up, "##vol_down", key_vol_down);
+    y += spacing;
+    ImGui::SetCursorScreenPos(ImVec2(origin.x, y));
+    if (ui::button(key_mute.label, ImVec2(width, 0)))
+        live_tap_key(key_mute.usage);
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", key_mute.tip);
+    y += row + section_gap;
+    label("Brightness");
+    pair("##bri_up", key_bri_up, "##bri_down", key_bri_down);
+    ImGui::EndDisabled();
+}
 
-    ImGui::TextDisabled("Sys");
-    ImGui::SameLine(px(70));
-    toggle_btn("Home", 0x0223U, "AC Home");
-    ImGui::SameLine();
-    toggle_btn("Back", 0x0224U, "AC Back");
-    ImGui::SameLine();
-    toggle_btn("Pan", 0x0238U, "AC Pan");
-    ImGui::SameLine();
-    toggle_btn("New", 0x0201U, "AC New");
+void App::draw_live_media_bar(const float width) {
+    const LiveKey* const keys[] = {&key_prev, &key_play, &key_next};
+    const float spacing = px(6);
+    const float small_width = px(44);
+    const float play_width = px(56);
+    const float all_width = px(76);
+    const float height = ImGui::GetFrameHeight();
+    const float total = small_width * 2 + play_width + all_width + spacing * 3;
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max((width - total) * 0.5f, 0.0f));
 
-    ImGui::PopStyleColor(4);
+    ImGui::BeginDisabled(!live_toggle_usable());
+    for (size_t index = 0; index < std::size(keys); ++index) {
+        if (index != 0)
+            ImGui::SameLine(0, spacing);
+        const bool play = keys[index] == &key_play;
+        if (ui::icon_key(keys[index]->label, live_key_icon(keys[index]->usage),
+                         ImVec2(play ? play_width : small_width, height),
+                         play ? ui::Tone::primary : ui::Tone::secondary))
+            live_tap_key(keys[index]->usage);
+        if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("%s", keys[index]->tip);
+    }
+    ImGui::SameLine(0, spacing);
+    if (ui::button("All keys", ImVec2(all_width, height), ui::Tone::quiet))
+        ImGui::OpenPopup("##live_all_keys");
+    ImGui::EndDisabled();
+    if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("Every Toggle key, grouped.");
+
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(14), px(12)));
+    if (ImGui::BeginPopup("##live_all_keys")) {
+        draw_live_toggles();
+        ImGui::EndPopup();
+    }
+    ImGui::PopStyleVar();
+}
+
+void App::draw_live_status() {
+    // Built in a fixed buffer: this runs every frame.
+    char hint[256];
+    size_t used = 0;
+    const auto add = [&](const char* format, const char* argument = "") {
+        if (used >= sizeof hint - 1)
+            return;
+        const int written = std::snprintf(hint + used, sizeof hint - used, "%s", used != 0 ? "  " : "");
+        used += static_cast<size_t>(std::max(written, 0));
+        const int text = std::snprintf(hint + used, sizeof hint - used, format, argument);
+        used += static_cast<size_t>(std::max(text, 0));
+        used = std::min(used, sizeof hint - 1);
+    };
+    if (engine_.live_active()) {
+        if (live_.touch) {
+            add("Drag inside the preview to touch the phone.");
+        } else if (live_.mouse) {
+            if (live_mouse_captured_)
+                add("Pointer captured; the wheel scrolls. Press %s to let it go.",
+                    glfw_key_name(live_release_key_ != 0 ? live_release_key_ : GLFW_KEY_ESCAPE));
+            else
+                add("Click inside the preview to capture the pointer.");
+        }
+        if (live_.key)
+            add("Keys go to the phone while this tab is open.");
+        if (used == 0)
+            add("Turn on what you want to forward.");
+    } else {
+        add("Live control sends the pointer, keyboard, and gamepad straight to the phone, "
+            "also while a script plays.");
+    }
+    ImGui::PushFont(nullptr, theme::font_small);
+    ui::draw_text_ellipsized(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(),
+                             theme::text_dim, hint, ImGui::GetContentRegionAvail().x);
+    ImGui::Dummy(ImVec2(0, ImGui::GetTextLineHeight()));
+    ImGui::PopFont();
+}
+
+// Every Toggle key in one place, grouped: the full set, so a key that has no
+// button of its own on the Live tab (Stop, Home, Back, Pan, New) is still here.
+void App::draw_live_toggles() {
+    struct Group {
+        const char* title;
+        std::vector<const LiveKey*> keys;
+    };
+    const Group groups[] = {
+        {"Media", {&key_prev, &key_play, &key_next, &key_stop}},
+        {"Side", {&key_vol_up, &key_vol_down, &key_mute, &key_bri_up, &key_bri_down}},
+        {"Other", {&key_home, &key_back, &key_pan, &key_new}},
+    };
+    const float cell = px(104);
+
+    ImGui::BeginDisabled(!live_toggle_usable());
+    for (size_t group = 0; group < std::size(groups); ++group) {
+        if (group != 0)
+            gap(2);
+        ui::caption(groups[group].title);
+        for (size_t index = 0; index < groups[group].keys.size(); ++index) {
+            if (index % 3 != 0)
+                ImGui::SameLine();
+            const LiveKey& key = *groups[group].keys[index];
+            if (ui::button(key.label, ImVec2(cell, 0)))
+                live_tap_key(key.usage);
+            if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+                ImGui::SetTooltip("%s", key.tip);
+        }
+    }
     ImGui::EndDisabled();
 }
 
@@ -913,7 +1100,6 @@ void App::draw_touch_contacts() {
 }
 
 void App::draw_live_release_key_setting() {
-    ui::caption("Mouse release key");
     const int effective_key = live_release_key_ != 0 ? live_release_key_ : GLFW_KEY_ESCAPE;
     const float set_width = px(120);
 
@@ -954,13 +1140,16 @@ void App::draw_live_release_key_setting() {
     }
 }
 
-void App::draw_live_controls() {
-    ui::begin_card("##live_controls");
+void App::draw_live_controls(const ImVec2 size) {
     const aoap::ProfileSetup setup = engine_.connected_setup();
     const uint32_t available = engine_.connected_profiles();
     const bool running = engine_.live_active();
 
+    ImGui::BeginChild("##live_panel", size, ImGuiChildFlags_None);
+
     // What is forwarded; only what the connection actually has.
+    ui::begin_card("##live_forward");
+    ui::caption("Forward");
     struct Entry {
         const char* label;
         bool* flag;
@@ -973,12 +1162,14 @@ void App::draw_live_controls() {
         {"Gamepad##live", &live_.gamepad, aoap::Profile::gamepad},
         {"Toggle##live", &live_.toggle, aoap::Profile::toggle},
     };
-    bool first_entry = true;
-    for (const Entry& entry : entries) {
+    const float switch_column = px(130);
+    const float switch_left = ImGui::GetCursorPosX();
+    const bool two_columns = ImGui::GetContentRegionAvail().x >= px(250);
+    for (size_t index = 0; index < std::size(entries); ++index) {
+        const Entry& entry = entries[index];
         const bool present = (available & aoap::profile_bit(entry.profile)) != 0U;
-        if (!first_entry)
-            ImGui::SameLine(0, px(18));
-        first_entry = false;
+        if (two_columns && index % 2 == 1)
+            ImGui::SameLine(switch_left + switch_column);
         ImGui::BeginDisabled(!present);
         if (ui::toggle(entry.label, entry.flag) && *entry.flag) {
             // Touch and mouse share the pointer, so turning one on turns the
@@ -995,160 +1186,167 @@ void App::draw_live_controls() {
             ImGui::SetTooltip("This profile is not part of the connection.");
     }
 
-    gap(4);
-    draw_live_toggles();
-
-    gap(4);
-    int current_fps = ::g_fps_limit.load(std::memory_order_relaxed);
-    ImGui::SetNextItemWidth(px(160));
-    if (ImGui::SliderInt("FPS Limit", &current_fps, 0, 1024, current_fps == 0 ? "Unlimited" : "%d fps")) {
-        ::g_fps_limit.store(current_fps, std::memory_order_relaxed);
-    }
-    ImGui::SetItemTooltip("Set the maximum frame rate for the GUI. 0 means unlimited.");
-
-    // Orientation and shape.
-    const float rotate_width = px(96);
-    const float ratio_width = px(54);
-    const float reset_width = px(64);
-    const float gap_x = px(6);
-    const float full_width = ImGui::GetFrameHeight();
-    ImGui::SameLine();
-    ui::align_right(full_width + rotate_width + ratio_width * 2 + reset_width + px(14) +
-                    gap_x * 5);
-    if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
-                        "Fill the window with the preview"))
-        live_fullscreen_ = true;
-    ImGui::SameLine(0, gap_x);
-
-    char turn[32];
-    std::snprintf(turn, sizeof turn, "Rotate %d\xC2\xB0", (live_rotation_ & 3) * 90);
-    if (ui::button(turn, ImVec2(rotate_width, 0)))
-        live_rotation_ = (live_rotation_ + 1) & 3;
-    ImGui::SetItemTooltip("Turn the preview a quarter turn; touches follow it.");
-
-    // The shape as width:height, which is how a screen size is written.
-    ImGui::SameLine(0, gap_x);
-    const bool following = live_ratio_w_ <= 0 || live_ratio_h_ <= 0;
-    int shown_w = live_ratio_w_;
-    int shown_h = live_ratio_h_;
-    if (following) {
-        const aoap::ProfileSetup shape =
-            engine_.connected() ? setup : build_setup();
-        shown_w = shape.touch.enabled && shape.touch.width > 0 ? shape.touch.width : 9;
-        shown_h = shape.touch.enabled && shape.touch.height > 0 ? shape.touch.height : 16;
-    }
-    ImGui::SetNextItemWidth(ratio_width);
-    if (ImGui::InputInt("##ratio_w", &shown_w, 0, 0)) {
-        // Matches the touch profile's own ceiling (see spec_builder.hpp's
-        // validate_setup), since "following" can set this from touch.width.
-        live_ratio_w_ = std::clamp(shown_w, 1, INT32_MAX);
-        live_ratio_h_ = live_ratio_h_ > 0 ? live_ratio_h_ : shown_h;
-    }
-    ImGui::SetItemTooltip("Preview width, in the same units as the height.");
-    ImGui::SameLine(0, px(4));
-    ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled(":");
-    ImGui::SameLine(0, px(4));
-    ImGui::SetNextItemWidth(ratio_width);
-    if (ImGui::InputInt("##ratio_h", &shown_h, 0, 0)) {
-        live_ratio_h_ = std::clamp(shown_h, 1, INT32_MAX);
-        live_ratio_w_ = live_ratio_w_ > 0 ? live_ratio_w_ : shown_w;
-    }
-    ImGui::SetItemTooltip("Preview height. Touch positions come from the connected "
-                          "resolution, not from this ratio.");
-    ImGui::SameLine(0, gap_x);
-    ImGui::BeginDisabled(following && live_rotation_ == 0);
-    if (ui::button("Reset", ImVec2(reset_width, 0))) {
-        live_ratio_w_ = 0;
-        live_ratio_h_ = 0;
-        live_rotation_ = 0;
-    }
-    ImGui::EndDisabled();
-    ImGui::SetItemTooltip("Back to the connected screen's ratio, upright.");
-
-    // Types the clipboard's text on the phone as keystrokes; same trigger as
-    // Ctrl+Shift+V.
+    // Types the clipboard's text on the phone as keystrokes (same trigger as
+    // Ctrl+Shift+V), turns the preview, and fills the window with it.
     gap(2);
     const bool paste_ready = running && live_.key && setup.key.enabled;
+    const float full_width = ImGui::GetFrameHeight();
+    const float action_width = std::min(
+        (ImGui::GetContentRegionAvail().x - full_width - px(6) * 2) * 0.5f, px(100));
     ImGui::BeginDisabled(!paste_ready || live_paste_active_.load(std::memory_order_relaxed));
-    if (ui::button("Paste Text", ImVec2(px(110), 0)))
+    if (ui::button("Paste Text", ImVec2(action_width, 0)))
         live_paste_clipboard();
     ImGui::EndDisabled();
     if (!paste_ready && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
         ImGui::SetTooltip("Turn on Live control and Keyboard to paste.");
     else
         ImGui::SetItemTooltip("Types the clipboard's text on the phone. Ctrl+Shift+V");
+    ImGui::SameLine(0, px(6));
+    char turn[32];
+    std::snprintf(turn, sizeof turn, "Rotate %d\xC2\xB0", (live_rotation_ & 3) * 90);
+    if (ui::button(turn, ImVec2(action_width, 0)))
+        live_rotation_ = (live_rotation_ + 1) & 3;
+    ImGui::SetItemTooltip("Turn the preview a quarter turn; touches follow it.");
+    ui::align_right(full_width);
+    if (ui::icon_button("##fullscreen", ui::Icon::expand, full_width, ui::Tone::quiet,
+                        "Fill the window with the preview"))
+        live_fullscreen_ = true;
+
+    gap(2);
+    ui::caption("FPS limit");
+    int current_fps = ::g_fps_limit.load(std::memory_order_relaxed);
+    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+    if (ImGui::SliderInt("##fps_limit", &current_fps, 0, 1024,
+                         current_fps == 0 ? "Unlimited" : "%d fps")) {
+        ::g_fps_limit.store(current_fps, std::memory_order_relaxed);
+    }
+    ImGui::SetItemTooltip("Set the maximum frame rate for the GUI. 0 means unlimited.");
+    ui::end_card();
+
+    // Settings that are rarely touched, folded away with their value showing.
+    gap(2);
+    const bool following = live_ratio_w_ <= 0 || live_ratio_h_ <= 0;
+    int shown_w = live_ratio_w_;
+    int shown_h = live_ratio_h_;
+    if (following) {
+        const aoap::ProfileSetup shape = engine_.connected() ? setup : build_setup();
+        shown_w = shape.touch.enabled && shape.touch.width > 0 ? shape.touch.width : 9;
+        shown_h = shape.touch.enabled && shape.touch.height > 0 ? shape.touch.height : 16;
+    }
+    const int effective_key = live_release_key_ != 0 ? live_release_key_ : GLFW_KEY_ESCAPE;
+
+    ui::begin_card("##live_folds");
+    auto fold = [&](const char* id, const char* label, const std::string& summary, bool* open) {
+        ImGui::PushID(id);
+        if (ui::icon_button("##fold", *open ? ui::Icon::chevron_down : ui::Icon::chevron_right,
+                            ImGui::GetFrameHeight(), ui::Tone::quiet))
+            *open = !*open;
+        ImGui::SameLine(0, px(6));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextUnformatted(label);
+        // The value shows only where it fits beside the label.
+        ImGui::PushFont(nullptr, theme::font_small);
+        const float summary_width = ImGui::CalcTextSize(summary.c_str()).x;
+        ImGui::SameLine();
+        if (summary_width + px(8) <= ImGui::GetContentRegionAvail().x) {
+            ui::align_right(summary_width);
+            ImGui::AlignTextToFramePadding();
+            ImGui::TextColored(theme::vec(theme::text_faint), "%s", summary.c_str());
+        } else {
+            ImGui::NewLine();
+        }
+        ImGui::PopFont();
+        ImGui::PopID();
+        return *open;
+    };
 
     // Reference image: an optional picture over the preview (a screenshot
     // works well) to line touches up against. Position, size, rotation, and
     // opacity persist between runs like any other setting; the image file
     // itself is reloaded from its saved path at startup if still there.
-    gap(2);
-    ui::caption("Reference image");
-    const float image_button_width = px(64);
-    ImGui::SetNextItemWidth(px(260));
-    ImGui::InputTextWithHint("##live_image_path", "Path to a .png/.jpg/.bmp image...",
-                             &live_image_path_input_);
-    ImGui::SameLine(0, gap_x);
-    if (ui::button("Load", ImVec2(image_button_width, 0)) && !live_image_path_input_.empty()) {
-        const std::string error = live_image_.load(live_image_path_input_);
-        if (!error.empty())
-            log_.message(aoap::Severity::warning, error);
-    }
-    ImGui::SameLine(0, gap_x);
-    ImGui::BeginDisabled(!live_image_.loaded());
-    if (ui::button("Clear", ImVec2(image_button_width, 0)))
-        live_image_.clear();
-    ImGui::SameLine(0, px(18));
-    ui::toggle("Lock image", &live_image_.locked);
-    ImGui::EndDisabled();
-    if (live_image_.loaded()) {
-        small_dim(live_image_.locked
-                      ? "Locked: touches and clicks pass straight through it."
-                      : "Drag it to move, its corner handle to resize, its top handle to "
-                        "rotate.");
-        gap(2);
-        ui::caption("Opacity");
-        float opacity_percent = live_image_.opacity() * 100.0f;
-        if (ui::slider("##live_image_opacity", &opacity_percent, 0.0f, 100.0f, 0, "%", 1.0f))
-            live_image_.set_opacity(opacity_percent / 100.0f);
-        gap(2);
-        if (ui::button("Reset size/rotation", ImVec2(px(150), 0)))
-            live_image_.reset_transform();
-    } else {
-        small_dim("Load a screenshot, or drop an image file on the preview above.");
+    if (fold("image", "Reference image", live_image_.loaded() ? "Loaded" : "None",
+             &live_fold_image_)) {
+        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
+        ImGui::InputTextWithHint("##live_image_path", "Path to a .png/.jpg/.bmp image...",
+                                 &live_image_path_input_);
+        if (ui::button("Load", ImVec2(px(64), 0)) && !live_image_path_input_.empty()) {
+            const std::string error = live_image_.load(live_image_path_input_);
+            if (!error.empty())
+                log_.message(aoap::Severity::warning, error);
+        }
+        ImGui::SameLine(0, px(6));
+        ImGui::BeginDisabled(!live_image_.loaded());
+        if (ui::button("Clear", ImVec2(px(64), 0)))
+            live_image_.clear();
+        ImGui::SameLine(0, px(12));
+        ui::toggle("Lock image", &live_image_.locked);
+        ImGui::EndDisabled();
+        if (live_image_.loaded()) {
+            small_dim(live_image_.locked
+                          ? "Locked: touches and clicks pass straight through it."
+                          : "Drag it to move, its corner handle to resize, its top handle to "
+                            "rotate.");
+            gap(2);
+            ui::caption("Opacity");
+            float opacity_percent = live_image_.opacity() * 100.0f;
+            if (ui::slider("##live_image_opacity", &opacity_percent, 0.0f, 100.0f, 0, "%", 1.0f))
+                live_image_.set_opacity(opacity_percent / 100.0f);
+            gap(2);
+            if (ui::button("Reset size/rotation", ImVec2(px(150), 0)))
+                live_image_.reset_transform();
+        } else {
+            small_dim("Load a screenshot, or drop an image file on the preview.");
+        }
     }
 
     // Mouse mode's release key: Escape by default, but any key can take over
     // so it never collides with a key the script or the target app needs.
-    gap(2);
-    draw_live_release_key_setting();
+    if (fold("release", "Mouse release key", glfw_key_name(effective_key), &live_fold_release_))
+        draw_live_release_key_setting();
 
-    gap(2);
-    if (running) {
-        std::string hint;
-        if (live_.touch)
-            hint = "Drag inside the preview to touch the phone.";
-        else if (live_.mouse) {
-            char buffer[96];
-            std::snprintf(buffer, sizeof buffer, "Pointer captured; the wheel scrolls. Press %s "
-                                                 "to let it go.",
-                         glfw_key_name(live_release_key_ != 0 ? live_release_key_
-                                                              : GLFW_KEY_ESCAPE));
-            hint = live_mouse_captured_ ? buffer : "Click inside the preview to capture the "
-                                                    "pointer.";
+    // The preview's shape as width:height, which is how a screen size is
+    // written; it follows the connected touchscreen until set by hand.
+    char shape_summary[48];
+    std::snprintf(shape_summary, sizeof shape_summary, "%d : %d%s", shown_w, shown_h,
+                  following ? " (auto)" : "");
+    if (fold("shape", "Shape", shape_summary, &live_fold_shape_)) {
+        const float ratio_width = px(70);
+        ImGui::SetNextItemWidth(ratio_width);
+        if (ImGui::InputInt("##ratio_w", &shown_w, 0, 0)) {
+            // Matches the touch profile's own ceiling (see spec_builder.hpp's
+            // validate_setup), since "following" can set this from touch.width.
+            live_ratio_w_ = std::clamp(shown_w, 1, INT32_MAX);
+            live_ratio_h_ = live_ratio_h_ > 0 ? live_ratio_h_ : shown_h;
         }
-        if (live_.key)
-            hint += hint.empty() ? "Keys go to the phone while this tab is open."
-                                 : "  Keys go to the phone while this tab is open.";
-        if (hint.empty())
-            hint = "Turn on what you want to forward.";
-        small_dim(hint.c_str());
-    } else {
-        small_dim("Live control sends the pointer, keyboard, and gamepad straight to the phone, "
-                  "also while a script plays.");
+        ImGui::SetItemTooltip("Preview width, in the same units as the height.");
+        ImGui::SameLine(0, px(4));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled(":");
+        ImGui::SameLine(0, px(4));
+        ImGui::SetNextItemWidth(ratio_width);
+        if (ImGui::InputInt("##ratio_h", &shown_h, 0, 0)) {
+            live_ratio_h_ = std::clamp(shown_h, 1, INT32_MAX);
+            live_ratio_w_ = live_ratio_w_ > 0 ? live_ratio_w_ : shown_w;
+        }
+        ImGui::SetItemTooltip("Preview height. Touch positions come from the connected "
+                              "resolution, not from this ratio.");
+        ImGui::SameLine(0, px(6));
+        ImGui::BeginDisabled(following && live_rotation_ == 0);
+        if (ui::button("Reset", ImVec2(px(64), 0))) {
+            live_ratio_w_ = 0;
+            live_ratio_h_ = 0;
+            live_rotation_ = 0;
+        }
+        ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Back to the connected screen's ratio, upright.");
+        small_dim("Touch positions come from the connected resolution, not from this ratio.");
     }
     ui::end_card();
+
+    // What is held and what was sent; takes the rest of the panel.
+    gap(2);
+    draw_live_log(ImVec2(0, std::max(ImGui::GetContentRegionAvail().y, px(140))));
+    ImGui::EndChild();
 }
 
 } // namespace gui

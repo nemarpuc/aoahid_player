@@ -5,6 +5,30 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+- Toggle profile: `BrightnessUp` (`0x6F`) and `BrightnessDown` (`0x70`) join
+  the media keys, in `c` rows and on the Live tab. Not yet tested on a device.
+- Live tab: the phone's side keys sit beside the preview (*Volume* + and −
+  with *Mute*, *Brightness* + and −; volume and brightness stay down while
+  held), the media keys under it (*Prev*, *Play/Pause*, *Next*), and *All
+  keys* opens every Toggle key. The switches, *Paste Text*, *Rotate*, and the
+  input log moved to a panel on the right; *Reference image*, *Mouse release
+  key*, and *Shape* are folded rows there. Full screen keeps 5 px around the
+  phone and draws its edge on all four sides.
+- Player tab: the Playlist tab is now the Player's *Playlist* mode (the
+  *Script | Playlist* switch), sharing one play bar; pause, seek, speed, and
+  offset act on the script that is running. `.csv` files dropped on the
+  Playlist join its list. A saved Playlist tab opens in this mode. The key
+  settings are a folded *Keys* row.
+- Profiles: each row is a switch, a summary, and an arrow that opens its
+  settings. A touchscreen size that could not be read from the phone is shown
+  in the warning colour. *Connect* needs at least one profile on.
+- Defaults: every profile starts off; Live forwards Touch and Keyboard; the
+  touchscreen size is 1440 x 2560 until it is read from the phone; the app
+  opens on the Live tab. Saved settings are not changed.
+- Tabs are ordered Live, Player, Recorder, ADB.
+- ADB and Recorder: the long explanations became one line with the detail in
+  a tooltip.
+
 ## [0.20.5] - 2026-09-30
 
 - Update the vendored aoahid_adb_proxy to 3.0.3. The bridge code is

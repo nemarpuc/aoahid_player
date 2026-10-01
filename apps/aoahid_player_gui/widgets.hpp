@@ -17,6 +17,7 @@ enum class Icon {
     refresh,
     chevron_down,
     chevron_right,
+    chevron_left,
     close,
     up,
     down,
@@ -24,11 +25,15 @@ enum class Icon {
     search,
     trash,
     expand,
-    collapse,
     monitor, // a screen with a small stand, for "Live"
     list,    // three lines, for "Playlist"
     sun,     // a small circle with rays, for the light/dark theme toggle
-    terminal // ">_", for "ADB"
+    terminal, // ">_", for "ADB"
+    play_pause,     // play triangle beside pause bars
+    prev,           // |<  previous track
+    next,           // >|  next track
+    plus,           // small plus sign
+    minus           // small minus sign
 };
 
 // What a button is for, which decides how loud it looks.
@@ -66,6 +71,12 @@ void text_colored(ImU32 color, const char* format, ...) IM_FMTARGS(2);
 // Width 0 fits the label, negative fills the row minus that much; height 0
 // uses the frame height.
 bool button(const char* label, ImVec2 size = ImVec2(0, 0), Tone tone = Tone::secondary);
+// A rounded rectangle button holding a drawn icon, for keys such as media
+// controls. `size` is the whole button; the icon scales with its height.
+bool icon_key(const char* id, Icon icon, ImVec2 size, Tone tone = Tone::secondary);
+// The same button for a key that is held down: true on the frame the mouse
+// goes down on it. The caller releases the key when the mouse lets go.
+bool icon_key_down(const char* id, Icon icon, ImVec2 size, Tone tone = Tone::secondary);
 // A round button with a drawn icon.
 bool icon_button(const char* id, Icon icon, float diameter, Tone tone,
                  const char* tooltip = nullptr);

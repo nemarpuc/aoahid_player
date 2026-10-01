@@ -192,6 +192,28 @@ bool button(const char* label, const ImVec2 requested, const Tone tone) {
     return pressed;
 }
 
+bool icon_key(const char* id, const Icon icon, const ImVec2 size, const Tone tone) {
+    const ImVec2 p0 = ImGui::GetCursorScreenPos();
+    const ImVec2 p1(p0.x + size.x, p0.y + size.y);
+    const bool pressed = ImGui::InvisibleButton(id, size);
+    const bool hovered = ImGui::IsItemHovered();
+    const bool held = ImGui::IsItemActive();
+
+    const Colors colors = colors_for(tone);
+    const ImU32 fill = smoothed_color(ImGui::GetID(id), state_fill(colors, hovered, held));
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    if ((fill & IM_COL32_A_MASK) != 0U)
+        list->AddRectFilled(p0, p1, faded(fill), ImGui::GetStyle().FrameRounding);
+    draw_icon(list, icon, ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f), size.y * 0.62f,
+              faded(colors.text));
+    return pressed;
+}
+
+bool icon_key_down(const char* id, const Icon icon, const ImVec2 size, const Tone tone) {
+    icon_key(id, icon, size, tone);
+    return ImGui::IsItemActivated();
+}
+
 void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
                const ImU32 color) {
     const float t = std::max(1.5f, s * 0.11f);
@@ -241,13 +263,18 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
         break;
     }
     case Icon::chevron_down:
-    case Icon::chevron_right: {
+    case Icon::chevron_right:
+    case Icon::chevron_left: {
         const float h = s * 0.20f;
         ImVec2 points[3];
         if (icon == Icon::chevron_down) {
             points[0] = ImVec2(c.x - h * 1.4f, c.y - h * 0.6f);
             points[1] = ImVec2(c.x, c.y + h * 0.8f);
             points[2] = ImVec2(c.x + h * 1.4f, c.y - h * 0.6f);
+        } else if (icon == Icon::chevron_left) {
+            points[0] = ImVec2(c.x + h * 0.6f, c.y - h * 1.4f);
+            points[1] = ImVec2(c.x - h * 0.8f, c.y);
+            points[2] = ImVec2(c.x + h * 0.6f, c.y + h * 1.4f);
         } else {
             points[0] = ImVec2(c.x - h * 0.6f, c.y - h * 1.4f);
             points[1] = ImVec2(c.x + h * 0.8f, c.y);
@@ -280,13 +307,10 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
                       color, t * 1.1f);
         break;
     }
-    case Icon::expand:
-    case Icon::collapse: {
-        // Two corner brackets, pointing out to enlarge and in to shrink.
-        const float out = s * 0.34f;
-        const float in = s * 0.12f;
-        const float a = icon == Icon::expand ? out : in;
-        const float b = icon == Icon::expand ? in : out;
+    case Icon::expand: {
+        // Two corner brackets, pointing out.
+        const float a = s * 0.34f;
+        const float b = s * 0.12f;
         for (int corner = 0; corner < 2; ++corner) {
             const float sx = corner == 0 ? -1.0f : 1.0f;
             const ImVec2 tip(c.x + sx * a, c.y + sx * a);
@@ -339,6 +363,38 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
         list->AddLine(ImVec2(x, c.y - h), ImVec2(x + w * 0.6f, c.y), color, t);
         list->AddLine(ImVec2(x + w * 0.6f, c.y), ImVec2(x, c.y + h), color, t);
         list->AddLine(ImVec2(c.x + w * 0.05f, c.y + h), ImVec2(c.x + w, c.y + h), color, t);
+        break;
+    }
+    case Icon::play_pause: {
+        list->AddTriangleFilled(ImVec2(c.x - s * 0.40f, c.y - s * 0.30f),
+                                ImVec2(c.x - s * 0.40f, c.y + s * 0.30f),
+                                ImVec2(c.x - s * 0.06f, c.y), color);
+        const float w = s * 0.10f;
+        const float h = s * 0.30f;
+        list->AddRectFilled(ImVec2(c.x + s * 0.06f, c.y - h), ImVec2(c.x + s * 0.06f + w, c.y + h),
+                            color, w * 0.25f);
+        list->AddRectFilled(ImVec2(c.x + s * 0.24f, c.y - h), ImVec2(c.x + s * 0.24f + w, c.y + h),
+                            color, w * 0.25f);
+        break;
+    }
+    case Icon::prev:
+    case Icon::next: {
+        // A bar and a triangle, mirrored for next.
+        const float d = icon == Icon::next ? 1.0f : -1.0f;
+        const float bar = c.x + d * s * 0.30f;
+        list->AddRectFilled(ImVec2(bar - t * 0.65f, c.y - s * 0.34f),
+                            ImVec2(bar + t * 0.65f, c.y + s * 0.34f), color, t * 0.3f);
+        list->AddTriangleFilled(ImVec2(c.x - d * s * 0.34f, c.y - s * 0.34f),
+                                ImVec2(c.x - d * s * 0.34f, c.y + s * 0.34f),
+                                ImVec2(c.x + d * s * 0.22f, c.y), color);
+        break;
+    }
+    case Icon::plus:
+    case Icon::minus: {
+        const float h = s * 0.26f;
+        list->AddLine(ImVec2(c.x - h, c.y), ImVec2(c.x + h, c.y), color, t * 1.15f);
+        if (icon == Icon::plus)
+            list->AddLine(ImVec2(c.x, c.y - h), ImVec2(c.x, c.y + h), color, t * 1.15f);
         break;
     }
     case Icon::sun: {

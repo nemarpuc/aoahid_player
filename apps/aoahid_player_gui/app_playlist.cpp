@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
-// The Playlist tab: the step list, its file card, and the add-step picker.
+// The Player tab's Playlist mode: the file card, the step list, and the
+// playlist picker.
 
 #include "app.hpp"
 
@@ -33,10 +34,7 @@ using namespace detail;
 
 // --- Playlist --------------------------------------------------------------
 
-void App::draw_playlist() {
-    const bool running = engine_.phase() == Phase::playing;
-    const PlaylistProgress progress = engine_.playlist_progress();
-
+void App::draw_playlist_file_card() {
     ui::begin_card("##playlist_file");
     caption_row("Playlist");
     const float button = ImGui::GetFrameHeight();
@@ -70,20 +68,30 @@ void App::draw_playlist() {
         small_colored(theme::danger, playlist_error_);
     else if (playlist_dirty_ && !playlist_.entries.empty())
         small_colored(theme::warning, "Unsaved changes.");
-    else
-        small_dim(("Playlists are kept in " + aoap::path_utf8(playlist_directory())).c_str());
+    else {
+        small_dim("Kept in the playlists folder next to the program.");
+        ImGui::SetItemTooltip("%s", aoap::path_utf8(playlist_directory()).c_str());
+    }
     ui::end_card();
+}
 
-    gap(2);
-    ui::begin_card("##playlist_steps");
+void App::draw_playlist_scripts_card() {
+    const bool running = engine_.phase() == Phase::playing;
+    const PlaylistProgress progress = engine_.playlist_progress();
+    const float button = ImGui::GetFrameHeight();
+    const float spacing = ImGui::GetStyle().ItemSpacing.x;
+    // The list takes what is left of the pane and scrolls inside itself, so
+    // the file card and the play controls above it stay where they are.
+    ui::begin_card("##playlist_steps", nullptr,
+                   std::max(ImGui::GetContentRegionAvail().y, px(180)));
     caption_row("Scripts");
     char total[64];
     int64_t loops_total = 0;
     for (const Playlist::Entry& entry : playlist_.entries)
         loops_total += entry.loops;
-    std::snprintf(total, sizeof total, "%zu %s  ·  %lld loops", playlist_.entries.size(),
+    std::snprintf(total, sizeof total, "%zu %s  ·  %lld %s", playlist_.entries.size(),
                   playlist_.entries.size() == 1 ? "script" : "scripts",
-                  static_cast<long long>(loops_total));
+                  static_cast<long long>(loops_total), loops_total == 1 ? "loop" : "loops");
     ImGui::PushFont(nullptr, theme::font_small);
     const float total_width = ImGui::CalcTextSize(total).x;
     ImGui::PopFont();
@@ -97,6 +105,8 @@ void App::draw_playlist() {
     if (playlist_.entries.empty())
         small_dim("Add scripts below; they play in this order, each for its own number of loops.");
 
+    if (!running)
+        playlist_shown_step_ = SIZE_MAX;
     // Rows: order, name, loops, remove.
     size_t remove_at = playlist_.entries.size();
     for (size_t index = 0; index < playlist_.entries.size(); ++index) {
@@ -110,6 +120,10 @@ void App::draw_playlist() {
         if (current) {
             list->AddRectFilled(r0, ImVec2(r0.x + width, r0.y + row),
                                 ImGui::GetColorU32(theme::accent_soft), px(6));
+            if (playlist_shown_step_ != index) {
+                ImGui::SetScrollHereY(0.5f);
+                playlist_shown_step_ = index;
+            }
         }
 
         ImGui::SetCursorScreenPos(
@@ -122,14 +136,21 @@ void App::draw_playlist() {
         const std::string path = resolve_script_reference(entry.script);
         std::error_code code;
         const bool missing = !std::filesystem::exists(aoap::utf8_path(path), code);
-        ImGui::AlignTextToFramePadding();
-        ImGui::PushStyleColor(ImGuiCol_Text, missing ? theme::danger : theme::text);
-        ImGui::TextUnformatted(aoap::display_name(entry.script).c_str());
-        ImGui::PopStyleColor();
+        // Wide enough for the number beside InputInt's own -/+ buttons.
+        const float loops_width = px(116);
+        const std::string name = aoap::display_name(entry.script);
+        const float name_width = std::max(
+            ImGui::GetContentRegionAvail().x - loops_width - button * 3 - px(24), px(40));
+        const ImVec2 name_pos = ImGui::GetCursorScreenPos();
+        ImGui::Dummy(ImVec2(name_width, ImGui::GetFrameHeight()));
+        ui::draw_text_ellipsized(
+            list, ImVec2(name_pos.x, name_pos.y + ImGui::GetStyle().FramePadding.y),
+            ImGui::GetColorU32(missing ? theme::danger : theme::text), name.c_str(), name_width);
         if (missing)
             ImGui::SetItemTooltip("This file is no longer in the csv folder.");
+        else
+            ImGui::SetItemTooltip("%s", name.c_str());
 
-        const float loops_width = px(92);
         ui::align_right(loops_width + button * 3 + px(14));
         ImGui::SetNextItemWidth(loops_width);
         ImGui::BeginDisabled(running);
@@ -196,12 +217,9 @@ void App::draw_playlist() {
         playlist_dirty_ = true;
     }
     ImGui::EndDisabled();
-    ui::end_card();
 
-    gap(2);
-    ui::begin_card("##playlist_run");
-    caption_row("Run");
-    gap(2);
+    // Stops the whole run after this long, whichever script is playing.
+    thin_rule(2.0f, 4.0f);
     field("Time limit");
     ImGui::BeginDisabled(running);
     ImGui::SetNextItemWidth(px(120));
@@ -212,40 +230,9 @@ void App::draw_playlist() {
     ImGui::EndDisabled();
     ImGui::SameLine(0, px(10));
     ImGui::AlignTextToFramePadding();
-    ImGui::TextDisabled(playlist_.time_limit_minutes == 0
-                            ? "minutes (0 plays the whole playlist)"
-                            : "minutes, then playback stops");
-
-    gap(6);
-    if (running) {
-        if (progress.active) {
-            char line[160];
-            std::snprintf(line, sizeof line, "Playing %zu/%zu: %s", progress.index + 1,
-                          progress.count, progress.name.c_str());
-            ImGui::TextUnformatted(line);
-            if (progress.ends_at_ns != 0) {
-                const int64_t left = progress.ends_at_ns - aoap::Timing::now_ns();
-                small_dim(("Time limit: " + format_time(std::max<int64_t>(left, 0)) + " left")
-                              .c_str());
-            }
-            gap(4);
-        }
-        if (ui::button("Stop playlist", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(12)),
-                       ui::Tone::danger))
-            stop_playback();
-    } else {
-        const bool ready_to_play = engine_.phase() == Phase::connected && playlist_playable();
-        ImGui::BeginDisabled(!ready_to_play);
-        if (ui::button("Play playlist", ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(12)),
-                       ui::Tone::primary))
-            play_playlist();
-        ImGui::EndDisabled();
-        if (!ready_to_play && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
-            ImGui::SetTooltip("%s", playlist_.entries.empty() ? "Add a script first"
-                                    : !engine_.connected()   ? "Connect a device first"
-                                                             : "One of the scripts is missing");
-        }
-    }
+    ImGui::TextDisabled(playlist_.time_limit_minutes == 0 ? "min (0 = no limit)"
+                                                          : "min, then it stops");
+    ImGui::SetItemTooltip("Stops the whole playlist after this many minutes; 0 plays all of it.");
     ui::end_card();
 }
 

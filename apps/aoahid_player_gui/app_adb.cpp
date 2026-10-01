@@ -216,15 +216,18 @@ void App::draw_adb() {
     ui::begin_card("##adb_bridge");
     caption_row("ADB Bridge");
     gap(2);
-    small_dim("While this app holds a phone over USB, adb cannot open it on its own (never on "
-              "Windows). Turning a phone's bridge on serves its adb on 127.0.0.1 and runs `adb "
-              "connect`, so `adb devices`, `adb shell` and the Recorder reach it. Needs USB "
-              "debugging on the phone. Avoid ports 5555-5585, which adb scans for emulators.");
+    small_dim("Keeps adb working while this app holds the phone over USB. Hover for details.");
+    ImGui::SetItemTooltip(
+        "While this app holds a phone over USB, adb cannot open it on its own (never on\n"
+        "Windows). Turning a phone's bridge on serves its adb on 127.0.0.1 and runs\n"
+        "`adb connect`, so `adb devices`, `adb shell` and the Recorder reach it.\n"
+        "Needs USB debugging on the phone. Avoid ports 5555-5585, which adb scans\n"
+        "for emulators.");
     ui::end_card();
     gap(2);
 
+    ui::begin_card("##adb_devices");
     if (!engine_.connected()) {
-        ui::begin_card("##adb_devices");
         small_dim("Connect a phone first; its bridge is then turned on here.");
         ui::end_card();
         return;
@@ -240,13 +243,14 @@ void App::draw_adb() {
                                                                : static_cast<uint16_t>(row.port));
 
         ImGui::PushID(static_cast<int>(index));
-        ui::begin_card("##adb_device");
-        caption_row(device.label.c_str());
-        gap(2);
+        if (index != 0)
+            thin_rule(2.0f, 4.0f);
 
+        // One line per phone: the switch named after it, its port, and the
+        // command to copy once the bridge is on.
         ImGui::BeginDisabled(row.busy || playing || !device.active);
         bool wanted = on;
-        if (ui::toggle("Bridge", &wanted) && wanted != on) {
+        if (ui::toggle((device.label + "##bridge").c_str(), &wanted) && wanted != on) {
             const std::string error = request_bridge(index, wanted);
             if (!error.empty()) {
                 row.note = error;
@@ -254,10 +258,17 @@ void App::draw_adb() {
             }
         }
         ImGui::EndDisabled();
+        ImGui::SetItemTooltip("Turn this phone's ADB Bridge on or off.");
 
-        field("Port");
+        const float port_width = px(90);
+        const float copy_width = px(124);
+        const float port_label = ImGui::CalcTextSize("Port").x;
+        ui::align_right(port_label + px(8) + port_width + (on ? px(8) + copy_width : 0.0f));
+        ImGui::AlignTextToFramePadding();
+        ImGui::TextDisabled("Port");
+        ImGui::SameLine(0, px(8));
         ImGui::BeginDisabled(on || row.busy);
-        ImGui::SetNextItemWidth(px(90));
+        ImGui::SetNextItemWidth(port_width);
         if (ImGui::InputInt("##port", &row.port, 0, 0)) {
             row.port = std::clamp(row.port, 1024, 65535);
             for (const aoap::DeviceEntry& entry : devices_) {
@@ -267,16 +278,15 @@ void App::draw_adb() {
         }
         ImGui::EndDisabled();
         if (on) {
-            ImGui::SameLine();
+            ImGui::SameLine(0, px(8));
             const std::string command = "adb -s " + serial + " shell";
-            if (ui::button("Copy command")) {
+            if (ui::button("Copy command", ImVec2(copy_width, 0))) {
                 ImGui::SetClipboardText(command.c_str());
                 log_.message(aoap::Severity::info, "Copied: " + command);
             }
             ImGui::SetItemTooltip("%s", command.c_str());
         }
 
-        gap(2);
         if (!device.active) {
             small_colored(theme::danger, "Dropped; the bridge closed with it.");
         } else if (row.busy) {
@@ -291,12 +301,11 @@ void App::draw_adb() {
         }
         if (!row.note.empty())
             small_colored(row.note_error ? theme::danger : theme::warning, row.note);
-        ui::end_card();
         ImGui::PopID();
-        gap(2);
     }
     if (playing)
         small_colored(theme::warning, "Stop playback to turn a bridge on or off.");
+    ui::end_card();
 }
 
 } // namespace gui

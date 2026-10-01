@@ -33,9 +33,64 @@ namespace gui {
 using namespace detail;
 
 void App::draw_player() {
-    draw_script_card();
+    draw_player_mode_switch();
     gap(2);
-    draw_transport_card();
+    if (player_mode_ == PlayerMode::playlist) {
+        const ImVec2 available = ImGui::GetContentRegionAvail();
+        if (available.x >= px(760)) {
+            // The list on the left, the play controls on the right: both stay
+            // in view however long the list gets.
+            const float spacing = px(10);
+            const float left = std::floor((available.x - spacing) * 0.46f);
+            ImGui::BeginChild("##playlist_left", ImVec2(left, available.y), ImGuiChildFlags_None);
+            draw_playlist_file_card();
+            gap(2);
+            draw_playlist_scripts_card();
+            ImGui::EndChild();
+            ImGui::SameLine(0, spacing);
+            ImGui::BeginChild("##playlist_right", ImVec2(0, available.y), ImGuiChildFlags_None);
+            draw_transport_card();
+            ImGui::EndChild();
+        } else {
+            // Too narrow for two columns: the play controls come before the
+            // list, so a long list never pushes them out of sight.
+            draw_playlist_file_card();
+            gap(2);
+            draw_transport_card();
+            gap(2);
+            draw_playlist_scripts_card();
+        }
+    } else {
+        draw_script_card();
+        gap(2);
+        draw_transport_card();
+    }
+}
+
+void App::draw_player_mode_switch() {
+    const bool playing = engine_.phase() == Phase::playing;
+    const float half =
+        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+    struct Choice {
+        const char* label;
+        PlayerMode mode;
+    };
+    static constexpr Choice choices[] = {{"Script", PlayerMode::script},
+                                         {"Playlist", PlayerMode::playlist}};
+    const ImVec2 switch_min = ImGui::GetCursorScreenPos();
+    ImGui::BeginDisabled(playing);
+    for (size_t index = 0; index < std::size(choices); ++index) {
+        if (index != 0)
+            ImGui::SameLine();
+        const bool selected = player_mode_ == choices[index].mode;
+        if (ui::button(choices[index].label, ImVec2(half, 0),
+                       selected ? ui::Tone::primary : ui::Tone::secondary))
+            player_mode_ = choices[index].mode;
+    }
+    ImGui::EndDisabled();
+    const ImVec2 switch_max = ImGui::GetItemRectMax();
+    if (playing && ImGui::IsWindowHovered() && ImGui::IsMouseHoveringRect(switch_min, switch_max))
+        ImGui::SetTooltip("Stop playback to switch.");
 }
 
 void App::draw_script_card() {
@@ -410,13 +465,26 @@ void App::draw_transport_card() {
     const Phase phase = engine_.phase();
     const aoap::PlaybackStatus status = engine_.player().status();
     const bool live = phase == Phase::playing && status.state != aoap::PlaybackState::stopped;
-    const aoap::PlaybackPosition position = live ? status.position : cursor_;
-    const bool have_script = script_ != nullptr;
-    const int64_t first_ns = have_script ? timeline_.duration(aoap::Lap::first) : 0;
-    const int64_t repeat_ns = have_script ? timeline_.duration(aoap::Lap::repeat) : 0;
-    const bool has_repeat = have_script && timeline_.rows(aoap::Lap::repeat) > 0;
+    const bool playlist_mode = player_mode_ == PlayerMode::playlist;
+    const PlaylistProgress playlist_now = engine_.playlist_progress();
+    const bool playlist_run =
+        playlist_mode && playlist_now.active && playlist_now.index < run_steps_.size();
+    // What the bar shows: the playlist step that is running, or the loaded script.
+    const aoap::Timeline& timeline =
+        playlist_run ? run_steps_[playlist_now.index].timeline : timeline_;
+    // Between two playlist scripts the player is briefly stopped; the bar keeps
+    // the player's position then instead of dropping back to the idle cursor.
+    const aoap::PlaybackPosition position =
+        live || playlist_run ? status.position : cursor_;
+    // Something started from outside the playlist (the control API's /play) is
+    // drawn like in Script mode.
+    const bool playlist_view = playlist_mode && (playlist_run || phase != Phase::playing);
+    const bool have_script = playlist_view ? playlist_run : script_ != nullptr;
+    const int64_t first_ns = have_script ? timeline.duration(aoap::Lap::first) : 0;
+    const int64_t repeat_ns = have_script ? timeline.duration(aoap::Lap::repeat) : 0;
+    const bool has_repeat = have_script && timeline.rows(aoap::Lap::repeat) > 0;
     // Two laps are drawn only when they differ; otherwise the bar is one lap.
-    const bool two_laps = has_repeat && timeline_.once_rows() > 0;
+    const bool two_laps = has_repeat && timeline.once_rows() > 0;
 
     // Time readout and loop counter.
     const float top = ImGui::GetCursorPosY();
@@ -430,7 +498,18 @@ void App::draw_transport_card() {
     ImGui::TextDisabled("/ %s", format_time(lap_ns).c_str());
 
     std::string where;
-    if (!have_script)
+    if (playlist_view) {
+        if (!playlist_run) {
+            where = "Playlist";
+        } else {
+            where = std::to_string(playlist_now.index + 1) + "/" +
+                    std::to_string(playlist_now.count);
+            if (has_repeat) {
+                where += "  ·  Loop " + format_count((live ? status.loops : 0) + 1) + " of " +
+                         format_count(static_cast<uint64_t>(playlist_now.loops));
+            }
+        }
+    } else if (!have_script)
         where = "No script";
     else if (!has_repeat)
         where = "Once";
@@ -451,6 +530,17 @@ void App::draw_transport_card() {
     ImGui::TextDisabled("%s", reports.c_str());
     ImGui::EndGroup();
     ImGui::SetCursorPosY(std::max(ImGui::GetCursorPosY(), top + big_line + px(4)));
+    if (playlist_run) {
+        std::string line = playlist_now.name;
+        if (playlist_now.ends_at_ns != 0) {
+            const int64_t left = playlist_now.ends_at_ns - aoap::Timing::now_ns();
+            line += "  ·  time limit: " + format_time(std::max<int64_t>(left, 0)) + " left";
+        }
+        small_dim(line.c_str());
+    } else if (playlist_view) {
+        small_dim(playlist_.entries.empty() ? "Add scripts below, then play the playlist."
+                                            : "Plays the scripts below, in order.");
+    }
 
     // Timeline: the first lap (once-only rows purple, repeated rows green in
     // the order written) and the repeat lap (green) as one continuous bar, so
@@ -514,7 +604,7 @@ void App::draw_transport_card() {
         return p0.x + static_cast<float>(static_cast<double>(ns) * inverse_total) * bar_w;
     };
     const float filled_x = p0.x + bar_w * shown_fraction;
-    for (const aoap::Timeline::Run& run : timeline_.first_runs) {
+    for (const aoap::Timeline::Run& run : timeline.first_runs) {
         const ImU32 tone = run.once ? theme::accent : theme::success;
         fill_span(x_at(run.start), x_at(run.end), faint(tone));
         fill_span(x_at(run.start), std::min(x_at(run.end), filled_x), ImGui::GetColorU32(tone));
@@ -584,7 +674,8 @@ void App::draw_transport_card() {
 
     ImGui::SameLine(0, spacing);
     ImGui::SetCursorPosY(row_y);
-    const bool can_start = phase == Phase::connected && have_script;
+    const bool can_start =
+        phase == Phase::connected && (playlist_mode ? playlist_playable() : have_script);
     const bool can_toggle = phase == Phase::playing && status.state != aoap::PlaybackState::stopped;
     const bool pausing = can_toggle && status.state == aoap::PlaybackState::playing;
     ImGui::BeginDisabled(!can_start && !can_toggle);
@@ -595,8 +686,10 @@ void App::draw_transport_card() {
         toggle_playback();
     ImGui::EndDisabled();
     if (!can_start && !can_toggle && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-        ImGui::SetTooltip(!engine_.connected() ? "Connect a device first"
-                                               : "Choose a script first");
+        ImGui::SetTooltip(!engine_.connected()          ? "Connect a device first"
+                          : !playlist_mode              ? "Choose a script first"
+                          : playlist_.entries.empty()   ? "Add a script first"
+                                                        : "One of the scripts is missing");
 
     ImGui::SameLine(0, spacing);
     ImGui::SetCursorPosY(row_y + (large - small) * 0.5f);
@@ -621,7 +714,8 @@ void App::draw_transport_card() {
     }
 
     // Speed, loop limit, live offset.
-    if (ImGui::BeginTable("##settings", 3, ImGuiTableFlags_SizingStretchSame)) {
+    if (ImGui::BeginTable("##settings", playlist_view ? 2 : 3,
+                          ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn();
         ui::caption("Speed");
         // Typed in directly; the value takes effect as soon as it parses.
@@ -644,14 +738,18 @@ void App::draw_transport_card() {
             }
         }
 
-        ImGui::TableNextColumn();
-        ui::caption("Loops");
-        ImGui::SetNextItemWidth(-FLT_MIN);
-        if (ImGui::InputInt("##loops", &loop_limit_, 1, 10)) {
-            loop_limit_ = std::max(loop_limit_, 0);
-            engine_.player().set_loop_limit(loop_limit_);
+        // Each script of a playlist has its own loops, set in the list; a field
+        // here would overwrite the running script's.
+        if (!playlist_view) {
+            ImGui::TableNextColumn();
+            ui::caption("Loops");
+            ImGui::SetNextItemWidth(-FLT_MIN);
+            if (ImGui::InputInt("##loops", &loop_limit_, 1, 10)) {
+                loop_limit_ = std::max(loop_limit_, 0);
+                engine_.player().set_loop_limit(loop_limit_);
+            }
+            small_dim(loop_limit_ == 0 ? "Repeats until stopped" : "Stops after this many loops");
         }
-        small_dim(loop_limit_ == 0 ? "Repeats until stopped" : "Stops after this many loops");
 
         ImGui::TableNextColumn();
         ui::caption("Offset");
@@ -678,14 +776,37 @@ void App::draw_transport_card() {
         }
         ImGui::EndDisabled();
         if (!live_offset && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
-            ImGui::SetTooltip("Available while playing; it resets at every start.");
+            ImGui::SetTooltip("Available while playing; it resets at every start, and at each script of a playlist.");
         else if (live_offset && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Ctrl+Left/Right also nudges this by 1 ms.");
         ImGui::EndTable();
     }
 
-    gap(4);
-    if (ImGui::BeginTable("##keys", 3, ImGuiTableFlags_SizingStretchSame)) {
+    // The keys are set once and then left alone, so they stay folded with the
+    // current ones showing.
+    gap(2);
+    if (ui::icon_button("##keys_fold",
+                        player_keys_open_ ? ui::Icon::chevron_down : ui::Icon::chevron_right,
+                        ImGui::GetFrameHeight(), ui::Tone::quiet,
+                        player_keys_open_ ? "Hide the key settings" : "Show the key settings"))
+        player_keys_open_ = !player_keys_open_;
+    ImGui::SameLine(0, px(6));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextUnformatted("Keys");
+    const auto key_label = [this](const PlayerAction action, const char* fallback) {
+        const int configured = player_keys_[static_cast<int>(action)];
+        return configured != 0 ? glfw_key_name(configured) : fallback;
+    };
+    char keys_summary[96];
+    std::snprintf(keys_summary, sizeof keys_summary, "%s  ·  %s  ·  %s",
+                  key_label(PlayerAction::play, "Space"), key_label(PlayerAction::stop, "Esc"),
+                  key_label(PlayerAction::restart, "Home"));
+    ImGui::PushFont(nullptr, theme::font_small);
+    ui::align_right(ImGui::CalcTextSize(keys_summary).x);
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextColored(theme::vec(theme::text_faint), "%s", keys_summary);
+    ImGui::PopFont();
+    if (player_keys_open_ && ImGui::BeginTable("##keys", 3, ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn();
         draw_player_key_setting(PlayerAction::play, "Play / Pause key");
         ImGui::TableNextColumn();

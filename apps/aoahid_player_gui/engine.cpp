@@ -462,11 +462,20 @@ void Engine::pump_live() {
             continue;
         }
         if (item.toggle) {
-            aoahid_result result = group.toggle(item.usage, item.toggle_value);
+            // A release names no key (usage 0 lets go of whichever is held):
+            // a script's c row may have replaced the one live pressed, and
+            // naming a key that is not the held one is an error that would
+            // drop the device (see mutate() in device_group.cpp).
+            const uint16_t usage = item.toggle_value != 0U ? item.usage : uint16_t{0};
+            aoahid_result result = group.toggle(usage, item.toggle_value);
             if (result == AOAHID_ERR_BUSY) {
                 group.flush();
-                group.toggle(item.usage, item.toggle_value);
+                result = group.toggle(usage, item.toggle_value);
             }
+            // A held key (volume, brightness) is tracked like any other
+            // control, so release_live() lets go of it when live ends.
+            if (result == AOAHID_OK)
+                live_held_.apply(aoap::MediaKey{item.usage, item.toggle_value != 0U});
             continue;
         }
         apply_live_one(item.payload);

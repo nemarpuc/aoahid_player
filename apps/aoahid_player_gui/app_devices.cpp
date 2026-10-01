@@ -178,7 +178,9 @@ void App::draw_profiles_card() {
     ImGui::BeginDisabled(locked);
     struct Entry {
         const char* label;
+        const char* description;
         bool* enabled;
+        bool* open;
         void (App::*settings)();
         std::string summary;
     };
@@ -187,36 +189,67 @@ void App::draw_profiles_card() {
     char key_summary[32];
     std::snprintf(key_summary, sizeof key_summary, "0x%02X-0x%02X", key_min_, key_max_);
     const Entry entries[] = {
-        {"Touchscreen##touch", &use_touch_, &App::draw_touch_settings, touch_summary},
-        {"Mouse##mouse", &use_mouse_, &App::draw_mouse_settings,
-         std::to_string(mouse_buttons_) + " buttons"},
-        {"Keyboard##key", &use_key_, &App::draw_key_settings, key_summary},
-        {"Gamepad##gamepad", &use_gamepad_, &App::draw_gamepad_settings,
+        {"Touchscreen##touch", "Finger taps and swipes.", &use_touch_, &profile_open_[0],
+         &App::draw_touch_settings, touch_summary},
+        {"Mouse##mouse", "Pointer movement, buttons, and the wheel.", &use_mouse_,
+         &profile_open_[1], &App::draw_mouse_settings, std::to_string(mouse_buttons_) + " buttons"},
+        {"Keyboard##key", "Typing and key presses.", &use_key_, &profile_open_[2],
+         &App::draw_key_settings, key_summary},
+        {"Gamepad##gamepad", "Buttons, sticks, and triggers.", &use_gamepad_, &profile_open_[3],
+         &App::draw_gamepad_settings,
          std::to_string(pad_buttons_) + " buttons, " + std::to_string(pad_axes_.size()) + " axes"},
-        {"Pen##pen", &use_pen_, &App::draw_pen_settings,
-         pen_mode_ == 0 ? "on screen" : "tablet"},
-        {"Toggle##toggle", &use_toggle_, &App::draw_toggle_settings, "Consumer control"},
+        {"Pen##pen", "A stylus with pressure and hover.", &use_pen_, &profile_open_[4],
+         &App::draw_pen_settings, pen_mode_ == 0 ? "on screen" : "tablet"},
+        {"Toggle##toggle", "Media and system keys: play, volume, brightness, Home, Back.",
+         &use_toggle_, &profile_open_[5], &App::draw_toggle_settings, "Consumer control"},
     };
+    // Each row is a switch, its one-line summary, and an arrow that folds the
+    // settings in and out; the settings start folded.
+    const float arrow = ImGui::GetFrameHeight();
     bool first = true;
     for (const Entry& entry : entries) {
-        if (!first)
-            thin_rule(0.0f, 0.0f);
+        // A hairline in the gap between two rows; it takes no room of its own.
+        if (!first) {
+            const ImVec2 p = ImGui::GetCursorScreenPos();
+            const float y = std::round(p.y - ImGui::GetStyle().ItemSpacing.y * 0.5f);
+            ImGui::GetWindowDrawList()->AddLine(
+                ImVec2(p.x, y), ImVec2(p.x + ImGui::GetContentRegionAvail().x, y),
+                ImGui::GetColorU32(theme::border));
+        }
         first = false;
         if (ui::toggle(entry.label, entry.enabled))
             connect_error_.clear();
-        if (!*entry.enabled || locked) {
-            ImGui::PushFont(nullptr, theme::font_small);
-            const float width = ImGui::CalcTextSize(entry.summary.c_str()).x;
-            ImGui::PopFont();
-            ui::align_right(width);
-            ImGui::AlignTextToFramePadding();
-            ImGui::PushFont(nullptr, theme::font_small);
-            ImGui::TextColored(theme::vec(*entry.enabled ? theme::text_dim : theme::text_faint),
-                               "%s",
-                               entry.summary.c_str());
-            ImGui::PopFont();
-        }
+        ImGui::SetItemTooltip("%s", entry.description);
+
+        ImGui::PushFont(nullptr, theme::font_small);
+        const float summary_width = ImGui::CalcTextSize(entry.summary.c_str()).x;
+        ImGui::PopFont();
+        ui::align_right(summary_width + px(6) + arrow);
+        ImGui::AlignTextToFramePadding();
+        ImGui::PushFont(nullptr, theme::font_small);
+        const bool unread_size = entry.enabled == &use_touch_ && *entry.enabled &&
+                                 touch_size_ == TouchSize::not_read;
+        ImGui::TextColored(theme::vec(unread_size       ? theme::warning
+                                      : *entry.enabled ? theme::text_dim
+                                                       : theme::text_faint),
+                           "%s", entry.summary.c_str());
+        if (unread_size)
+            ImGui::SetItemTooltip("Not read from the phone; open the settings and check it.");
+        ImGui::PopFont();
+        ImGui::SameLine(0, px(6));
         if (*entry.enabled && !locked) {
+            ImGui::PushID(entry.label);
+            if (ui::icon_button("##fold",
+                                *entry.open ? ui::Icon::chevron_down : ui::Icon::chevron_right,
+                                arrow, ui::Tone::quiet,
+                                *entry.open ? "Hide settings" : "Show settings"))
+                *entry.open = !*entry.open;
+            ImGui::PopID();
+        } else {
+            ImGui::Dummy(ImVec2(arrow, arrow));
+        }
+
+        if (*entry.enabled && !locked && *entry.open) {
             gap(2);
             ImGui::Indent(px(4));
             ImGui::PushID(entry.label);
@@ -233,16 +266,25 @@ void App::draw_touch_settings() {
     field("Resolution");
     const float number = px(66);
     ImGui::SetNextItemWidth(number);
-    if (ImGui::InputInt("##width", &touch_width_, 0, 0))
+    if (ImGui::InputInt("##width", &touch_width_, 0, 0)) {
         touch_width_ = std::clamp(touch_width_, 1, INT32_MAX);
+        touch_size_ = TouchSize::typed;
+    }
     ImGui::SameLine(0, px(6));
     ImGui::AlignTextToFramePadding();
     ImGui::TextDisabled("x");
     ImGui::SameLine(0, px(6));
     ImGui::SetNextItemWidth(number);
-    if (ImGui::InputInt("##height", &touch_height_, 0, 0))
+    if (ImGui::InputInt("##height", &touch_height_, 0, 0)) {
         touch_height_ = std::clamp(touch_height_, 1, INT32_MAX);
+        touch_size_ = TouchSize::typed;
+    }
     ImGui::SetItemTooltip("Read automatically at startup with adb (wm size).");
+    if (touch_size_ == TouchSize::from_phone)
+        small_dim("Read from the phone.");
+    else if (touch_size_ == TouchSize::not_read)
+        small_colored(theme::warning, "Not read from the phone; set it to the phone's screen "
+                                      "size, or touches land in the wrong place.");
 
     field("Contacts");
     ui::slider_int("##contacts", &touch_contacts_, 1, 16, " fingers");
@@ -353,9 +395,8 @@ void App::draw_toggle_settings() {
 
 void App::draw_control_api_card() {
     ui::begin_card("##control_api");
-    caption_row("Control API");
     bool enabled = control_api_.running();
-    if (ui::toggle("Enabled##api", &enabled)) {
+    if (ui::toggle("Control API##api", &enabled)) {
         if (enabled) {
             const std::string error = control_api_.start(api_port_);
             if (error.empty()) {
@@ -370,27 +411,52 @@ void App::draw_control_api_card() {
             api_enabled_ = false;
         }
     }
-    gap(2);
-    field("Port");
-    ImGui::BeginDisabled(control_api_.running());
-    ImGui::SetNextItemWidth(px(90));
-    if (ImGui::InputInt("##api_port", &api_port_, 0, 0))
-        api_port_ = std::clamp(api_port_, 1024, 65535);
-    ImGui::EndDisabled();
+    ImGui::SetItemTooltip("Lets any program on this machine drive the app over plain HTTP "
+                          "(127.0.0.1 only). Off by default.");
+
+    // The state at a glance; the port and the fine print are folded away.
+    char summary[32];
     if (control_api_.running())
-        ImGui::SetItemTooltip("Turn it off to change the port.");
-    gap(2);
-    if (control_api_.running()) {
-        small_dim(("Listening on 127.0.0.1:" + std::to_string(control_api_.port()) +
-                   ". Any local program can reach it, with no further authentication — see "
-                   "README.md's \"Control API\" section for the routes.")
-                      .c_str());
-    } else {
-        small_dim("Off by default. Turning it on lets any local program drive this app over "
-                  "plain HTTP — play/stop/seek a script, send touch/mouse/keyboard/gamepad/"
-                  "media-key input, read status. Binds 127.0.0.1 only, never a public "
-                  "interface, but nothing more: any program running on this machine could "
-                  "reach it once it is on.");
+        std::snprintf(summary, sizeof summary, "127.0.0.1:%d", control_api_.port());
+    else
+        std::snprintf(summary, sizeof summary, "Off");
+    const float arrow = ImGui::GetFrameHeight();
+    ImGui::PushFont(nullptr, theme::font_small);
+    const float summary_width = ImGui::CalcTextSize(summary).x;
+    ImGui::PopFont();
+    ui::align_right(summary_width + px(6) + arrow);
+    ImGui::AlignTextToFramePadding();
+    ImGui::PushFont(nullptr, theme::font_small);
+    ImGui::TextColored(
+        theme::vec(control_api_.running() ? theme::text_dim : theme::text_faint), "%s", summary);
+    ImGui::PopFont();
+    ImGui::SameLine(0, px(6));
+    if (ui::icon_button("##api_fold",
+                        control_api_open_ ? ui::Icon::chevron_down : ui::Icon::chevron_right, arrow,
+                        ui::Tone::quiet, control_api_open_ ? "Hide settings" : "Show settings"))
+        control_api_open_ = !control_api_open_;
+
+    if (control_api_open_) {
+        gap(2);
+        field("Port");
+        ImGui::BeginDisabled(control_api_.running());
+        ImGui::SetNextItemWidth(px(90));
+        if (ImGui::InputInt("##api_port", &api_port_, 0, 0))
+            api_port_ = std::clamp(api_port_, 1024, 65535);
+        ImGui::EndDisabled();
+        if (control_api_.running())
+            ImGui::SetItemTooltip("Turn it off to change the port.");
+        gap(2);
+        if (control_api_.running()) {
+            small_dim("Any local program can reach it, with no further authentication — see "
+                      "README.md's \"Control API\" section for the routes.");
+        } else {
+            small_dim("Off by default. Turning it on lets any local program drive this app over "
+                      "plain HTTP — play/stop/seek a script, send touch/mouse/keyboard/gamepad/"
+                      "media-key input, read status. Binds 127.0.0.1 only, never a public "
+                      "interface, but nothing more: any program running on this machine could "
+                      "reach it once it is on.");
+        }
     }
     ui::end_card();
 }
@@ -403,8 +469,14 @@ void App::draw_connect_card() {
     case Phase::idle: {
         ImGui::BeginDisabled(startup_prep_task_.valid() || retry_task_.valid());
         const float w = (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
+        const bool no_profile = !(use_touch_ || use_mouse_ || use_key_ || use_gamepad_ ||
+                                  use_pen_ || use_toggle_);
+        ImGui::BeginDisabled(no_profile);
         if (ui::button("Connect", ImVec2(w, size.y), ui::Tone::primary))
             connect();
+        ImGui::EndDisabled();
+        if (no_profile && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Turn on at least one profile first.");
         ImGui::SameLine();
         if (ui::button("Accessory Mode", ImVec2(w, size.y), ui::Tone::primary))
             accessory();

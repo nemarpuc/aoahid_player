@@ -49,57 +49,25 @@ void App::draw_record_coords(const bool locked) {
          "Middle of the screen:  t,0,1,0.500000,0.500000,16.000"},
     };
 
+    // One switch, with the chosen mode's description and example under it.
+    const float half =
+        (ImGui::GetContentRegionAvail().x - ImGui::GetStyle().ItemSpacing.x) * 0.5f;
     ImGui::BeginDisabled(locked);
-    ImDrawList* list = ImGui::GetWindowDrawList();
-    const float width = ImGui::GetContentRegionAvail().x;
     for (int index = 0; index < 2; ++index) {
-        const Choice& choice = choices[index];
-        const bool selected = record_coords_ == index;
-
-        ImGui::PushID(index);
-        const ImVec2 p0 = ImGui::GetCursorScreenPos();
-        const float title_h = ImGui::GetTextLineHeight();
-        ImGui::PushFont(nullptr, theme::font_small);
-        const float small_h = ImGui::GetTextLineHeight();
-        ImGui::PopFont();
-        const float height = px(12) + title_h + px(3) + small_h + px(2) + small_h + px(12);
-        ImGui::InvisibleButton("##mode", ImVec2(width, height));
-        const bool hovered = ImGui::IsItemHovered();
-        if (ImGui::IsItemClicked())
+        if (index != 0)
+            ImGui::SameLine();
+        if (ui::button(choices[index].title, ImVec2(half, 0),
+                       record_coords_ == index ? ui::Tone::primary : ui::Tone::secondary))
             record_coords_ = index;
-        const ImVec2 p1(p0.x + width, p0.y + height);
-        const float rounding = px(8);
-        list->AddRectFilled(p0, p1,
-                            ImGui::GetColorU32(selected  ? theme::accent_soft
-                                               : hovered ? theme::field_hover
-                                                         : theme::field),
-                            rounding);
-        if (selected)
-            list->AddRect(p0, p1, ImGui::GetColorU32(theme::accent_line), rounding, px(1.5f));
-
-        const ImVec2 dot(p0.x + px(20), p0.y + px(12) + title_h * 0.5f);
-        list->AddCircle(dot, px(8), ImGui::GetColorU32(selected ? theme::accent : theme::text_faint),
-                        24, px(1.5f));
-        if (selected)
-            list->AddCircleFilled(dot, px(4), ImGui::GetColorU32(theme::accent), 20);
-
-        const float text_x = p0.x + px(40);
-        const float text_width = width - px(40) - px(14);
-        float y = p0.y + px(12);
-        list->AddText(ImVec2(text_x, y), ImGui::GetColorU32(theme::text), choice.title);
-        y += title_h + px(3);
-        ImGui::PushFont(nullptr, theme::font_small);
-        ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_dim),
-                                 choice.detail, text_width);
-        y += small_h + px(2);
-        ui::draw_text_ellipsized(list, ImVec2(text_x, y), ImGui::GetColorU32(theme::text_faint),
-                                 choice.example, text_width);
-        ImGui::PopFont();
-        ImGui::PopID();
-        ImGui::Dummy(ImVec2(0, px(4)));
     }
     ImGui::EndDisabled();
-    small_dim("If the phone's touch range cannot be read, the recording is written raw.");
+    const Choice& chosen = choices[std::clamp(record_coords_, 0, 1)];
+    small_dim(chosen.detail);
+    ImGui::SetItemTooltip("If the phone's touch range cannot be read, the recording is written "
+                          "raw.");
+    ImGui::PushFont(nullptr, theme::font_small);
+    ImGui::TextColored(theme::vec(theme::text_faint), "%s", chosen.example);
+    ImGui::PopFont();
 }
 
 void App::draw_recorder() {
@@ -147,9 +115,11 @@ void App::draw_recorder() {
                              &record_input_);
     ImGui::EndDisabled();
     gap(2);
-    small_dim("Recording reads touches and keys with adb over USB debugging. Turning a phone's "
-              "bridge on in the ADB tab chooses its 127.0.0.1 address here. The result plays "
-              "back with the touchscreen and keyboard profiles.");
+    small_dim("Records touches and keys with adb over USB debugging. Hover for details.");
+    ImGui::SetItemTooltip(
+        "Recording reads touches and keys with adb over USB debugging. Turning a\n"
+        "phone's bridge on in the ADB tab chooses its 127.0.0.1 address here. The\n"
+        "result plays back with the touchscreen and keyboard profiles.");
     ui::end_card();
 
     gap(2);
@@ -193,7 +163,7 @@ void App::draw_recorder() {
                 small_colored(theme::warning,
                               "A script with this name exists; recording replaces it.");
         }
-        gap(6);
+        gap(3);
         ImGui::BeginDisabled(!problem.empty());
         if (ui::button(replaces ? "Replace and record" : "Start recording",
                        ImVec2(-FLT_MIN, ImGui::GetFrameHeight() + px(12)), ui::Tone::record))
@@ -241,6 +211,7 @@ void App::draw_recorder() {
         if (ui::button("Open in player", ImVec2(px(130), 0))) {
             load_script(last_record_path_);
             tab_ = Tab::player;
+            player_mode_ = PlayerMode::script;
         }
         ImGui::EndDisabled();
     }

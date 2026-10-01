@@ -71,15 +71,19 @@ is logged.
    once the phone reappears. Tick one or more (a single phone is ticked for
    you).
 2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen, toggle. Each one's settings open when it is
-   switched on.
+   keyboard, gamepad, pen, toggle. All of them start off. Each row has a
+   switch, a one-line summary, and an arrow that opens that profile's settings
+   (they start folded); hover a name to see what the profile is for.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
-   the width/height fields to set it by hand instead. *Contacts* (16 by
+   the width/height fields to set it by hand instead. When the read failed,
+   the size is shown in the warning colour until it is typed in, because
+   touches land in the wrong place if it does not match the phone. *Contacts* (16 by
    default, the maximum) is how many simultaneous fingers the touchscreen
    declares; the Live tab always uses the last one for its own pointer (see
    *Live tab*, below), so a script gets one fewer than this to itself.
-3. *Connect* starts the AOA handshake on the ticked devices right away —
+3. *Connect* (available once at least one profile is on) starts the AOA
+   handshake on the ticked devices right away —
    it does not touch adb or rescan, so it stays fast how ever many devices
    are ticked. *Accessory Mode* switches the ticked devices into AOA
    accessory mode without taking the connection; to leave this mode
@@ -102,7 +106,7 @@ without stopping playback for the others.
   focus.
 - Play/pause (also **Space**), stop (**Esc** or **Ctrl+S**), and back-to-start
   (**Home** or **Backspace**) buttons. Each key can be remapped with the
-  *Set...* buttons under the transport; a remapped action answers to that one
+  *Set...* buttons in the folded *Keys* row under the transport; a remapped action answers to that one
   key only, and *Reset* restores the defaults. One bar shows
   the whole cycle: the first lap (rows that run only once in purple, repeated
   rows in green, in the order the file writes them), a gap, then the repeat
@@ -124,35 +128,51 @@ without stopping playback for the others.
 **Live tab**
 
 A black preview with the phone's shape, for using the phone from the computer
-and watching what the scripts do. Live control starts as soon as the tab is
-open while a phone is connected, and the switches under the preview choose
-what it forwards: *Touch* (drag inside the preview), *Mouse* (motion, buttons,
-and the wheel), *Keyboard*, *Gamepad* (any controller GLFW recognises), and
-*Toggle* (media and system keys). Only profiles the connection actually has
-can be turned on, and touch and mouse share the pointer, so only one of them
-is on at a time. The panel beside the preview lists what is held and what was
-sent, including an *Active touches* line per finger currently down — Live's
-own included, called out from the rest — since a script can be playing at the
-same time (see below); the same list also appears on the Player tab. The Live
-finger itself appears on the preview with its coordinates, held keys along
-its bottom. *Rotate* turns the preview a quarter
-turn at a time for landscape use, and the two numbers beside it set its shape
-as width:height; both default to the connected touchscreen, and *Reset*
-returns to it. Neither changes where a touch lands: the pointer's position
-inside the preview is taken as a fraction, turned back into the phone's own
-orientation, and only then scaled to the connected resolution. The expand
-button switches the preview to a real, OS-level full screen window (not just
-this window's own layout filling its still-windowed frame) with just the
-preview and the input switches (including toggle buttons), reached by right-clicking the preview —
-the only way in, so nothing pops up on its own; Mouse mode's own right
-button is not taken until the pointer is actually captured, so the menu
-still works right up to that point. *Exit full screen* is in that menu.
-There is no keyboard shortcut for full screen any more, so it never
-conflicts with a key a script or the target app needs. The preview shows why
-Live control is unavailable right now (no device connected) under itself, in
-both the normal and the full-screen view, instead of just a disabled toggle.
-Live control now keeps running while a script plays, instead of turning off
-when playback starts: its touch contact is always the last one the connection
+and watching what the scripts do. It is the tab the app opens on the first
+time. Live control starts as soon as the tab is open while a phone is
+connected. In the panel on the right, the *Forward* card's switches choose
+what the preview forwards: *Touch* (drag inside the preview), *Mouse* (motion,
+buttons, and the wheel), *Keyboard*, *Gamepad* (any controller GLFW
+recognises), and *Toggle* (media and system keys); *Touch* and *Keyboard*
+start on. Only profiles the connection actually has can be turned on, and
+touch and mouse share the pointer, so only one of them is on at a time. Under
+the switches are *Paste Text*, *Rotate*, the full screen button, and the
+frame-rate limit of this window. The *Input* panel below them lists what is
+held and what was sent, including an *Active touches* line per finger
+currently down — Live's own included, called out from the rest — since a
+script can be playing at the same time (see below); the same list also
+appears on the Player tab. The Live finger itself appears on the preview with
+its coordinates, held keys along its bottom.
+
+The media keys sit under the preview: *Prev*, *Play/Pause*, and *Next*, with
+*All keys* opening every Toggle key in groups (including *Stop*, *Home*,
+*Back*, *Pan*, and *New*). To the right of the phone are its side keys, like
+the buttons on a phone's frame: *Volume* + and − with *Mute*, and
+*Brightness* + and −. These are Toggle keys, so they need the Toggle profile
+and the *Toggle* switch on. Volume and brightness stay down for as long as
+their button is held, like the phone's own keys; every other key sends one
+tap per press.
+
+*Rotate* turns the preview a quarter turn at a time for landscape use, and
+the *Shape* row (folded away in the right panel) sets its shape as
+width:height; both default to the connected touchscreen, and *Reset* returns
+to it. Neither changes where a touch lands: the pointer's position inside the
+preview is taken as a fraction, turned back into the phone's own orientation,
+and only then scaled to the connected resolution. The expand button switches
+the preview to a real, OS-level full screen window (not just this window's
+own layout filling its still-windowed frame) with just the preview and the
+input switches (including the Toggle keys), reached by right-clicking the
+preview — the only way in, so nothing pops up on its own; Mouse mode's own
+right button is not taken until the pointer is actually captured, so the menu
+still works right up to that point. *Exit full screen* is in that menu. Full
+screen keeps 5 px around the phone and draws its edge on all four sides, so a
+screen whose ratio matches almost exactly still shows where the phone ends.
+There is no keyboard shortcut for full screen any more, so it never conflicts
+with a key a script or the target app needs. The preview shows why Live
+control is unavailable right now (no device connected) under itself, in both
+the normal and the full-screen view, instead of just a disabled toggle. Live
+control now keeps running while a script plays, instead of turning off when
+playback starts: its touch contact is always the last one the connection
 declares (see *Contacts* under *Profiles*, above), so it never collides with
 whichever ones the script itself is using.
 
@@ -167,7 +187,7 @@ however far or long it moves; the window's own controls simply see no mouse
 until the capture is released. **Esc** releases the capture by default
 without turning off Live control or the Mouse toggle, and is still forwarded
 to the phone like any other key; clicking the preview again re-captures it.
-*Mouse release key*, below the preview, lets a different key take over
+*Mouse release key* (a folded row in the right panel) lets a different key take over
 instead — useful when Esc itself needs to reach the phone (a game that quits
 on Esc, for instance). Once changed, only that exact key releases the
 capture; every other key, Esc included, goes straight to the phone like
@@ -191,19 +211,27 @@ the US) are already covered by the default range on every platform. Windows
 uses a different scancode numbering than Linux, so this recognition is
 Linux-only for now; on Windows these keys still do not reach the phone.
 
-*Reference image* loads a picture (a screenshot works well) over the
-preview, by path or by dropping the file on the preview while this tab is
+*Reference image* (a folded row in the right panel) loads a picture (a
+screenshot works well) over the preview, by path or by dropping the file on the preview while this tab is
 open. While unlocked, drag inside it to move, its corner handle to resize,
 and its top handle to rotate; *Lock image* freezes it in place and lets
 touches and clicks pass straight through to the phone. Its path, position,
 size, rotation, and opacity are saved between runs, and the image is loaded
 again at the next start while the file is still there.
 
-**Playlist tab**
+**Playlist mode** (the Player tab)
 
-Plays several scripts in order, each for its own number of loops, with an
-optional limit in minutes on the whole run. Playlists are saved as
-`playlists/<name>.playlist` next to the program and reopened from *Open*.
+The *Script | Playlist* switch at the top of the Player tab chooses what it
+plays. *Playlist* plays several scripts in order, each for its own number of
+loops, with an optional limit in minutes on the whole run. It uses the same
+play bar as a single script: the bar shows the script that is running (for
+example *2/5*), and play/pause, stop, speed, offset, and seeking act on that
+script. *Loops* is set for each script in the list instead. Playlists are
+saved as `playlists/<name>.playlist` next to the program and reopened from
+*Open*. With room, the list sits on the left and the play bar on the right;
+in a narrow window they stack. `.csv` files dropped on the Playlist join the
+end of the list. The switch is locked while something plays; **Ctrl+F** and
+*Open in player* switch back to *Script*.
 
 **Recorder tab**
 
@@ -216,8 +244,8 @@ button into *Replace and record*. *Stop and save* writes the file into `csv/`,
 and *Open in player* loads it.
 
 *Coordinates* chooses how touch positions are written: **Raw** (the panel's own
-numbers) or **Normalized** (fractions from 0 to 1). Each row shows what a tap
-in the middle of the screen looks like. Where a touch lands is the same in
+numbers) or **Normalized** (fractions from 0 to 1). The line under the switch
+shows what a tap in the middle of the screen looks like in the chosen mode. Where a touch lands is the same in
 both. The choice is remembered and is fixed while recording; see
 [`--coords`](#aoa_record--usage).
 
@@ -225,8 +253,8 @@ both. The choice is remembered and is fixed while recording; see
 
 While this app holds a phone over USB, adb cannot open it on its own — on
 Windows never, because a USB device can be opened by only one program. The
-*ADB* tab keeps adb working anyway: each connected phone has its own *Bridge*
-switch and *Port*. Turning a bridge on serves that phone's adb interface on
+*ADB* tab keeps adb working anyway: each connected phone has its own line
+with a bridge switch and a *Port*. Turning a bridge on serves that phone's adb interface on
 `127.0.0.1:<port>` with the built-in
 [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy), then runs
 `adb connect 127.0.0.1:<port>` for you, so the phone shows up in
@@ -278,8 +306,8 @@ compositor's scale on Wayland.
 
 A local HTTP server another program can use to drive the phone — the same
 things the Devices card, Live control, the Player tab, the Recorder, and the
-ADB tab do, callable over plain HTTP. Off by default; turn it on from the sidebar's *Control API* card
-(*Enabled*, and the *Port* it listens on, 47821 by default). It binds
+ADB tab do, callable over plain HTTP. Off by default; turn it on with the sidebar's *Control API* switch
+(its arrow opens the *Port* it listens on, 47821 by default). It binds
 `127.0.0.1` only, never a public interface, but has no further
 authentication: any program running on this machine can reach it once it is
 on, so turning it on is a deliberate choice, same as opening a debug port.
@@ -527,8 +555,10 @@ and the modifiers `LCtrl`, `LShift`, `LAlt`, `LGui`, `RCtrl`, `RShift`,
 `c` rows take a name, ignoring case, or the Consumer page (`0x0C`) usage
 number: `Next` (`0xB5`), `Prev` / `Previous` (`0xB6`), `Stop` (`0xB7`),
 `PlayPause` (`0xCD`), `Mute` (`0xE2`), `VolumeUp` (`0xE9`), `VolumeDown`
-(`0xEA`), `Home` (AC Home, `0x223`), `Back` (AC Back, `0x224`), and `New`
-(AC New, `0x201`). The number `0x238` (AC Pan) is also accepted; Linux maps it
+(`0xEA`), `Home` (AC Home, `0x223`), `Back` (AC Back, `0x224`), `New`
+(AC New, `0x201`), `BrightnessUp` (`0x6F`), and `BrightnessDown` (`0x70`).
+The brightness keys are not yet tested on a device.
+The number `0x238` (AC Pan) is also accepted; Linux maps it
 to a horizontal wheel step rather than a key. Any other usage is an error when
 the file is loaded, because the toggle profile does not declare it. The rows
 need the toggle profile (*Profiles* → toggle in the GUI, or `aoa_touch --toggle`).

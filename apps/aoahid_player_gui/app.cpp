@@ -168,6 +168,7 @@ Settings App::current_settings() const {
     settings.window_width = window_width_;
     settings.window_height = window_height_;
     settings.tab = static_cast<int>(tab_);
+    settings.player_mode = static_cast<int>(player_mode_);
     settings.last_script = script_reference_;
     settings.speed = speed_;
     settings.loop_limit = loop_limit_;
@@ -225,7 +226,12 @@ void App::apply_settings(const Settings& settings) {
     window_y_ = settings.window_y;
     window_width_ = settings.window_width;
     window_height_ = settings.window_height;
-    tab_ = settings.tab >= 0 && settings.tab <= 4 ? static_cast<Tab>(settings.tab) : Tab::player;
+    // An old saved Playlist tab (2) is the Player's Playlist mode now.
+    tab_ = settings.tab == 2   ? Tab::player
+           : settings.tab >= 0 && settings.tab <= 4 ? static_cast<Tab>(settings.tab)
+                                                    : Tab::live;
+    player_mode_ = settings.tab == 2 || settings.player_mode == 1 ? PlayerMode::playlist
+                                                                  : PlayerMode::script;
     speed_ = settings.speed;
     loop_limit_ = settings.loop_limit;
     log_open_ = settings.log_open;
@@ -448,6 +454,7 @@ void App::poll() {
     if (ready(startup_prep_task_)) {
         const StartupPrep result = startup_prep_task_.get();
         set_adb_status(result.status);
+        touch_size_ = result.size_ok ? TouchSize::from_phone : TouchSize::not_read;
         if (result.size_ok) {
             touch_width_ = result.width;
             touch_height_ = result.height;
@@ -635,8 +642,12 @@ void App::set_adb_status(const AdbStatus status) {
 void App::toggle_playback() {
     const Phase phase = engine_.phase();
     if (phase == Phase::connected) {
-        if (script_)
+        if (player_mode_ == PlayerMode::playlist) {
+            if (playlist_playable())
+                play_playlist();
+        } else if (script_) {
             engine_.play(script_, aoap::display_name(script_path_), cursor_, loop_limit_);
+        }
         return;
     }
     if (phase != Phase::playing)
@@ -704,7 +715,9 @@ void App::save_current_playlist() {
 
 void App::play_playlist() {
     std::vector<PlaylistStep> steps;
+    std::vector<RunStep> run;
     steps.reserve(playlist_.entries.size());
+    run.reserve(playlist_.entries.size());
     for (const Playlist::Entry& entry : playlist_.entries) {
         const std::string path = resolve_script_reference(entry.script);
         auto script = std::make_shared<aoap::EventScript>();
@@ -714,8 +727,10 @@ void App::play_playlist() {
             log_.message(aoap::Severity::error, error);
             return;
         }
+        run.push_back(RunStep{script, aoap::build_timeline(*script)});
         steps.push_back(PlaylistStep{std::move(script), aoap::display_name(path), entry.loops});
     }
+    run_steps_ = std::move(run);
     playlist_error_.clear();
     const int64_t limit = static_cast<int64_t>(playlist_.time_limit_minutes) * 60 *
                           1'000'000'000LL;
@@ -787,6 +802,25 @@ void App::finish_recording() {
 }
 
 void App::on_drop(std::vector<std::string> paths) {
+    // Dropped on the Playlist: every script joins the end of the list.
+    if (tab_ == Tab::player && player_mode_ == PlayerMode::playlist) {
+        bool added = false;
+        for (const std::string& path : paths) {
+            if (!has_csv_extension(path))
+                continue;
+            if (engine_.phase() == Phase::playing) {
+                log_.message(aoap::Severity::warning,
+                             "Stop playback before changing the playlist.");
+                return;
+            }
+            playlist_.entries.push_back(Playlist::Entry{script_reference(path), 1});
+            added = true;
+        }
+        if (added) {
+            playlist_dirty_ = true;
+            return;
+        }
+    }
     for (const std::string& path : paths) {
         if (has_csv_extension(path)) {
             if (engine_.phase() == Phase::playing) {
@@ -795,6 +829,7 @@ void App::on_drop(std::vector<std::string> paths) {
                 return;
             }
             tab_ = Tab::player;
+            player_mode_ = PlayerMode::script;
             load_script(path);
             return;
         }
@@ -953,6 +988,7 @@ void App::on_search_shortcut() {
     if (engine_.phase() == Phase::playing)
         return;
     tab_ = Tab::player;
+    player_mode_ = PlayerMode::script;
     open_picker_ = true;
 }
 
@@ -1023,13 +1059,23 @@ void App::frame() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(20), px(16)));
+    // Full screen gives the preview the whole window, with no padding around it.
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding,
+                        live_fullscreen_ ? ImVec2(0, 0) : ImVec2(px(20), px(16)));
     constexpr ImGuiWindowFlags root_flags =
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoBringToFrontOnFocus |
         ImGuiWindowFlags_NoScrollWithMouse;
     ImGui::Begin("##root", nullptr, root_flags);
     ImGui::PopStyleVar();
+
+    // A held side key never outlives the press: not the mouse letting go,
+    // nor its button going out of reach (another tab, full screen, Toggle
+    // turned off, the device gone).
+    if (live_held_key_ != 0 &&
+        (!ImGui::IsMouseDown(ImGuiMouseButton_Left) || tab_ != Tab::live || live_fullscreen_ ||
+         !live_toggle_usable()))
+        release_held_live_key();
 
     if (live_fullscreen_) {
         // Everything but the preview and its switches is out of the way.
@@ -1074,8 +1120,6 @@ void App::frame() {
             draw_player();
         else if (tab_ == Tab::live)
             draw_live();
-        else if (tab_ == Tab::playlist)
-            draw_playlist();
         else if (tab_ == Tab::recorder)
             draw_recorder();
         else
