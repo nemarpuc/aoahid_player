@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "theme.hpp"
 
+#include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <string>
@@ -83,90 +85,216 @@ std::string find_cjk_font_path() {
 
 } // namespace
 
-// Two full palettes, assigned wholesale so nothing is left half-updated.
-// `accent` and `accent2` swap identities between them (purple leads in dark,
-// teal leads in light) rather than either colour just getting darker or
-// lighter, since a flipped light theme needs new values for nearly
-// everything else anyway.
-void set_mode(const bool dark) {
-    if (dark) {
-        background = rgb(0x0B0C0E);
-        surface = rgb(0x14151A);
-        surface_hi = rgb(0x1A1B21);
-        field = rgb(0x1E1F25);
-        field_hover = rgb(0x272830);
-        field_active = rgb(0x2F3039);
-        border = rgb(0x22242B);
-        border_strong = rgb(0x33353D);
-        text = rgb(0xE8E9ED);
-        text_dim = rgb(0x9D9EA9);
-        text_faint = rgb(0x83848F);
+namespace {
+unsigned glass_tint = 0x201F26; // `surface` without its alpha
+float glass_transparency = 0.4f;
+bool dark_mode = true;
+unsigned accent_seed = 0xB4A5FF;
+// Each mode's own gloss and rim strengths, before set_shine() scales them.
+unsigned gloss_base = 20;
+unsigned rim_top_base = 80;
+unsigned rim_bottom_base = 14;
+float gloss_scale = 1.0f;
+float rim_scale = 1.0f;
 
-        // Black text on `accent` is about 8.6:1 (a light purple reads better
-        // with dark text than white).
-        accent = rgb(0x9C8CE6);
-        accent_hover = rgb(0xAC9EEC);
-        accent_active = rgb(0x8A78D8);
-        accent_text = rgb(0xC7BBF5);
-        accent_soft = rgb(0x9C8CE6, 40);
-        accent_line = rgb(0x9C8CE6, 140);
-        accent_ink = rgb(0x1B1030);
+struct Rgb {
+    float r, g, b; // 0..1, sRGB
+};
+
+Rgb unpack(const unsigned hex) {
+    return {static_cast<float>((hex >> 16) & 0xFF) / 255.0f,
+            static_cast<float>((hex >> 8) & 0xFF) / 255.0f, static_cast<float>(hex & 0xFF) / 255.0f};
+}
+
+unsigned pack(const Rgb c) {
+    const auto channel = [](const float value) {
+        return static_cast<unsigned>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
+    };
+    return channel(c.r) << 16 | channel(c.g) << 8 | channel(c.b);
+}
+
+unsigned mix(const unsigned a, const unsigned b, const float t) {
+    const Rgb x = unpack(a);
+    const Rgb y = unpack(b);
+    return pack({x.r + (y.r - x.r) * t, x.g + (y.g - x.g) * t, x.b + (y.b - x.b) * t});
+}
+
+// WCAG relative luminance and contrast ratio.
+float luminance(const unsigned hex) {
+    const Rgb c = unpack(hex);
+    const auto linear = [](const float v) {
+        return v <= 0.03928f ? v / 12.92f : std::pow((v + 0.055f) / 1.055f, 2.4f);
+    };
+    return 0.2126f * linear(c.r) + 0.7152f * linear(c.g) + 0.0722f * linear(c.b);
+}
+
+float contrast(const unsigned a, const unsigned b) {
+    const float x = luminance(a);
+    const float y = luminance(b);
+    return (std::max(x, y) + 0.05f) / (std::min(x, y) + 0.05f);
+}
+
+// The same hue, more saturated, and dark enough for white text (4.5:1).
+unsigned deepen(const unsigned hex) {
+    const Rgb c = unpack(hex);
+    const float high = std::max({c.r, c.g, c.b});
+    const float low = std::min({c.r, c.g, c.b});
+    // Saturation up: push each channel away from the maximum.
+    const float saturation = high > 0.0f ? (high - low) / high : 0.0f;
+    const float target = std::min(1.0f, saturation * 1.6f + 0.15f);
+    const float stretch = saturation > 0.0f ? target / saturation : 1.0f;
+    Rgb vivid{high - (high - c.r) * stretch, high - (high - c.g) * stretch,
+              high - (high - c.b) * stretch};
+    if (saturation == 0.0f)
+        vivid = c;
+    unsigned result = pack(vivid);
+    for (float value = 1.0f; value > 0.2f && contrast(result, 0xFFFFFF) < 4.5f; value -= 0.02f)
+        result = pack({vivid.r * value / high, vivid.g * value / high, vivid.b * value / high});
+    return result;
+}
+
+// Lighter until it stands out from `ground` by `ratio`.
+unsigned lift_on(unsigned hex, const unsigned ground, const float ratio) {
+    for (int step = 0; step < 40 && contrast(hex, ground) < ratio; ++step)
+        hex = mix(hex, 0xFFFFFF, 0.05f);
+    return hex;
+}
+
+// Darker until it reads as text on `ground` (4.5:1).
+unsigned readable_on(unsigned hex, const unsigned ground) {
+    for (int step = 0; step < 40 && contrast(hex, ground) < 4.5f; ++step)
+        hex = mix(hex, 0x000000, 0.05f);
+    return hex;
+}
+} // namespace
+
+void set_accent(const unsigned seed) {
+    accent_seed = seed & 0xFFFFFFU;
+    if (dark_mode) {
+        // A very dark choice is lifted until it shows against the cards (3:1,
+        // as for graphics); its text shade until it reads (4.5:1).
+        const unsigned base = lift_on(accent_seed, 0x2A2833, 3.0f);
+        accent = rgb(base);
+        accent_hover = rgb(mix(base, 0xFFFFFF, 0.2f));
+        accent_active = rgb(mix(base, 0x000000, 0.12f));
+        accent_text = rgb(lift_on(mix(base, 0xFFFFFF, 0.35f), 0x2A2833, 4.5f));
+        accent_soft = rgb(base, 44);
+        accent_line = rgb(base, 150);
+        accent_ink = rgb(contrast(base, 0x1A1233) >= 4.5f ? 0x1A1233 : 0xFFFFFF);
+        text_selected_bg = rgb(base, 110);
+    } else {
+        const unsigned base = deepen(accent_seed);
+        accent = rgb(base);
+        accent_hover = rgb(mix(base, 0xFFFFFF, 0.12f));
+        accent_active = rgb(mix(base, 0x000000, 0.12f));
+        accent_text = rgb(readable_on(base, 0xECEAF3));
+        accent_soft = rgb(base, 40);
+        accent_line = rgb(base, 160);
+        accent_ink = rgb(0xFFFFFF);
+        text_selected_bg = rgb(base, 70);
+    }
+}
+
+void set_shine(const float gloss, const float rim) {
+    gloss_scale = std::clamp(gloss, 0.0f, 2.0f);
+    rim_scale = std::clamp(rim, 0.0f, 2.0f);
+    const auto scaled = [](const unsigned base, const float scale) {
+        return std::min(255U, static_cast<unsigned>(std::lround(static_cast<float>(base) * scale)));
+    };
+    gloss_alpha = scaled(gloss_base, gloss_scale);
+    rim_top_alpha = scaled(rim_top_base, rim_scale);
+    rim_bottom_alpha = scaled(rim_bottom_base, rim_scale);
+}
+
+void set_glass(const float transparency) {
+    glass_transparency = std::clamp(transparency, 0.0f, 0.7f);
+    surface = rgb(glass_tint,
+                  static_cast<unsigned>(std::lround((1.0f - glass_transparency) * 255.0f)));
+}
+
+ImU32 glass_fill(const float transparency) {
+    return rgb(glass_tint, static_cast<unsigned>(
+                               std::lround((1.0f - std::clamp(transparency, 0.0f, 1.0f)) * 255.0f)));
+}
+
+// Two full palettes, assigned wholesale so nothing is left half-updated.
+// Both keep the same roles and hues: the dark one has light fills with dark
+// ink on them, the light one deep fills with white ink. Cards, wells and
+// borders, keys and rows are alpha over what is behind them. Text and status
+// colours stay at or above 4.5:1 on the resulting surfaces over a plain
+// background.
+void set_mode(const bool dark) {
+    dark_mode = dark;
+    if (dark) {
+        background = rgb(0x14131A);
+        glass_tint = 0x201F26;
+        dim_base = 0x000000;
+        surface_hi = rgb(0xFFFFFF, 14);
+        well = rgb(0x000000, 96);
+        well_hover = rgb(0x000000, 64);
+        field = rgb(0xFFFFFF, 24);
+        field_hover = rgb(0xFFFFFF, 40);
+        field_active = rgb(0xFFFFFF, 56);
+        sheen = rgb(0xFFFFFF, 40);
+        gloss_base = 20;
+        rim_top_base = 80;
+        rim_bottom_base = 14;
+        border = rgb(0xFFFFFF, 26);
+        border_strong = rgb(0xFFFFFF, 64);
+        text = rgb(0xECEAF4);
+        text_dim = rgb(0xB8B5C6);
+        text_faint = rgb(0x9D9AAD);
 
         accent2 = rgb(0x4FD1C5);
-        accent2_soft = rgb(0x4FD1C5, 40);
+        accent2_soft = rgb(0x4FD1C5, 36);
         accent2_line = rgb(0x4FD1C5, 140);
         accent2_text = rgb(0x8FE4DA);
 
-        success = rgb(0x4DB885);
-        warning = rgb(0xD8A445);
-        danger = rgb(0xE0564E);
-        danger_soft = rgb(0xE0564E, 36);
+        success = rgb(0x57C78F);
+        warning = rgb(0xE2B04A);
+        danger = rgb(0xF4776F);
+        danger_soft = rgb(0xF4776F, 36);
 
-        popup_bg = rgb(0x1A1B20);
-        scrollbar_hover = rgb(0x44454E);
-        scrollbar_active = rgb(0x55565F);
+        scrollbar_hover = rgb(0xFFFFFF, 96);
+        scrollbar_active = rgb(0xFFFFFF, 128);
         check_mark = rgb(0xFFFFFF);
-        text_selected_bg = rgb(0x9C8CE6, 110);
     } else {
-        background = rgb(0xF5F5F8);
-        surface = rgb(0xFFFFFF);
-        surface_hi = rgb(0xF0F0F4);
-        field = rgb(0xEAEBF0);
-        field_hover = rgb(0xDFE0E7);
-        field_active = rgb(0xD2D3DC);
-        border = rgb(0xDBDCE2);
-        border_strong = rgb(0xC3C4CE);
-        text = rgb(0x191A1F);
-        text_dim = rgb(0x53555F);
-        text_faint = rgb(0x6C6E78); // about 4.9:1 on `background`
+        background = rgb(0xECEAF3);
+        glass_tint = 0xFFFFFF;
+        dim_base = 0xFFFFFF;
+        surface_hi = rgb(0x2A2440, 14);
+        well = rgb(0xFFFFFF, 225);
+        well_hover = rgb(0xFFFFFF);
+        field = rgb(0x2A2440, 26);
+        field_hover = rgb(0x2A2440, 42);
+        field_active = rgb(0x2A2440, 58);
+        sheen = rgb(0xFFFFFF, 230);
+        gloss_base = 110;
+        rim_top_base = 255;
+        rim_bottom_base = 90;
+        border = rgb(0x2A2440, 30);
+        border_strong = rgb(0x2A2440, 84);
+        text = rgb(0x1C1A26);
+        text_dim = rgb(0x4B485A);
+        text_faint = rgb(0x5A5769);
 
-        // The same teal as the dark theme's second accent, kept exactly —
-        // only the derived text/line shades below are tuned for a white
-        // page instead of a black one.
-        accent = rgb(0x4FD1C5);
-        accent_hover = rgb(0x63DBD0);
-        accent_active = rgb(0x3FB9AE);
-        accent_text = rgb(0x0E8F80); // deep enough for text on white
-        accent_soft = rgb(0x4FD1C5, 45);
-        accent_line = rgb(0x4FD1C5, 160);
-        accent_ink = rgb(0x06201C); // still reads on the same light fill
+        accent2 = rgb(0x0B7F72);
+        accent2_soft = rgb(0x0B7F72, 40);
+        accent2_line = rgb(0x0B7F72, 170);
+        accent2_text = rgb(0x086A5F);
 
-        accent2 = rgb(0x7C6AD8);
-        accent2_soft = rgb(0x7C6AD8, 45);
-        accent2_line = rgb(0x7C6AD8, 160);
-        accent2_text = rgb(0x5D4BC0);
+        success = rgb(0x146C43);
+        warning = rgb(0x7A5200);
+        danger = rgb(0xB3261E);
+        danger_soft = rgb(0xB3261E, 36);
 
-        success = rgb(0x1E8F5F);
-        warning = rgb(0xAD7A12);
-        danger = rgb(0xC63B33);
-        danger_soft = rgb(0xC63B33, 40);
-
-        popup_bg = rgb(0xFCFCFE);
-        scrollbar_hover = rgb(0xB9BAC4);
-        scrollbar_active = rgb(0xA5A6B2);
-        check_mark = rgb(0x1B1030);
-        text_selected_bg = rgb(0x4FD1C5, 90);
+        scrollbar_hover = rgb(0x2A2440, 110);
+        scrollbar_active = rgb(0x2A2440, 140);
+        check_mark = rgb(0x1C1A26);
     }
+    set_glass(glass_transparency);
+    set_accent(accent_seed);
+    set_shine(gloss_scale, rim_scale);
 }
 
 void apply_style(const float dpi_scale) {
@@ -181,15 +309,15 @@ void apply_style(const float dpi_scale) {
     style.GrabMinSize = 10;
     style.WindowBorderSize = 0;
     style.ChildBorderSize = 1;
-    style.PopupBorderSize = 1;
+    style.PopupBorderSize = 0;
     style.FrameBorderSize = 0;
     style.WindowRounding = 0;
-    style.ChildRounding = 4;
-    style.FrameRounding = 3;
-    style.PopupRounding = 4;
-    style.ScrollbarRounding = 3;
-    style.GrabRounding = 2;
-    style.TabRounding = 3;
+    style.ChildRounding = card_rounding;
+    style.FrameRounding = std::min(8.0f, card_rounding);
+    style.PopupRounding = card_rounding;
+    style.ScrollbarRounding = 5;
+    style.GrabRounding = 6;
+    style.TabRounding = 8;
     style.SeparatorTextBorderSize = 1;
     style.SelectableTextAlign = ImVec2(0, 0.5f);
     style.DisabledAlpha = 0.4f;
@@ -197,14 +325,17 @@ void apply_style(const float dpi_scale) {
     ImVec4* c = style.Colors;
     c[ImGuiCol_Text] = vec(text);
     c[ImGuiCol_TextDisabled] = vec(text_faint);
-    c[ImGuiCol_WindowBg] = vec(background);
-    c[ImGuiCol_ChildBg] = vec(surface);
-    c[ImGuiCol_PopupBg] = vec(popup_bg);
+    // The window and plain child windows are clear: the background (see
+    // backdrop.hpp) and the cards (see ui::draw_glass()) paint themselves.
+    c[ImGuiCol_WindowBg] = ImVec4(0, 0, 0, 0);
+    c[ImGuiCol_ChildBg] = ImVec4(0, 0, 0, 0);
+    // Popups and tooltips are clear too: ui::glass_popups() paints them.
+    c[ImGuiCol_PopupBg] = ImVec4(0, 0, 0, 0);
     c[ImGuiCol_Border] = vec(border);
     c[ImGuiCol_BorderShadow] = ImVec4(0, 0, 0, 0);
-    c[ImGuiCol_FrameBg] = vec(field);
-    c[ImGuiCol_FrameBgHovered] = vec(field_hover);
-    c[ImGuiCol_FrameBgActive] = vec(field_active);
+    c[ImGuiCol_FrameBg] = vec(well);
+    c[ImGuiCol_FrameBgHovered] = vec(well_hover);
+    c[ImGuiCol_FrameBgActive] = vec(well_hover);
     c[ImGuiCol_TitleBg] = vec(background);
     c[ImGuiCol_TitleBgActive] = vec(background);
     c[ImGuiCol_TitleBgCollapsed] = vec(background);

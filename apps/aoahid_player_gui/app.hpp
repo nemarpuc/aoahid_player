@@ -48,6 +48,7 @@ namespace gui {
 //   app_live.cpp      — the Live tab
 //   app_playlist.cpp  — the Player tab's Playlist mode
 //   app_recorder.cpp  — the Recorder tab
+//   app_settings.cpp  — the Settings tab: theme, glass, background, Live look
 class App {
   public:
     explicit App(std::function<void()> wake);
@@ -99,11 +100,14 @@ class App {
     // iteration to know when to call theme::apply_style() again, since only
     // it knows the current DPI scale to pass it.
     [[nodiscard]] bool consume_theme_change() noexcept;
+    // The UI scale chosen on the Settings tab (one of ui_scales), which the
+    // window owner multiplies into the display's DPI scale.
+    [[nodiscard]] float ui_scale() const noexcept { return ui_scale_; }
 
   private:
     // The numbers are what settings.hpp saves; 2 was the Playlist tab, which is
     // now the Player tab's Playlist mode.
-    enum class Tab : int { player = 0, live = 1, recorder = 3, adb = 4 };
+    enum class Tab : int { player = 0, live = 1, recorder = 3, adb = 4, settings = 5 };
     // What the Player tab plays: the one loaded script, or a playlist.
     enum class PlayerMode : int { script = 0, playlist = 1 };
     // The Player tab actions whose key can be remapped; the value indexes
@@ -202,7 +206,7 @@ class App {
     void draw_sidebar();
     void draw_sidebar_collapsed();
     void draw_sidebar_splitter(float height);
-    // The Live/Player/Recorder/ADB switch, as a left icon rail (not a
+    // The Live/Player/Recorder/ADB/Settings switch, as a left icon rail (not a
     // top segmented control), so it reads as part of the window's chrome
     // rather than a tab bar competing with each screen's own content.
     void draw_nav_rail();
@@ -237,7 +241,7 @@ class App {
     // preview, and the media keys and status line below it.
     void draw_live_side_keys(ImVec2 origin, float width, float phone_top, float phone_height);
     void draw_live_media_bar(float width);
-    void draw_live_status();
+    void draw_live_status(float width);
     // Whether a Toggle key press would reach the phone right now.
     [[nodiscard]] bool live_toggle_usable() const;
     void live_tap_key(uint16_t usage);
@@ -273,6 +277,27 @@ class App {
     void draw_playlist_picker(float width);
     void draw_recorder();
     void draw_record_coords(bool locked);
+    void draw_settings();
+    void draw_presets_card();
+    void draw_appearance_card();
+    void draw_glass_card();
+    void draw_background_card();
+    void draw_live_look_card();
+    void draw_layout_card();
+    void refresh_themes();
+    // Applies every look setting (the part a preset holds) from `settings`.
+    void apply_look(const Settings& settings);
+    // A short notice in the bottom-right corner (see draw_toasts()), when
+    // notifications are on.
+    void push_toast(aoap::Severity severity, std::string text);
+    // Turns new warnings and errors in the activity log into notices.
+    void collect_toasts();
+    void draw_toasts();
+    // Loads `path` as the window's background picture and switches to it;
+    // logs why not when it cannot.
+    void load_background(const std::string& path);
+    // The background's colour this frame: the theme's, or the chosen one.
+    [[nodiscard]] ImU32 background_color() const;
     void draw_log(float height);
 
     // Actions.
@@ -396,8 +421,51 @@ class App {
     // is already connected and the setup cards are not needed for a while.
     bool sidebar_collapsed_{};
     bool dark_theme_{true};
-    // Set by the header's theme toggle, cleared by consume_theme_change().
+    // Set by the Settings tab's theme switch, cleared by consume_theme_change().
     bool theme_dirty_{};
+    // The Settings tab; see Settings for what each means.
+    int accent_{0xB4A5FF};
+    float glass_{0.4f};
+    float gloss_{1.0f};
+    float rim_{1.0f};
+    int card_rounding_{12};
+    bool motion_{true};
+    float ui_scale_{1.0f};
+    bool sidebar_right_{};
+    bool log_hidden_{};
+    bool toasts_enabled_{true};
+    // The tab drawn last frame, and when the tab last changed, for the
+    // short fade-in of the new one.
+    static constexpr double tab_fade_seconds = 0.15;
+    Tab shown_tab_{Tab::live};
+    double tab_changed_at_{-1.0};
+    // Notices on screen, oldest first; see push_toast().
+    struct Toast {
+        uint64_t id;
+        aoap::Severity severity;
+        std::string text;
+        double shown_at;
+        double hide_at;
+        bool dismissed; // clicked away: fading out, hover no longer holds it
+    };
+    std::deque<Toast> toasts_;
+    uint64_t toast_next_id_{};
+    uint64_t toast_log_seen_{}; // log_.version() already turned into notices
+    // Look presets (themes/<name>.theme).
+    std::vector<std::string> theme_names_;
+    std::string theme_selected_;
+    std::string theme_name_input_;
+    std::string theme_pending_delete_;
+    std::string theme_current_; // the last one applied or saved, shown only
+    bool themes_stale_{true};   // re-read the list the next time it is drawn
+    int bg_mode_{}; // 0 theme colour, 1 bg_color_, 2 picture (see backdrop.hpp)
+    int bg_color_{0x14131A};
+    int bg_blur_{6};
+    float bg_dim_{0.4f};
+    // The picture to show, kept even when it could not be loaded (a drive
+    // not mounted yet), so the next start tries it again.
+    std::string bg_image_;
+    std::string bg_image_input_;
     // Last windowed geometry main() reported (see set_window_geometry());
     // 0 width/height means "never reported yet".
     int window_x_{};
@@ -514,10 +582,12 @@ class App {
     int live_ratio_w_{};
     int live_ratio_h_{};
     int live_rotation_{};
+    bool live_phone_glass_{}; // the phone's screen is glass instead of black
+    float live_phone_clear_{0.4f};
+    int live_phone_rounding_{}; // unscaled pixels
     bool live_fullscreen_{};
-    // Which folded rows of the Live panel are open.
     uint16_t live_held_key_{}; // the side key held down now, 0 for none
-    bool live_fold_image_{};
+    // Which folded rows of the Live panel are open.
     bool live_fold_release_{};
     bool live_fold_shape_{};
     // The phone rectangle as last drawn, so full screen knows where its side

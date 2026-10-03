@@ -61,23 +61,31 @@ bool read_file(const std::string& path, std::vector<unsigned char>& out) {
 
 } // namespace
 
-LiveImageOverlay::~LiveImageOverlay() { clear(); }
-
-std::string LiveImageOverlay::load(const std::string& path) {
+std::string decode_image(const std::string& path, DecodedImage& image) {
     std::vector<unsigned char> bytes;
     if (!read_file(path, bytes) || bytes.empty())
         return "Could not read \"" + path + "\".";
-
-    int width = 0;
-    int height = 0;
     int channels = 0;
     unsigned char* pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
-                                                  &width, &height, &channels, 4);
+                                                  &image.width, &image.height, &channels, 4);
     if (pixels == nullptr) {
         const char* reason = stbi_failure_reason();
         return "Could not decode \"" + path + "\"" +
                (reason != nullptr ? std::string(": ") + reason : std::string()) + ".";
     }
+    image.pixels = {pixels, [](void* memory) { stbi_image_free(memory); }};
+    return {};
+}
+
+LiveImageOverlay::~LiveImageOverlay() { clear(); }
+
+std::string LiveImageOverlay::load(const std::string& path) {
+    DecodedImage image;
+    std::string error = decode_image(path, image);
+    if (!error.empty())
+        return error;
+    const int width = image.width;
+    const int height = image.height;
 
     clear();
     GLuint texture = 0;
@@ -87,9 +95,9 @@ std::string LiveImageOverlay::load(const std::string& path) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, pixels);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE,
+                 image.pixels.get());
     glBindTexture(GL_TEXTURE_2D, 0);
-    stbi_image_free(pixels);
 
     texture_ = texture;
     pixel_width_ = width;

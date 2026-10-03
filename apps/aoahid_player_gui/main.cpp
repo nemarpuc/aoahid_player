@@ -306,7 +306,9 @@ int run() {
 
     scale = window_scale(window);
     gui::theme::set_mode(startup_settings.dark_theme);
-    gui::theme::setup(scale);
+    gui::theme::set_accent(static_cast<unsigned>(startup_settings.accent));
+    gui::theme::card_rounding = static_cast<float>(startup_settings.card_rounding);
+    gui::theme::setup(scale * startup_settings.ui_scale);
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     if (!ImGui_ImplOpenGL3_Init(nullptr)) {
         fatal("OpenGL could not be initialised. OpenGL 3.0 or newer is required.");
@@ -428,12 +430,13 @@ int run() {
                 }
             }
         }
+        // The Settings tab's UI scale multiplies the display's own.
         if (g_scale_changed.exchange(false)) {
             scale = window_scale(window);
-            gui::theme::apply_style(scale);
+            gui::theme::apply_style(scale * app->ui_scale());
         }
         if (app->consume_theme_change())
-            gui::theme::apply_style(scale);
+            gui::theme::apply_style(scale * app->ui_scale());
 
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplGlfw_NewFrame();

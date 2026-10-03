@@ -81,7 +81,7 @@ jobs:
           # time); xvfb and Mesa let the GUI be started once as a smoke test.
           sudo apt-get install --no-install-recommends -y ninja-build patchelf pkg-config \
             libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libxext-dev xvfb libgl1-mesa-dri libegl1
+            libxcursor-dev libxi-dev libxext-dev libdbus-1-dev xvfb libgl1-mesa-dri libegl1
 
       - name: Resolve the release version
         id: version
@@ -204,6 +204,7 @@ jobs:
                           third-party/libaoahid/third-party/libusb-copyright \
                           third-party/DearImGui-LICENSE.txt third-party/GLFW-LICENSE.md \
                           third-party/cpp-httplib-LICENSE.txt third-party/Roboto-LICENSE.txt \
+                          third-party/nativefiledialog-extended-LICENSE.txt \
                           third-party/stb_image-LICENSE.txt \
                           third-party/aoahid_adb_proxy-LICENSE.txt; do
             if [ ! -e "$stage/$required" ]; then

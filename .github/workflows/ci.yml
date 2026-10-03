@@ -53,7 +53,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --no-install-recommends -y ninja-build pkg-config \
             libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev \
-            libxcursor-dev libxi-dev libxext-dev xvfb libgl1-mesa-dri libegl1
+            libxcursor-dev libxi-dev libxext-dev libdbus-1-dev xvfb libgl1-mesa-dri libegl1
 
       - name: Download libaoahid release asset
         shell: bash

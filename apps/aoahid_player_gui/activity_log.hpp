@@ -32,6 +32,18 @@ class ActivityLog final : public aoap::EventSink {
         for (const Entry& entry : entries_)
             visitor(entry);
     }
+    // Visits only what arrived after version `seen`, and returns the version
+    // that matches, so the caller can pass it back next time.
+    template <typename Visitor>
+    uint64_t visit_since(const uint64_t seen, Visitor&& visitor) const {
+        const std::lock_guard lock(mutex_);
+        const uint64_t fresh = version_ - seen;
+        const size_t skip =
+            fresh >= entries_.size() ? 0 : entries_.size() - static_cast<size_t>(fresh);
+        for (size_t index = skip; index < entries_.size(); ++index)
+            visitor(entries_[index]);
+        return version_;
+    }
     [[nodiscard]] uint64_t version() const;
     // The newest error or warning, for the status line; empty when none.
     [[nodiscard]] Entry latest_problem() const;

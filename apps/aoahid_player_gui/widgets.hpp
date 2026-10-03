@@ -27,7 +27,7 @@ enum class Icon {
     expand,
     monitor, // a screen with a small stand, for "Live"
     list,    // three lines, for "Playlist"
-    sun,     // a small circle with rays, for the light/dark theme toggle
+    gear,    // a toothed wheel, for "Settings"
     terminal, // ">_", for "ADB"
     play_pause,     // play triangle beside pause bars
     prev,           // |<  previous track
@@ -60,6 +60,19 @@ void begin_frame_animations();
 // fills the remaining space minus that much.
 bool begin_card(const char* id, const char* title = nullptr, float height = 0.0f);
 void end_card();
+// Paints the current child window as a glass card: the blurred background
+// picture behind it (see backdrop.hpp), its translucent fill, edge, and
+// sheen. begin_card() calls it; a card made with BeginChild() directly calls
+// it right after, with ImGuiCol_Border pushed clear.
+void paint_card();
+// The same glass on any rectangle of `list`, within its current clip;
+// `fill` replaces the cards' tint (theme::surface) when nonzero.
+void paint_glass(ImDrawList* list, ImVec2 p0, ImVec2 p1, float rounding, ImU32 fill = 0);
+// Puts glass behind every popup and tooltip of this frame (ImGui's own
+// included: combos, the colour picker), on an opaque base so what they cover
+// does not show through. Call once, after the last window and before
+// ImGui::Render().
+void glass_popups();
 
 // Card heading, aligned to a frame-height row so controls can sit beside it.
 void card_title(const char* text);
@@ -96,6 +109,9 @@ bool toggle(const char* label, bool* value);
 void draw_icon(ImDrawList* list, Icon icon, ImVec2 center, float size, ImU32 color);
 // A check box drawn at `p0`, for custom rows.
 void draw_check(ImDrawList* list, ImVec2 p0, float size, bool checked, ImU32 fill = 0);
+// A hairline of light just inside the top edge of p0..p1, between its
+// rounded corners, so the surface reads as glossy.
+void draw_sheen(ImDrawList* list, ImVec2 p0, ImVec2 p1, float rounding);
 
 // Draws `text` at `pos` in `color`, truncating with a trailing "..." if it
 // would exceed `max_width`. For raw ImDrawList text (device names, serials)

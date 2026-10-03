@@ -299,10 +299,7 @@ void App::draw_playlist_scripts_card() {
 void App::draw_playlist_picker(const float width) {
     ImGui::SetNextWindowSize(ImVec2(width, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(8), px(8)));
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, theme::surface_hi);
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
     const bool open = ImGui::BeginPopup("##playlist_picker", ImGuiWindowFlags_NoMove);
-    ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
     if (!open)
         return;

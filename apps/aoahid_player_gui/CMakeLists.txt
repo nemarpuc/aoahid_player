@@ -1,9 +1,10 @@
-# Dear ImGui front end. Dear ImGui and GLFW are fetched at pinned, hashed
-# releases and linked statically, so the program needs nothing beyond the
-# system's OpenGL driver and the libaoahid runtime next to it.
+# Dear ImGui front end. Dear ImGui, GLFW, and nativefiledialog-extended are
+# fetched at pinned, hashed releases and linked statically, so the program
+# needs nothing beyond the system's OpenGL driver (and, on Linux, libdbus-1)
+# and the libaoahid runtime next to it.
 #
-# To build offline, point FETCHCONTENT_SOURCE_DIR_IMGUI / _GLFW at local
-# copies of the same releases.
+# To build offline, point FETCHCONTENT_SOURCE_DIR_IMGUI / _GLFW / _NFD at
+# local copies of the same releases.
 include(FetchContent)
 if(POLICY CMP0135)
   cmake_policy(SET CMP0135 NEW) # extracted files get the extraction time
@@ -49,6 +50,22 @@ set(HTTPLIB_USE_BROTLI_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 set(HTTPLIB_USE_ZSTD_IF_AVAILABLE OFF CACHE BOOL "" FORCE)
 FetchContent_MakeAvailable(httplib)
 
+# nativefiledialog-extended opens the system's own file picker for the
+# background and reference images. On Linux it goes through
+# xdg-desktop-portal over D-Bus (libdbus-1), so neither GTK nor a Wayland
+# client library is pulled in; the GUI's window is X11 (XWayland) anyway.
+FetchContent_Declare(nfd
+  URL https://github.com/btzy/nativefiledialog-extended/archive/refs/tags/v1.4.1.tar.gz
+  URL_HASH SHA256=4a01eafa921169f009f3e83bea8e287d9e5d0b94ca9064cf7f0a546652d7c884
+)
+set(NFD_PORTAL ON CACHE BOOL "" FORCE)
+set(NFD_WAYLAND OFF CACHE BOOL "" FORCE)
+set(NFD_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(NFD_INSTALL OFF CACHE BOOL "" FORCE)
+# Its option() calls keep the values set above (and BUILD_SHARED_LIBS OFF).
+set(CMAKE_POLICY_DEFAULT_CMP0077 NEW)
+FetchContent_MakeAvailable(nfd)
+
 add_library(aoahid_player_imgui STATIC
   "${imgui_dir}/imgui.cpp"
   "${imgui_dir}/imgui_draw.cpp"
@@ -89,8 +106,10 @@ add_executable(aoahid_player_gui WIN32
   app_player.cpp
   app_playlist.cpp
   app_recorder.cpp
+  app_settings.cpp
   app_shell.cpp
   activity_log.cpp
+  backdrop.cpp
   control_api.cpp
   engine.cpp
   keymap.cpp
@@ -104,7 +123,7 @@ add_executable(aoahid_player_gui WIN32
 target_include_directories(aoahid_player_gui PRIVATE
   "${PROJECT_SOURCE_DIR}/third_party/stb")
 target_link_libraries(aoahid_player_gui PRIVATE aoahid_player_core aoahid_player_imgui
-  httplib::httplib)
+  httplib::httplib nfd::nfd)
 target_compile_definitions(aoahid_player_gui PRIVATE
   AOAHID_PLAYER_VERSION="${PROJECT_VERSION}")
 if(MSVC)
@@ -122,6 +141,8 @@ install(FILES "${glfw_SOURCE_DIR}/LICENSE.md"
   DESTINATION third-party RENAME GLFW-LICENSE.md COMPONENT runtime)
 install(FILES "${httplib_SOURCE_DIR}/LICENSE"
   DESTINATION third-party RENAME cpp-httplib-LICENSE.txt COMPONENT runtime)
+install(FILES "${nfd_SOURCE_DIR}/LICENSE"
+  DESTINATION third-party RENAME nativefiledialog-extended-LICENSE.txt COMPONENT runtime)
 install(FILES "${PROJECT_SOURCE_DIR}/third_party/licenses/Roboto-LICENSE.txt"
   DESTINATION third-party COMPONENT runtime)
 install(FILES "${PROJECT_SOURCE_DIR}/third_party/licenses/stb_image-LICENSE.txt"

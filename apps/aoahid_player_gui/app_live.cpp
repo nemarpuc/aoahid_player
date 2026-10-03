@@ -533,7 +533,7 @@ void App::draw_live() {
     ImGui::BeginGroup();
     draw_live_surface(ImVec2(left_width, surface_height));
     draw_live_media_bar(left_width);
-    draw_live_status();
+    draw_live_status(left_width);
     ImGui::EndGroup();
     ImGui::SameLine(0, spacing);
     draw_live_controls(ImVec2(panel_width, available.y));
@@ -543,20 +543,17 @@ void App::draw_live_surface(const ImVec2 size) {
     const aoap::ProfileSetup setup = engine_.connected_setup();
     const float aspect = live_preview_aspect();
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::rgb(0x000000));
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
+    // Around the phone is the window's own background, with no frame.
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     // NoScrollbar/NoScrollWithMouse: the wheel belongs to mouse mode (it
     // scrolls on the phone), never to this child window. Without this, a
     // captured pointer's wheel could scroll the surface itself once its
     // content (the phone rectangle) is taller than the available space.
-    ImGui::BeginChild("##live_surface", size,
-                      live_fullscreen_ ? ImGuiChildFlags_None : ImGuiChildFlags_Borders,
+    ImGui::BeginChild("##live_surface", size, ImGuiChildFlags_None,
                       ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
 
-    // The phone, centred and as large as it fits, outlined on a black surface.
+    // The phone, centred and as large as it fits, black (or glass) and outlined.
     const ImVec2 area = ImGui::GetContentRegionAvail();
     // Full screen keeps just 5px around the phone, so the ratio is kept and
     // an edge shows on both axes even when it fits almost exactly.
@@ -580,8 +577,16 @@ void App::draw_live_surface(const ImVec2 size) {
     live_phone_max_ = p1;
     ImDrawList* list = ImGui::GetWindowDrawList();
 
-    // A simple, clean white border on all four edges.
-    list->AddRect(p0, p1, ImGui::GetColorU32(IM_COL32(255, 255, 255, 200)), 0.0f, px(1.5f));
+    // Black or glass, with a simple, clean white border; the corners are
+    // rounded as set, never past half the shorter side.
+    const float rounding =
+        std::min(px(static_cast<float>(live_phone_rounding_)), std::min(width, height) * 0.5f);
+    if (live_phone_glass_)
+        ui::paint_glass(list, p0, p1, rounding, theme::glass_fill(live_phone_clear_));
+    else
+        list->AddRectFilled(p0, p1, IM_COL32(0, 0, 0, 255), rounding);
+    list->AddRect(p0, p1, ImGui::GetColorU32(IM_COL32(255, 255, 255, 200)), rounding,
+                  px(1.5f));
 
     const bool running = engine_.live_active();
     // The whole surface takes the pointer while live control is on.
@@ -929,7 +934,7 @@ void App::draw_live_media_bar(const float width) {
     ImGui::PopStyleVar();
 }
 
-void App::draw_live_status() {
+void App::draw_live_status(const float width) {
     // Built in a fixed buffer: this runs every frame.
     char hint[256];
     size_t used = 0;
@@ -962,7 +967,7 @@ void App::draw_live_status() {
     }
     ImGui::PushFont(nullptr, theme::font_small);
     ui::draw_text_ellipsized(ImGui::GetWindowDrawList(), ImGui::GetCursorScreenPos(),
-                             theme::text_dim, hint, ImGui::GetContentRegionAvail().x);
+                             theme::text_dim, hint, width);
     ImGui::Dummy(ImVec2(0, ImGui::GetTextLineHeight()));
     ImGui::PopFont();
 }
@@ -1000,13 +1005,13 @@ void App::draw_live_toggles() {
 }
 
 void App::draw_live_log(const ImVec2 size) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::surface);
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(12), px(10)));
     ImGui::BeginChild("##live_log", size,
                       ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor();
+    ui::paint_card();
 
     ui::caption("Input");
     ImGui::SameLine();
@@ -1260,43 +1265,12 @@ void App::draw_live_controls(const ImVec2 size) {
         return *open;
     };
 
-    // Reference image: an optional picture over the preview (a screenshot
-    // works well) to line touches up against. Position, size, rotation, and
-    // opacity persist between runs like any other setting; the image file
-    // itself is reloaded from its saved path at startup if still there.
-    if (fold("image", "Reference image", live_image_.loaded() ? "Loaded" : "None",
-             &live_fold_image_)) {
-        ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x);
-        ImGui::InputTextWithHint("##live_image_path", "Path to a .png/.jpg/.bmp image...",
-                                 &live_image_path_input_);
-        if (ui::button("Load", ImVec2(px(64), 0)) && !live_image_path_input_.empty()) {
-            const std::string error = live_image_.load(live_image_path_input_);
-            if (!error.empty())
-                log_.message(aoap::Severity::warning, error);
-        }
-        ImGui::SameLine(0, px(6));
-        ImGui::BeginDisabled(!live_image_.loaded());
-        if (ui::button("Clear", ImVec2(px(64), 0)))
-            live_image_.clear();
-        ImGui::SameLine(0, px(12));
-        ui::toggle("Lock image", &live_image_.locked);
-        ImGui::EndDisabled();
-        if (live_image_.loaded()) {
-            small_dim(live_image_.locked
-                          ? "Locked: touches and clicks pass straight through it."
-                          : "Drag it to move, its corner handle to resize, its top handle to "
-                            "rotate.");
-            gap(2);
-            ui::caption("Opacity");
-            float opacity_percent = live_image_.opacity() * 100.0f;
-            if (ui::slider("##live_image_opacity", &opacity_percent, 0.0f, 100.0f, 0, "%", 1.0f))
-                live_image_.set_opacity(opacity_percent / 100.0f);
-            gap(2);
-            if (ui::button("Reset size/rotation", ImVec2(px(150), 0)))
-                live_image_.reset_transform();
-        } else {
-            small_dim("Load a screenshot, or drop an image file on the preview.");
-        }
+    // The reference image is set up on the Settings tab; locking it is kept
+    // here too, so it can be frozen right after placing it on the preview.
+    if (live_image_.loaded()) {
+        ui::toggle("Lock reference image", &live_image_.locked);
+        ImGui::SetItemTooltip("Locked, touches and clicks pass straight through the image. "
+                              "Choose or remove it on the Settings tab.");
     }
 
     // Mouse mode's release key: Escape by default, but any key can take over

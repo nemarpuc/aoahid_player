@@ -3,9 +3,21 @@
 
 #include <imgui.h>
 
+#include <memory>
 #include <string>
 
 namespace gui {
+
+// A decoded picture: 8-bit RGBA rows, top first.
+struct DecodedImage {
+    std::unique_ptr<unsigned char, void (*)(void*)> pixels{nullptr, nullptr};
+    int width{};
+    int height{};
+};
+
+// Reads and decodes a .png/.jpg/.bmp file. Returns an empty string on
+// success, or a message to show the user.
+[[nodiscard]] std::string decode_image(const std::string& path, DecodedImage& image);
 
 // One reference picture shown over the Live preview (e.g. a screenshot of
 // the phone's UI), so live control can be aimed without guessing. Purely a

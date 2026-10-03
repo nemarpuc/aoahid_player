@@ -10,6 +10,11 @@
 
 namespace gui {
 
+// The UI scale choices (Small, Normal, Large, Larger), multiplied into the
+// display's own DPI scale.
+inline constexpr float ui_scales[] = {0.85f, 1.0f, 1.15f, 1.3f};
+[[nodiscard]] float nearest_ui_scale(float scale);
+
 // What the GUI remembers between runs: the profile choices and the adb
 // option. Defaults are what a first run shows.
 struct Settings {
@@ -51,8 +56,34 @@ struct Settings {
     float sidebar_width{392.0f};
     // Whether Devices/Profiles/Connect are collapsed to a slim rail.
     bool sidebar_collapsed{};
-    // Dark theme (purple accent) or light theme (teal accent).
+    // Dark theme or light theme.
     bool dark_theme{true};
+    // The accent colour every accent shade is made from (0xRRGGBB).
+    int accent{0xB4A5FF};
+    // How much the cards let the background through, 0 (opaque) to 0.7.
+    float glass{0.4f};
+    // The glass gloss and rim strengths, 0 to 2 (1 = the theme's own), and
+    // the cards' corner radius in unscaled pixels, 0 to 24.
+    float gloss{1.0f};
+    float rim{1.0f};
+    int card_rounding{12};
+    // A short fade when the tab changes.
+    bool motion{true};
+    // One of ui_scales.
+    float ui_scale{1.0f};
+    // Layout: the sidebar on the right instead of the left, the Activity
+    // panel hidden, and notifications for problems and the connection.
+    bool sidebar_right{};
+    bool log_hidden{};
+    bool toasts{true};
+    // The window's background: 0 the theme's colour, 1 `bg_color`, 2 the
+    // picture at `bg_image` (blurred by `bg_blur` window pixels behind the
+    // cards, and dimmed by `bg_dim` from 0 to 0.8).
+    int bg_mode{};
+    int bg_color{0x14131A}; // 0xRRGGBB
+    std::string bg_image;
+    int bg_blur{6};
+    float bg_dim{0.4f};
 
     // Window geometry in OS pixels. 0 width/height means "unset": main.cpp
     // then falls back to its own centred, monitor-fitted default instead of
@@ -66,8 +97,9 @@ struct Settings {
     // 1 normalized.
     int record_coords{};
 
-    // 0 = Player, 1 = Live, 3 = Recorder, 4 = ADB (App::Tab's numbers); Live by
-    // default. 2 was the Playlist tab and opens the Player in Playlist mode.
+    // 0 = Player, 1 = Live, 3 = Recorder, 4 = ADB, 5 = Settings (App::Tab's
+    // numbers); Live by default. 2 was the Playlist tab and opens the Player
+    // in Playlist mode.
     int tab{1};
     // 0 = Script, 1 = Playlist (App::PlayerMode).
     int player_mode{};
@@ -90,6 +122,12 @@ struct Settings {
     int live_ratio_w{};
     int live_ratio_h{};
     int live_rotation{};
+    // Whether the phone's screen in the Live preview is glass instead of black.
+    bool live_phone_glass{};
+    // How clear that glass is, 0 (solid) to 1, and the phone's corner
+    // radius in unscaled pixels, 0 to 60, glass or not.
+    float live_phone_clear{0.4f};
+    int live_phone_rounding{};
 
     // The Live tab's optional reference image overlay; see
     // LiveImageOverlay::State. Empty path means none was loaded.
@@ -99,6 +137,7 @@ struct Settings {
     float live_image_half_width{0.35f}; // fraction of the preview's width
     float live_image_rotation{0.0f};    // radians
     float live_image_opacity{1.0f};
+    bool live_image_locked{};
 
     bool operator==(const Settings&) const = default;
 };
@@ -114,5 +153,18 @@ Settings load_settings(const std::filesystem::path& path);
 // leaves a half-written file.
 bool save_settings(const std::filesystem::path& path, const Settings& settings,
                    std::string& error);
+
+// Look presets: themes/<name>.theme next to the executable, holding only the
+// settings about how the window looks (theme, accent, glass, background,
+// phone screen, layout).
+std::filesystem::path theme_directory();
+// Names of the saved presets, sorted.
+std::vector<std::string> list_themes();
+// Why `name` cannot be a preset's name, or empty if it can.
+[[nodiscard]] std::string theme_name_problem(const std::string& name);
+bool save_theme(const std::string& name, const Settings& settings, std::string& error);
+// Overwrites only the settings the preset holds, over `settings`.
+bool load_theme(const std::string& name, Settings& settings, std::string& error);
+bool delete_theme(const std::string& name, std::string& error);
 
 } // namespace gui

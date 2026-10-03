@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "widgets.hpp"
 
+#include "backdrop.hpp"
 #include "theme.hpp"
 
 #include <imgui_internal.h>
@@ -25,6 +26,24 @@ ImU32 with_alpha(const ImU32 color, const unsigned alpha) {
     return (color & ~IM_COL32_A_MASK) | (static_cast<ImU32>(alpha) << IM_COL32_A_SHIFT);
 }
 
+// Scales the alpha of the vertices added since `start` from `top` at `y0` to
+// `bottom` at `y1` (out of 255). Scaling, not replacing, keeps the zero-alpha
+// fringe ImGui adds for anti-aliasing.
+void fade_vertical(ImDrawList* list, const int start, const float y0, const float y1,
+                   const unsigned top, const unsigned bottom) {
+    const float span = std::max(y1 - y0, 1.0f);
+    for (int index = start; index < list->VtxBuffer.Size; ++index) {
+        ImDrawVert& vertex = list->VtxBuffer[index];
+        const float t = std::clamp((vertex.pos.y - y0) / span, 0.0f, 1.0f);
+        const float scale = (static_cast<float>(top) +
+                             (static_cast<float>(bottom) - static_cast<float>(top)) * t) /
+                            255.0f;
+        const auto alpha = static_cast<ImU32>(
+            static_cast<float>((vertex.col >> IM_COL32_A_SHIFT) & 0xFFU) * scale + 0.5f);
+        vertex.col = (vertex.col & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT);
+    }
+}
+
 struct Colors {
     ImU32 fill;
     ImU32 fill_hover;
@@ -39,7 +58,7 @@ Colors colors_for(const Tone tone) {
     case Tone::record:
         return {theme::field, theme::field_hover, theme::field_active, theme::text};
     case Tone::danger:
-        return {theme::field, theme::danger_soft, theme::rgb(0xE0564E, 56), theme::danger};
+        return {theme::field, theme::danger_soft, with_alpha(theme::danger, 56), theme::danger};
     case Tone::quiet:
         return {0, theme::field_hover, theme::field_active, theme::text_dim};
     case Tone::secondary:
@@ -113,21 +132,85 @@ void begin_frame_animations() { g_animations_active = false; }
 bool animations_active() { return g_animations_active; }
 
 bool begin_card(const char* id, const char* title, const float height) {
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, theme::surface);
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border);
+    ImGui::PushStyleColor(ImGuiCol_Border, IM_COL32(0, 0, 0, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(16), px(12)));
     ImGuiChildFlags flags = ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding;
     if (height == 0.0f)
         flags |= ImGuiChildFlags_AutoResizeY;
     const bool open = ImGui::BeginChild(id, ImVec2(0, height), flags);
     ImGui::PopStyleVar();
-    ImGui::PopStyleColor(2);
+    ImGui::PopStyleColor();
+    if (open)
+        paint_card();
     if (open && title != nullptr)
         card_title(title);
     return open;
 }
 
 void end_card() { ImGui::EndChild(); }
+
+void paint_glass(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float rounding,
+                 const ImU32 fill) {
+    // Every colour goes through faded(), so a fading parent (a notice, a
+    // new tab) fades its glass with it.
+    backdrop::draw_frosted(list, p0, p1, rounding);
+    list->AddRectFilled(p0, p1, faded(fill != 0 ? fill : theme::surface), rounding);
+    list->AddRect(p0, p1, faded(theme::border), rounding);
+    // The gloss covers only the top 60 % (capped, so a tall panel keeps a
+    // short highlight) and fades to nothing at its lower edge; the rim runs
+    // from bright at the top to faint.
+    const float gloss_end = p0.y + std::min((p1.y - p0.y) * 0.6f, px(160));
+    int start = list->VtxBuffer.Size;
+    list->AddRectFilled(p0, ImVec2(p1.x, gloss_end), faded(IM_COL32_WHITE), rounding,
+                        ImDrawFlags_RoundCornersTop);
+    fade_vertical(list, start, p0.y, gloss_end, theme::gloss_alpha, 0);
+    start = list->VtxBuffer.Size;
+    list->AddRect(p0, p1, faded(IM_COL32_WHITE), rounding);
+    fade_vertical(list, start, p0.y, p1.y, theme::rim_top_alpha, theme::rim_bottom_alpha);
+    draw_sheen(list, p0, p1, rounding);
+}
+
+void glass_popups() {
+    for (ImGuiWindow* window : GImGui->Windows) {
+        if (!window->Active || window->Hidden ||
+            (window->Flags & (ImGuiWindowFlags_Popup | ImGuiWindowFlags_Tooltip)) == 0 ||
+            (window->Flags & ImGuiWindowFlags_ChildWindow) != 0)
+            continue;
+        ImDrawList* list = window->DrawList;
+        const ImVec2 p0 = window->Pos;
+        const ImVec2 p1(p0.x + window->Size.x, p0.y + window->Size.y);
+        // The glass goes into draw commands of its own, which are then moved
+        // in front of the window's content: a draw list renders its commands
+        // in order, and each carries its own vertex and index offsets.
+        list->AddDrawCmd();
+        const int first = list->CmdBuffer.Size - 1;
+        list->PushClipRect(p0, p1);
+        backdrop::draw_base(list, p0, p1, window->WindowRounding);
+        paint_glass(list, p0, p1, window->WindowRounding);
+        list->PopClipRect();
+        std::rotate(list->CmdBuffer.Data, list->CmdBuffer.Data + first,
+                    list->CmdBuffer.Data + list->CmdBuffer.Size);
+    }
+}
+
+void paint_card() {
+    const ImVec2 p0 = ImGui::GetWindowPos();
+    const ImVec2 p1(p0.x + ImGui::GetWindowWidth(), p0.y + ImGui::GetWindowHeight());
+    const float rounding = ImGui::GetStyle().ChildRounding;
+    ImDrawList* list = ImGui::GetWindowDrawList();
+    // The card's own edge sits outside its content clip, so clip to the card
+    // instead, but never past what the parent shows (a scrolled-out card
+    // must not paint over its neighbours).
+    ImVec2 clip0 = p0;
+    ImVec2 clip1 = p1;
+    if (const ImGuiWindow* parent = ImGui::GetCurrentWindow()->ParentWindow) {
+        clip0 = ImMax(clip0, parent->ClipRect.Min);
+        clip1 = ImMin(clip1, parent->ClipRect.Max);
+    }
+    list->PushClipRect(clip0, clip1);
+    paint_glass(list, p0, p1, rounding);
+    list->PopClipRect();
+}
 
 void card_title(const char* text) {
     ImGui::AlignTextToFramePadding();
@@ -176,8 +259,10 @@ bool button(const char* label, const ImVec2 requested, const Tone tone) {
     ImDrawList* list = ImGui::GetWindowDrawList();
     const float rounding = ImGui::GetStyle().FrameRounding;
     const ImU32 fill = smoothed_color(ImGui::GetID(label), state_fill(colors, hovered, held));
-    if ((fill & IM_COL32_A_MASK) != 0U)
+    if ((fill & IM_COL32_A_MASK) != 0U) {
         list->AddRectFilled(p0, p1, faded(fill), rounding);
+        draw_sheen(list, p0, p1, rounding);
+    }
     if (tone == Tone::danger && hovered)
         list->AddRect(p0, p1, faded(with_alpha(theme::danger, 90)), rounding);
     // The record tone leads with a red dot; the pair is centred together.
@@ -202,8 +287,10 @@ bool icon_key(const char* id, const Icon icon, const ImVec2 size, const Tone ton
     const Colors colors = colors_for(tone);
     const ImU32 fill = smoothed_color(ImGui::GetID(id), state_fill(colors, hovered, held));
     ImDrawList* list = ImGui::GetWindowDrawList();
-    if ((fill & IM_COL32_A_MASK) != 0U)
+    if ((fill & IM_COL32_A_MASK) != 0U) {
         list->AddRectFilled(p0, p1, faded(fill), ImGui::GetStyle().FrameRounding);
+        draw_sheen(list, p0, p1, ImGui::GetStyle().FrameRounding);
+    }
     draw_icon(list, icon, ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f), size.y * 0.62f,
               faded(colors.text));
     return pressed;
@@ -397,20 +484,30 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
             list->AddLine(ImVec2(c.x, c.y - h), ImVec2(c.x, c.y + h), color, t * 1.15f);
         break;
     }
-    case Icon::sun: {
-        const float r = s * 0.20f;
-        list->AddCircle(c, r, color, 24, t);
-        const float inner = r + t * 1.4f;
-        const float outer = r + t * 3.2f;
-        for (int ray = 0; ray < 8; ++ray) {
-            const float a = static_cast<float>(ray) * (pi / 4.0f);
+    case Icon::gear: {
+        // Eight square teeth around a ring with a hole.
+        const float r = s * 0.24f;
+        const float tooth = s * 0.10f;
+        for (int index = 0; index < 8; ++index) {
+            const float a = static_cast<float>(index) * (pi / 4.0f);
             const ImVec2 d(std::cos(a), std::sin(a));
-            list->AddLine(ImVec2(c.x + d.x * inner, c.y + d.y * inner),
-                          ImVec2(c.x + d.x * outer, c.y + d.y * outer), color, t);
+            list->AddLine(ImVec2(c.x + d.x * r, c.y + d.y * r),
+                          ImVec2(c.x + d.x * (r + tooth * 1.3f), c.y + d.y * (r + tooth * 1.3f)),
+                          color, tooth * 1.6f);
         }
+        list->AddCircle(c, r, color, 24, t * 1.6f);
+        list->AddCircle(c, s * 0.09f, color, 16, t);
         break;
     }
     }
+}
+
+void draw_sheen(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float rounding) {
+    const float inset = std::max(rounding, 1.0f);
+    if (p1.x - p0.x <= inset * 2.0f)
+        return;
+    list->AddLine(ImVec2(p0.x + inset, p0.y + 1.0f), ImVec2(p1.x - inset, p0.y + 1.0f),
+                  faded(theme::sheen));
 }
 
 void draw_check(ImDrawList* list, const ImVec2 p0, const float size, const bool checked,

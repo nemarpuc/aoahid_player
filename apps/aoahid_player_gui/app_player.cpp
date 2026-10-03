@@ -200,10 +200,7 @@ void App::draw_script_card() {
 void App::draw_script_picker(const float width) {
     ImGui::SetNextWindowSize(ImVec2(width, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(8), px(8)));
-    ImGui::PushStyleColor(ImGuiCol_PopupBg, theme::surface_hi);
-    ImGui::PushStyleColor(ImGuiCol_Border, theme::border_strong);
     const bool open = ImGui::BeginPopup("##picker", ImGuiWindowFlags_NoMove);
-    ImGui::PopStyleColor(2);
     ImGui::PopStyleVar();
     if (!open)
         return;

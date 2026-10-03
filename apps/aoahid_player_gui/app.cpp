@@ -2,6 +2,7 @@
 #include "app.hpp"
 
 #include "app_common.hpp"
+#include "backdrop.hpp"
 #include "keymap.hpp"
 #include "theme.hpp"
 
@@ -89,6 +90,9 @@ App::App(std::function<void()> wake)
             wake();
             return result;
         });
+    // What startup logged is in the Activity panel; notices start from here
+    // on, unless that panel is hidden.
+    toast_log_seen_ = log_hidden_ ? 0 : log_.version();
 }
 
 App::~App() {
@@ -104,6 +108,7 @@ App::~App() {
     live_capture_pointer(false);
     live_paste_active_.store(false, std::memory_order_relaxed);
     persist_settings();
+    backdrop::clear();
     stop_recording();
     if (live_paste_thread_.joinable())
         live_paste_thread_.join();
@@ -117,7 +122,9 @@ bool App::settings_locked() const { return engine_.phase() != Phase::idle; }
 
 bool App::animating() const {
     if (engine_.busy() || recording() || startup_prep_task_.valid() || retry_task_.valid() ||
-        !adb_jobs_.empty() || adb_task_.valid() || ui::animations_active())
+        !adb_jobs_.empty() || adb_task_.valid() || ui::animations_active() || !toasts_.empty())
+        return true;
+    if (motion_ && ImGui::GetTime() - tab_changed_at_ < tab_fade_seconds)
         return true;
     if (engine_.phase() == Phase::playing &&
         (engine_.player().status().state != aoap::PlaybackState::paused ||
@@ -163,6 +170,21 @@ Settings App::current_settings() const {
     settings.sidebar_width = sidebar_width_;
     settings.sidebar_collapsed = sidebar_collapsed_;
     settings.dark_theme = dark_theme_;
+    settings.accent = accent_;
+    settings.glass = glass_;
+    settings.gloss = gloss_;
+    settings.rim = rim_;
+    settings.card_rounding = card_rounding_;
+    settings.motion = motion_;
+    settings.ui_scale = ui_scale_;
+    settings.sidebar_right = sidebar_right_;
+    settings.log_hidden = log_hidden_;
+    settings.toasts = toasts_enabled_;
+    settings.bg_mode = bg_mode_;
+    settings.bg_color = bg_color_;
+    settings.bg_image = bg_image_;
+    settings.bg_blur = bg_blur_;
+    settings.bg_dim = bg_dim_;
     settings.window_x = window_x_;
     settings.window_y = window_y_;
     settings.window_width = window_width_;
@@ -181,6 +203,9 @@ Settings App::current_settings() const {
     settings.live_ratio_w = live_ratio_w_;
     settings.live_ratio_h = live_ratio_h_;
     settings.live_rotation = live_rotation_;
+    settings.live_phone_glass = live_phone_glass_;
+    settings.live_phone_clear = live_phone_clear_;
+    settings.live_phone_rounding = live_phone_rounding_;
     const LiveImageOverlay::State image = live_image_.snapshot();
     settings.live_image_path = image.path;
     settings.live_image_x = image.center.x;
@@ -188,6 +213,7 @@ Settings App::current_settings() const {
     settings.live_image_half_width = image.half_width_frac;
     settings.live_image_rotation = image.rotation;
     settings.live_image_opacity = image.alpha;
+    settings.live_image_locked = live_image_.locked;
     return settings;
 }
 
@@ -219,19 +245,18 @@ void App::apply_settings(const Settings& settings) {
     player_keys_[2] = settings.player_restart_key;
     sidebar_width_ = settings.sidebar_width;
     sidebar_collapsed_ = settings.sidebar_collapsed;
-    // Not re-applied here: main() already set the theme from this same file
-    // before the window (and this App) existed, so the two never disagree.
-    dark_theme_ = settings.dark_theme;
+    apply_look(settings);
     window_x_ = settings.window_x;
     window_y_ = settings.window_y;
     window_width_ = settings.window_width;
     window_height_ = settings.window_height;
     // An old saved Playlist tab (2) is the Player's Playlist mode now.
     tab_ = settings.tab == 2   ? Tab::player
-           : settings.tab >= 0 && settings.tab <= 4 ? static_cast<Tab>(settings.tab)
+           : settings.tab >= 0 && settings.tab <= 5 ? static_cast<Tab>(settings.tab)
                                                     : Tab::live;
     player_mode_ = settings.tab == 2 || settings.player_mode == 1 ? PlayerMode::playlist
                                                                   : PlayerMode::script;
+    shown_tab_ = tab_;
     speed_ = settings.speed;
     loop_limit_ = settings.loop_limit;
     log_open_ = settings.log_open;
@@ -243,6 +268,8 @@ void App::apply_settings(const Settings& settings) {
     live_ratio_w_ = settings.live_ratio_w;
     live_ratio_h_ = settings.live_ratio_h;
     live_rotation_ = settings.live_rotation & 3;
+    live_image_.locked = settings.live_image_locked;
+    live_image_path_input_ = settings.live_image_path;
     if (!settings.live_image_path.empty()) {
         LiveImageOverlay::State image;
         image.path = settings.live_image_path;
@@ -442,6 +469,14 @@ void App::poll() {
             cursor_ = {};
         if (phase == Phase::connected && last_phase_ == Phase::connecting)
             connect_error_.clear();
+        // A fast handshake can go from idle to connected between two frames.
+        if (phase == Phase::connected &&
+            (last_phase_ == Phase::connecting || last_phase_ == Phase::idle))
+            push_toast(aoap::Severity::info, "Connected.");
+        if (phase == Phase::idle && (last_phase_ == Phase::disconnecting ||
+                                     last_phase_ == Phase::connected ||
+                                     last_phase_ == Phase::playing))
+            push_toast(aoap::Severity::info, "Disconnected.");
         // Disconnect has released every phone; see restart_adb_server().
         if (phase == Phase::idle &&
             (last_phase_ == Phase::disconnecting || last_phase_ == Phase::connected ||
@@ -452,6 +487,8 @@ void App::poll() {
     }
 
     if (ready(startup_prep_task_)) {
+        // Anything logged before this point is not startup's; notice it first.
+        collect_toasts();
         const StartupPrep result = startup_prep_task_.get();
         set_adb_status(result.status);
         touch_size_ = result.size_ok ? TouchSize::from_phone : TouchSize::not_read;
@@ -466,6 +503,9 @@ void App::poll() {
                          "Screen size not detected. " + result.size_error);
         }
         engine_.refresh();
+        // Still part of startup: shown in the Activity panel, not as notices.
+        if (!log_hidden_)
+            toast_log_seen_ = log_.version();
     }
     if (ready(retry_task_)) {
         const RetryPrep result = retry_task_.get();
@@ -850,21 +890,25 @@ void App::on_drop(std::vector<std::string> paths) {
             return;
         }
     }
-    if (tab_ == Tab::live) {
-        for (const std::string& path : paths) {
-            if (has_image_extension(path)) {
-                const std::string error = live_image_.load(path);
-                if (!error.empty())
-                    log_.message(aoap::Severity::warning, error);
-                return;
-            }
+    // An image is the Live preview's reference picture on the Live tab, and
+    // the window's background everywhere else.
+    for (const std::string& path : paths) {
+        if (!has_image_extension(path))
+            continue;
+        if (tab_ == Tab::live) {
+            const std::string error = live_image_.load(path);
+            if (!error.empty())
+                log_.message(aoap::Severity::warning, error);
+        } else {
+            load_background(path);
         }
-        log_.message(aoap::Severity::warning,
-                     "Drop a .csv script, or a .png/.jpg/.bmp image for the reference "
-                     "overlay, here.");
         return;
     }
-    log_.message(aoap::Severity::warning, "Only .csv scripts can be dropped here.");
+    log_.message(aoap::Severity::warning,
+                 tab_ == Tab::live
+                     ? "Drop a .csv script, or a .png/.jpg/.bmp image for the reference "
+                       "overlay, here."
+                     : "Drop a .csv script, or a .png/.jpg/.bmp image for the background, here.");
 }
 
 void App::on_focus() {
@@ -1073,6 +1117,9 @@ void App::frame() {
     if (forwarding_keys && !io.WantTextInput)
         io.ClearInputKeys();
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
+    backdrop::draw(ImGui::GetBackgroundDrawList(), viewport->Pos,
+                   ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y),
+                   bg_mode_ == 2, background_color(), bg_dim_);
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     // Full screen gives the preview the whole window, with no padding around it.
@@ -1093,63 +1140,118 @@ void App::frame() {
          !live_toggle_usable()))
         release_held_live_key();
 
+    collect_toasts();
     if (live_fullscreen_) {
         // Everything but the preview and its switches is out of the way.
         draw_live_fullscreen();
         if (!ImGui::IsAnyItemActive())
             persist_settings();
         ImGui::End();
+        draw_toasts();
+        ui::glass_popups();
         return;
     }
 
     draw_header();
     gap(4);
 
-    const float log_height = log_open_ ? px(136) : ImGui::GetFrameHeight() + px(30);
-    const float body = std::max(ImGui::GetContentRegionAvail().y - log_height -
-                                    ImGui::GetStyle().ItemSpacing.y - px(4),
-                                px(120));
+    // Fixed for this frame: the Settings tab can change it while it is drawn.
+    const bool log_hidden = log_hidden_;
+    const float log_height =
+        log_hidden ? 0.0f : log_open_ ? px(136) : ImGui::GetFrameHeight() + px(30);
+    const float body =
+        std::max(ImGui::GetContentRegionAvail().y -
+                     (log_hidden ? 0.0f : log_height + ImGui::GetStyle().ItemSpacing.y + px(4)),
+                 px(120));
 
-    ImGui::PushStyleColor(ImGuiCol_ChildBg, IM_COL32(0, 0, 0, 0));
+    // The sidebar (with its splitter) and the nav rail sit left of the main
+    // pane, or mirrored on its right.
     const float sidebar_shown_width = sidebar_collapsed_ ? px(44) : px(sidebar_width_);
-    ImGui::BeginChild("##sidebar", ImVec2(sidebar_shown_width, body), ImGuiChildFlags_None);
-    if (sidebar_collapsed_)
-        draw_sidebar_collapsed();
-    else
-        draw_sidebar();
-    ImGui::EndChild();
-    if (sidebar_collapsed_) {
-        ImGui::SameLine(0, px(12));
-    } else {
-        ImGui::SameLine(0, px(6));
-        draw_sidebar_splitter(body);
-        ImGui::SameLine(0, px(6));
-    }
-    ImGui::BeginChild("##navrail", ImVec2(px(52), body), ImGuiChildFlags_None);
-    draw_nav_rail();
-    ImGui::EndChild();
-    ImGui::SameLine(0, px(10));
-    ImGui::BeginChild("##main", ImVec2(0, body), ImGuiChildFlags_None);
-    ImGui::PopStyleColor();
-    {
+    const auto draw_side = [&] {
+        ImGui::BeginChild("##sidebar", ImVec2(sidebar_shown_width, body), ImGuiChildFlags_None);
+        if (sidebar_collapsed_)
+            draw_sidebar_collapsed();
+        else
+            draw_sidebar();
+        ImGui::EndChild();
+    };
+    const auto draw_splitter_gap = [&] {
+        if (sidebar_collapsed_) {
+            ImGui::SameLine(0, px(12));
+        } else {
+            ImGui::SameLine(0, px(6));
+            draw_sidebar_splitter(body);
+            ImGui::SameLine(0, px(6));
+        }
+    };
+    const auto draw_nav = [&] {
+        ImGui::BeginChild("##navrail", ImVec2(px(52), body), ImGuiChildFlags_None);
+        draw_nav_rail();
+        ImGui::EndChild();
+    };
+    const auto draw_main = [&](const float width) {
+        // A changed tab fades in and rises a few pixels, once, if motion is
+        // on. Checked here, after the nav rail may have changed it this frame.
+        if (tab_ != shown_tab_) {
+            shown_tab_ = tab_;
+            tab_changed_at_ = ImGui::GetTime();
+            themes_stale_ = true;
+        }
+        ImGui::BeginChild("##main", ImVec2(width, body), ImGuiChildFlags_None);
+        const float progress =
+            motion_ ? std::clamp(static_cast<float>((ImGui::GetTime() - tab_changed_at_) /
+                                                    tab_fade_seconds),
+                                 0.0f, 1.0f)
+                    : 1.0f;
+        const float eased = 1.0f - (1.0f - progress) * (1.0f - progress);
+        if (progress < 1.0f) {
+            ImGui::PushStyleVar(ImGuiStyleVar_Alpha, eased);
+            ImGui::SetCursorPosY(ImGui::GetCursorPosY() + px(6) * (1.0f - eased));
+        }
         if (tab_ == Tab::player)
             draw_player();
         else if (tab_ == Tab::live)
             draw_live();
         else if (tab_ == Tab::recorder)
             draw_recorder();
-        else
+        else if (tab_ == Tab::adb)
             draw_adb();
+        else
+            draw_settings();
+        if (progress < 1.0f)
+            ImGui::PopStyleVar();
+        ImGui::EndChild();
+    };
+    if (sidebar_right_) {
+        const float side_gap = sidebar_collapsed_ ? px(12) : px(6) * 2 + px(6);
+        // Never zero or negative (ImGui would read that as "the rest"), even
+        // with the widest sidebar at the largest UI size.
+        draw_main(std::max(ImGui::GetContentRegionAvail().x - px(10) - px(52) - side_gap -
+                               sidebar_shown_width,
+                           px(200)));
+        ImGui::SameLine(0, px(10));
+        draw_nav();
+        draw_splitter_gap();
+        draw_side();
+    } else {
+        draw_side();
+        draw_splitter_gap();
+        draw_nav();
+        ImGui::SameLine(0, px(10));
+        draw_main(0.0f);
     }
-    ImGui::EndChild();
 
-    gap(4);
-    draw_log(log_height);
+    if (!log_hidden) {
+        gap(4);
+        draw_log(log_height);
+    }
 
     // Saved once an edit is finished, not on every keystroke or drag step.
     if (!ImGui::IsAnyItemActive())
         persist_settings();
     ImGui::End();
+    draw_toasts();
+    ui::glass_popups();
 }
 
 } // namespace gui

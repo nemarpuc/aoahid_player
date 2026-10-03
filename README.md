@@ -128,8 +128,8 @@ without stopping playback for the others.
 
 **Live tab**
 
-A black preview with the phone's shape, for using the phone from the computer
-and watching what the scripts do. It is the tab the app opens on the first
+The phone's shape, black, on the window's background, for using the phone
+from the computer and watching what the scripts do. It is the tab the app opens on the first
 time. Live control starts as soon as the tab is open while a phone is
 connected. In the panel on the right, the *Forward* card's switches choose
 what the preview forwards: *Touch* (drag inside the preview), *Mouse* (motion,
@@ -212,13 +212,14 @@ the US) are already covered by the default range on every platform. Windows
 uses a different scancode numbering than Linux, so this recognition is
 Linux-only for now; on Windows these keys still do not reach the phone.
 
-*Reference image* (a folded row in the right panel) loads a picture (a
-screenshot works well) over the preview, by path or by dropping the file on the preview while this tab is
-open. While unlocked, drag inside it to move, its corner handle to resize,
-and its top handle to rotate; *Lock image* freezes it in place and lets
-touches and clicks pass straight through to the phone. Its path, position,
-size, rotation, and opacity are saved between runs, and the image is loaded
-again at the next start while the file is still there.
+A *reference image* (a screenshot works well) can sit over the preview:
+choose it on the *Settings* tab, or drop the file on the preview while this
+tab is open. While unlocked, drag inside it to move, its corner handle to
+resize, and its top handle to rotate; *Lock image* (on the Settings tab, and
+in the right panel while an image is loaded) freezes it in place and lets touches and clicks pass straight through to the
+phone. Its path, position, size, rotation, opacity, and lock are saved
+between runs, and the image is loaded again at the next start while the file
+is still there.
 
 **Playlist mode** (the Player tab)
 
@@ -294,6 +295,42 @@ Linux, with the phone's driver on WinUSB and on libusbK. On Windows the HyperOS
 phone worked as plugged in, while the Samsung tablet first needed its driver
 switched to WinUSB. If a bridge does not start on Windows, see
 [Troubleshooting](#troubleshooting).
+
+**Settings tab**
+
+How the window looks, all saved between runs:
+
+- *Presets*: save the whole look (everything below) under a name, then
+  pick it from the list and *Apply* it (or double-click it), or *Delete* it.
+  Presets are `themes/<name>.theme` next to the program, in the same
+  `key = value` form as the settings file.
+- *Appearance*: the *Dark* or *Light* theme; the *Accent* colour (eight
+  swatches or any colour; the light theme uses a deeper shade of it so white
+  text on it stays readable); the *Size* of everything (Small, Normal,
+  Large, Larger, on top of the display's own scale); and *Motion*, a short
+  fade when the tab changes.
+- *Glass*: *Glass*, how much the cards let the background show through (0%
+  is solid, up to 70%); *Gloss* and *Rim*, the light on their top and edges
+  (0-200%); *Corners*, their corner radius (0-24 px).
+- *Background*: *None* (the theme's colour), a *Color*, or an *Image*
+  (.png/.jpg/.bmp: *Choose...* opens the system's file picker, or type a
+  path and press Enter, or drop it on the window on any tab but Live). The
+  background also shows around the phone on the Live tab. An image covers
+  the whole window, full screen Live included; the cards show a blurred
+  copy of what is behind them (*Blur*, in window pixels; 0 shows the picture
+  sharp, as clear glass), and *Dim* darkens it (lightens it in the light
+  theme) so text stays readable. The image is loaded again at the next
+  start while the file is still there.
+- *Live preview*: *Glass phone screen* makes the phone's screen in the Live
+  preview glass like the cards instead of black, with its own *Clear*
+  (0% solid to 100% clear); *Corners* rounds the phone's corners (0-60 px),
+  glass or black. Around the phone, the window's background always shows.
+  Also the reference image described under *Live tab*.
+- *Layout*: the sidebar on the *Left* or *Right*; *Show activity panel*;
+  and *Notifications*, which show warnings, errors, connecting, and
+  disconnecting for a few seconds in the bottom corner away from the
+  sidebar (hover keeps one up, a click dismisses it). Startup messages go
+  only to the Activity panel, unless it is hidden.
 
 On a Wayland session with XWayland available, the GUI opens through
 XWayland, because GLFW's native Wayland backend has no input method support;
@@ -612,17 +649,20 @@ one phone instead, for systems without logind.
 - [libaoahid](https://github.com/nemarpuc/libaoahid) 4.0.0 or newer 4.x
   (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
-  against, for example on Debian/Ubuntu:
-  `libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev pkg-config`
-  (Arch/CachyOS: `wayland libxkbcommon libx11 libxrandr libxinerama libxcursor libxi libxext`).
+  against, and D-Bus for the file picker, for example on Debian/Ubuntu:
+  `libwayland-dev libxkbcommon-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libxext-dev libdbus-1-dev pkg-config`
+  (Arch/CachyOS: `wayland libxkbcommon libx11 libxrandr libxinerama libxcursor libxi libxext dbus`).
   At run time GLFW loads X11 or Wayland and OpenGL itself, so the GUI runs
-  on either.
+  on either. The file picker (*Choose...* on the Settings tab) is the
+  desktop's own, opened through xdg-desktop-portal; without a portal it
+  logs why and the path field still works.
 - Network access at configure time for the GUI: Dear ImGui 1.92.9, GLFW
-  3.5.1, and cpp-httplib 0.57.1 (the control API's HTTP server; see
-  [Control API](#control-api)) are downloaded at pinned, SHA-256-checked
-  releases; ImGui and GLFW are linked statically, cpp-httplib is header-only.
-  To build offline, pass
-  `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<dir> -DFETCHCONTENT_SOURCE_DIR_GLFW=<dir> -DFETCHCONTENT_SOURCE_DIR_HTTPLIB=<dir>`
+  3.5.1, cpp-httplib 0.57.1 (the control API's HTTP server; see
+  [Control API](#control-api)), and nativefiledialog-extended 1.4.1 (the
+  file picker) are downloaded at pinned, SHA-256-checked releases; ImGui,
+  GLFW, and nativefiledialog-extended are linked statically, cpp-httplib is
+  header-only. To build offline, pass
+  `-DFETCHCONTENT_SOURCE_DIR_IMGUI=<dir> -DFETCHCONTENT_SOURCE_DIR_GLFW=<dir> -DFETCHCONTENT_SOURCE_DIR_HTTPLIB=<dir> -DFETCHCONTENT_SOURCE_DIR_NFD=<dir>`
   pointing at local copies of those releases, or `-DAOAHID_PLAYER_BUILD_GUI=OFF`.
 
 ### Build
@@ -830,11 +870,13 @@ its own licence in `third-party/`:
   [GLFW](https://www.glfw.org/) (zlib), linked into the GUI
 - [cpp-httplib](https://github.com/yhirose/cpp-httplib) (MIT), header-only,
   backing the control API's HTTP server
+- [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
+  (zlib), linked into the GUI for the file picker
 - [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.0.3
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored
-  for the Live tab's reference image
+  for the background and reference images
 - on Windows, the Microsoft Visual C++ runtime DLLs, redistributed under
   Microsoft's redistribution terms
 
