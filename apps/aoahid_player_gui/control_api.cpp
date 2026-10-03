@@ -12,6 +12,7 @@
 // off there, so this is the only place httplib.h is ever included.
 #include <httplib.h>
 
+#include <algorithm>
 #include <cctype>
 #include <charconv>
 #include <cstdint>
@@ -550,8 +551,12 @@ void ControlApi::register_routes() {
     svr.Post("/mouse/move", [this](const Req& req, Res& res) {
         int32_t dx = 0;
         int32_t dy = 0;
-        parse_int32(req.get_param_value("dx"), dx);
-        parse_int32(req.get_param_value("dy"), dy);
+        if ((req.has_param("dx") && !parse_int32(req.get_param_value("dx"), dx)) ||
+            (req.has_param("dy") && !parse_int32(req.get_param_value("dy"), dy))) {
+            res.status = 400;
+            res.set_content(json_error("Invalid \"dx\"/\"dy\"."), "application/json");
+            return;
+        }
         engine_.live_send(aoap::MouseMove{dx, dy});
         res.set_content(json_ok(), "application/json");
     });
@@ -569,7 +574,11 @@ void ControlApi::register_routes() {
     });
     svr.Post("/mouse/wheel", [this](const Req& req, Res& res) {
         int32_t delta = 0;
-        parse_int32(req.get_param_value("delta"), delta);
+        if (req.has_param("delta") && !parse_int32(req.get_param_value("delta"), delta)) {
+            res.status = 400;
+            res.set_content(json_error("Invalid \"delta\"."), "application/json");
+            return;
+        }
         engine_.live_scroll(delta);
         res.set_content(json_ok(), "application/json");
     });

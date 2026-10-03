@@ -5,6 +5,14 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-10-03
+
+First stable release.
+
+- Control API: `/seek` no longer overflows on a very large `time_ms`;
+  `/mouse/move` and `/mouse/wheel` answer 400 for a value that is not a
+  number instead of silently sending zero.
+
 ## [0.22.0] - 2026-10-03
 
 - GUI look: solid by default with a high-contrast dark theme (#000000 background)
