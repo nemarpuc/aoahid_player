@@ -5,6 +5,8 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-10-03
+
 - GUI glass look: the primary keys (Connect and the like) are now translucent
   and follow the Glass *Clear* setting instead of a fixed opacity; their text
   stays light over a dark window. *Accessory Mode* is a quiet key so Connect
