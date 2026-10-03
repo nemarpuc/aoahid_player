@@ -14,6 +14,7 @@
 #include <nfd.h>
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <iterator>
 #include <utility>
@@ -117,13 +118,21 @@ bool swatch(const int color, const bool chosen) {
     return pressed;
 }
 
-// True for a path that starts with two separators, slash or backslash in any
-// mix: that covers every UNC and device form on Windows, including the long
-// "?" and "." prefixes. (It also turns down a local Linux path written with
-// a doubled leading slash, which is harmless.)
-bool network_path(const std::string& path) {
-    const auto separator = [](const char c) { return c == '/' || c == '\\'; };
-    return path.size() >= 2 && separator(path[0]) && separator(path[1]);
+// Whether a look preset may name `path` as its background image. A preset
+// can come from someone else, and on Windows a network path (UNC in any
+// spelling, the device prefixes) connects to its server just by being
+// opened. So Windows accepts only a drive-letter path, "C:\\..." or "C:/...";
+// elsewhere only a leading "//" (implementation-defined in POSIX) is refused.
+bool preset_image_allowed(const std::string& path) {
+    if (path.empty())
+        return true;
+#if defined(_WIN32)
+    const auto letter = static_cast<unsigned char>(path[0]);
+    return path.size() >= 3 && std::isalpha(letter) != 0 && path[1] == ':' &&
+           (path[2] == '\\' || path[2] == '/');
+#else
+    return !(path.size() >= 2 && path[0] == '/' && path[1] == '/');
+#endif
 }
 
 constexpr const char* ui_scale_labels[] = {"Small", "Normal", "Large", "Larger"};
@@ -354,12 +363,10 @@ void App::draw_presets_card() {
             log_.message(aoap::Severity::warning, "Preset: " + error + ".");
             return;
         }
-        // A preset may come from someone else. Its background image is not
-        // opened when it is on a network path (a UNC path on Windows connects
-        // to that server just by being opened); the current background stays.
-        if (look.bg_image != bg_image_ && network_path(look.bg_image)) {
+        // See preset_image_allowed(); the current background stays.
+        if (look.bg_image != bg_image_ && !preset_image_allowed(look.bg_image)) {
             log_.message(aoap::Severity::warning,
-                         "Preset: the background image is on a network path and was not "
+                         "Preset: the background image is not on a local drive and was not "
                          "loaded.");
             look.bg_image = bg_image_;
             look.bg_mode = bg_mode_;
