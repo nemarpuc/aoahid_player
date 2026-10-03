@@ -345,6 +345,17 @@ void App::draw_presets_card() {
             log_.message(aoap::Severity::warning, "Preset: " + error + ".");
             return;
         }
+        // A preset may come from someone else. Its background image is not
+        // opened when it is on a network path (a UNC path on Windows connects
+        // to that server just by being opened); the current background stays.
+        if (look.bg_image != bg_image_ &&
+            (look.bg_image.rfind("\\\\", 0) == 0 || look.bg_image.rfind("//", 0) == 0)) {
+            log_.message(aoap::Severity::warning,
+                         "Preset: the background image is on a network path and was not "
+                         "loaded.");
+            look.bg_image = bg_image_;
+            look.bg_mode = bg_mode_;
+        }
         apply_look(look);
         theme_current_ = name;
     };

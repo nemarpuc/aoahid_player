@@ -127,6 +127,13 @@ std::string axes_text(const std::vector<aoahid_axis_role>& axes) {
     return text;
 }
 
+// A text value as it may be written: on one line. A line break in it (legal
+// in a file name on Linux) would add lines of its own to the file, so such
+// a value is left out.
+std::string one_line(const std::string& value) {
+    return value.find_first_of("\r\n") == std::string::npos ? value : std::string();
+}
+
 // Reads `key = value` lines over `settings`; lines it does not know, and
 // values it cannot read, leave the setting as it was.
 void read_lines(std::istream& file, Settings& settings) {
@@ -323,7 +330,7 @@ void write_look(std::ostream& out, const Settings& settings) {
     out << "ui.scale = " << settings.ui_scale << '\n';
     out << "ui.bg_mode = " << settings.bg_mode << '\n';
     out << "ui.bg_color = " << rgb_text(settings.bg_color) << '\n';
-    out << "ui.bg_image = " << settings.bg_image << '\n';
+    out << "ui.bg_image = " << one_line(settings.bg_image) << '\n';
     out << "ui.bg_blur = " << settings.bg_blur << '\n';
     out << "ui.bg_dim = " << settings.bg_dim << '\n';
     out << "live.phone_glass = " << (settings.live_phone_glass ? 1 : 0) << '\n';
@@ -418,7 +425,8 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
     out << "toggle = " << (settings.use_toggle ? 1 : 0) << '\n';
     for (const auto& [device, port] : settings.adb_ports)
-        out << "adb_bridge.port." << device << " = " << port << '\n';
+        if (!one_line(device).empty())
+            out << "adb_bridge.port." << device << " = " << port << '\n';
     out << "api.enabled = " << (settings.api_enabled ? 1 : 0) << '\n';
     out << "api.port = " << settings.api_port << '\n';
     out << "live.release_key = " << settings.live_release_key << '\n';
@@ -433,7 +441,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "window.height = " << settings.window_height << '\n';
     out << "ui.tab = " << settings.tab << '\n';
     out << "ui.player_mode = " << settings.player_mode << '\n';
-    out << "ui.last_script = " << settings.last_script << '\n';
+    out << "ui.last_script = " << one_line(settings.last_script) << '\n';
     out << "ui.log_open = " << (settings.log_open ? 1 : 0) << '\n';
     out << "player.speed = " << settings.speed << '\n';
     out << "player.loop_limit = " << settings.loop_limit << '\n';
@@ -446,7 +454,7 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live.ratio_h = " << settings.live_ratio_h << '\n';
     out << "record.coords = " << (settings.record_coords == 1 ? "normalized" : "raw") << '\n';
     out << "live.rotation = " << settings.live_rotation << '\n';
-    out << "live_image.path = " << settings.live_image_path << '\n';
+    out << "live_image.path = " << one_line(settings.live_image_path) << '\n';
     out << "live_image.x = " << settings.live_image_x << '\n';
     out << "live_image.y = " << settings.live_image_y << '\n';
     out << "live_image.half_width = " << settings.live_image_half_width << '\n';
