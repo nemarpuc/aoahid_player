@@ -154,13 +154,13 @@ void App::draw_nav_rail() {
         const ImVec2 c(p0.x + diameter * 0.5f, p0.y + diameter * 0.5f);
         if (active) {
             list->AddRectFilled(p0, ImVec2(p0.x + diameter, p0.y + diameter),
-                                ImGui::GetColorU32(theme::accent2_soft), px(8));
+                                ImGui::GetColorU32(theme::accent_soft), px(8));
         } else if (hovered) {
             list->AddRectFilled(p0, ImVec2(p0.x + diameter, p0.y + diameter),
                                 ImGui::GetColorU32(theme::field_hover), px(8));
         }
         ui::draw_icon(list, item.icon, c, diameter * 0.5f,
-                      ImGui::GetColorU32(active ? theme::accent2_text : theme::text_dim));
+                      ImGui::GetColorU32(active ? theme::accent_text : theme::text_dim));
         if (hovered)
             ImGui::SetTooltip("%s", item.label);
         if (pressed && !active) {

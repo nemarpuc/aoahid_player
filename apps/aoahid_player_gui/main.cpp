@@ -305,8 +305,11 @@ int run() {
     glfwSetFramebufferSizeCallback(window, on_size);
 
     scale = window_scale(window);
+    gui::theme::set_glass_enabled(startup_settings.glass_on);
     gui::theme::set_mode(startup_settings.dark_theme);
     gui::theme::set_accent(static_cast<unsigned>(startup_settings.accent));
+    gui::theme::set_glass(startup_settings.glass);
+    gui::theme::set_shine(startup_settings.gloss, startup_settings.rim);
     gui::theme::card_rounding = static_cast<float>(startup_settings.card_rounding);
     gui::theme::setup(scale * startup_settings.ui_scale);
     ImGui_ImplGlfw_InitForOpenGL(window, true);

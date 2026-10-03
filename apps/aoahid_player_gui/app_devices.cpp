@@ -462,7 +462,7 @@ void App::draw_control_api_card() {
 }
 
 void App::draw_connect_card() {
-    ui::begin_card("##connect");
+    ImGui::BeginGroup();
     const Phase phase = engine_.phase();
     const ImVec2 size(-FLT_MIN, ImGui::GetFrameHeight() + px(14));
     switch (phase) {
@@ -504,7 +504,7 @@ void App::draw_connect_card() {
         gap(2);
         small_colored(theme::danger, connect_error_);
     }
-    ui::end_card();
+    ImGui::EndGroup();
 }
 
 } // namespace gui

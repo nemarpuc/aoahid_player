@@ -171,6 +171,7 @@ Settings App::current_settings() const {
     settings.sidebar_collapsed = sidebar_collapsed_;
     settings.dark_theme = dark_theme_;
     settings.accent = accent_;
+    settings.glass_on = glass_on_;
     settings.glass = glass_;
     settings.gloss = gloss_;
     settings.rim = rim_;

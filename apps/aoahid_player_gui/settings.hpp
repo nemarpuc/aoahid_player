@@ -18,13 +18,13 @@ inline constexpr float ui_scales[] = {0.85f, 1.0f, 1.15f, 1.3f};
 // What the GUI remembers between runs: the profile choices and the adb
 // option. Defaults are what a first run shows.
 struct Settings {
-    bool use_touch{};
+    bool use_touch{true};
     int touch_width{1440};
     int touch_height{2560};
     int touch_contacts{16};
-    bool use_mouse{};
+    bool use_mouse{true};
     int mouse_buttons{5};
-    bool use_key{};
+    bool use_key{true};
     int key_min{0x04};
     int key_max{0x65};
     bool use_gamepad{};
@@ -59,9 +59,12 @@ struct Settings {
     // Dark theme or light theme.
     bool dark_theme{true};
     // The accent colour every accent shade is made from (0xRRGGBB).
-    int accent{0xB4A5FF};
-    // How much the cards let the background through, 0 (opaque) to 0.7.
-    float glass{0.4f};
+    int accent{0x388BFD};
+    // Glass look on (translucent cards, gloss) or the solid look.
+    bool glass_on{false};
+    // With glass on, how much the cards let the background through, 0
+    // (opaque) to 0.9.
+    float glass{0.5f};
     // The glass gloss and rim strengths, 0 to 2 (1 = the theme's own), and
     // the cards' corner radius in unscaled pixels, 0 to 24.
     float gloss{1.0f};
@@ -79,11 +82,11 @@ struct Settings {
     // The window's background: 0 the theme's colour, 1 `bg_color`, 2 the
     // picture at `bg_image` (blurred by `bg_blur` window pixels behind the
     // cards, and dimmed by `bg_dim` from 0 to 0.8).
-    int bg_mode{};
-    int bg_color{0x14131A}; // 0xRRGGBB
+    int bg_mode{0};
+    int bg_color{0x000000};
     std::string bg_image;
-    int bg_blur{6};
-    float bg_dim{0.4f};
+    int bg_blur{1};
+    float bg_dim{0.25f};
 
     // Window geometry in OS pixels. 0 width/height means "unset": main.cpp
     // then falls back to its own centred, monitor-fitted default instead of
@@ -126,7 +129,7 @@ struct Settings {
     bool live_phone_glass{};
     // How clear that glass is, 0 (solid) to 1, and the phone's corner
     // radius in unscaled pixels, 0 to 60, glass or not.
-    float live_phone_clear{0.4f};
+    float live_phone_clear{0.75f};
     int live_phone_rounding{};
 
     // The Live tab's optional reference image overlay; see

@@ -5,10 +5,11 @@
 
 namespace gui::theme {
 
-// Glass palette: translucent cards with a hairline edge and a sheen line
-// along the top, wells sunk into them for what can be typed, keys raised
-// from them for what can be pressed, one signal accent for what is
-// happening, a second accent for what has been picked, and status colours.
+// Cards on a plain background, wells sunk into them for what can be typed,
+// keys raised from them for what can be pressed, one signal accent for what
+// is happening, a second accent for what has been picked, and status
+// colours. Solid by default; with glass on, the cards are translucent with a
+// hairline edge and a sheen line along the top.
 // The phone preview is the only true black. No gradients or shadows; the
 // only blur is a background picture's, precomputed (see backdrop.hpp).
 // Values below are runtime variables, not constants: set_mode() rewrites
@@ -26,6 +27,7 @@ inline ImU32 well_hover;
 inline ImU32 field; // keys: buttons and tracks, raised from the card
 inline ImU32 field_hover;
 inline ImU32 field_active;
+inline ImU32 popup_fill; // popups and tooltips when glass is off
 inline ImU32 sheen; // the glossy top line on cards and keys
 // Glass cards: a white gloss over their top part, fading to nothing, and a
 // white rim brighter at the top than at the bottom. Alphas, 0 to 255.
@@ -89,9 +91,14 @@ inline constexpr float font_display = 30.0f;
 // Overwrites every colour above with the dark or light palette. Call before
 // setup()/apply_style() so they build the ImGui style from the right values.
 void set_mode(bool dark);
-// How much the cards let the background through, 0 (opaque) to 0.7;
+// How much the cards let the background through, 0 (opaque) to 0.9;
 // rewrites `surface`. Kept across set_mode().
 void set_glass(float transparency);
+// Glass on: translucent cards, popups and keys with a gloss and a lit rim.
+// Off (the default): the same layout in solid colours. Kept across
+// set_mode(), and rewrites the palette like it.
+void set_glass_enabled(bool on);
+[[nodiscard]] bool glass_enabled();
 // Every accent shade from one colour (0xRRGGBB): used as is in the dark
 // theme, made more vivid and deep enough for white text in the light one.
 // Kept across set_mode().

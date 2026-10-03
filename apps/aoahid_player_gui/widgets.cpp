@@ -54,10 +54,22 @@ struct Colors {
 Colors colors_for(const Tone tone) {
     switch (tone) {
     case Tone::primary:
+        if (theme::glass_enabled()) {
+            return {with_alpha(theme::accent, 175),
+                    with_alpha(theme::accent_hover, 215),
+                    with_alpha(theme::accent_active, 240),
+                    theme::accent_ink};
+        }
         return {theme::accent, theme::accent_hover, theme::accent_active, theme::accent_ink};
     case Tone::record:
         return {theme::field, theme::field_hover, theme::field_active, theme::text};
     case Tone::danger:
+        if (theme::glass_enabled()) {
+            return {theme::field,
+                    with_alpha(theme::danger, 160),
+                    with_alpha(theme::danger, 200),
+                    theme::danger};
+        }
         return {theme::field, theme::danger_soft, with_alpha(theme::danger, 56), theme::danger};
     case Tone::quiet:
         return {0, theme::field_hover, theme::field_active, theme::text_dim};
@@ -153,6 +165,11 @@ void paint_glass(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float
                  const ImU32 fill) {
     // Every colour goes through faded(), so a fading parent (a notice, a
     // new tab) fades its glass with it.
+    if (!theme::glass_enabled()) {
+        list->AddRectFilled(p0, p1, faded(fill != 0 ? fill : theme::surface), rounding);
+        list->AddRect(p0, p1, faded(theme::border), rounding);
+        return;
+    }
     backdrop::draw_frosted(list, p0, p1, rounding);
     list->AddRectFilled(p0, p1, faded(fill != 0 ? fill : theme::surface), rounding);
     list->AddRect(p0, p1, faded(theme::border), rounding);
@@ -185,8 +202,13 @@ void glass_popups() {
         list->AddDrawCmd();
         const int first = list->CmdBuffer.Size - 1;
         list->PushClipRect(p0, p1);
-        backdrop::draw_base(list, p0, p1, window->WindowRounding);
-        paint_glass(list, p0, p1, window->WindowRounding);
+        if (theme::glass_enabled()) {
+            backdrop::draw_base(list, p0, p1, window->WindowRounding);
+            paint_glass(list, p0, p1, window->WindowRounding);
+        } else {
+            list->AddRectFilled(p0, p1, faded(theme::popup_fill), window->WindowRounding);
+            list->AddRect(p0, p1, faded(theme::border_strong), window->WindowRounding);
+        }
         list->PopClipRect();
         std::rotate(list->CmdBuffer.Data, list->CmdBuffer.Data + first,
                     list->CmdBuffer.Data + list->CmdBuffer.Size);
@@ -261,9 +283,15 @@ bool button(const char* label, const ImVec2 requested, const Tone tone) {
     const ImU32 fill = smoothed_color(ImGui::GetID(label), state_fill(colors, hovered, held));
     if ((fill & IM_COL32_A_MASK) != 0U) {
         list->AddRectFilled(p0, p1, faded(fill), rounding);
+        if (theme::glass_enabled()) {
+            const ImU32 border_col = (tone == Tone::primary)
+                                         ? with_alpha(theme::accent_line, 160)
+                                         : theme::border;
+            list->AddRect(p0, p1, faded(border_col), rounding);
+        }
         draw_sheen(list, p0, p1, rounding);
     }
-    if (tone == Tone::danger && hovered)
+    if (tone == Tone::danger && hovered && !theme::glass_enabled())
         list->AddRect(p0, p1, faded(with_alpha(theme::danger, 90)), rounding);
     // The record tone leads with a red dot; the pair is centred together.
     const float dot = tone == Tone::record ? px(10) : 0.0f;
@@ -287,9 +315,16 @@ bool icon_key(const char* id, const Icon icon, const ImVec2 size, const Tone ton
     const Colors colors = colors_for(tone);
     const ImU32 fill = smoothed_color(ImGui::GetID(id), state_fill(colors, hovered, held));
     ImDrawList* list = ImGui::GetWindowDrawList();
+    const float rounding = ImGui::GetStyle().FrameRounding;
     if ((fill & IM_COL32_A_MASK) != 0U) {
-        list->AddRectFilled(p0, p1, faded(fill), ImGui::GetStyle().FrameRounding);
-        draw_sheen(list, p0, p1, ImGui::GetStyle().FrameRounding);
+        list->AddRectFilled(p0, p1, faded(fill), rounding);
+        if (theme::glass_enabled()) {
+            const ImU32 border_col = (tone == Tone::primary)
+                                         ? with_alpha(theme::accent_line, 160)
+                                         : theme::border;
+            list->AddRect(p0, p1, faded(border_col), rounding);
+        }
+        draw_sheen(list, p0, p1, rounding);
     }
     draw_icon(list, icon, ImVec2((p0.x + p1.x) * 0.5f, (p0.y + p1.y) * 0.5f), size.y * 0.62f,
               faded(colors.text));
@@ -503,6 +538,8 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
 }
 
 void draw_sheen(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float rounding) {
+    if (!theme::glass_enabled())
+        return;
     const float inset = std::max(rounding, 1.0f);
     if (p1.x - p0.x <= inset * 2.0f)
         return;
@@ -515,8 +552,14 @@ void draw_check(ImDrawList* list, const ImVec2 p0, const float size, const bool 
     const ImVec2 p1(p0.x + size, p0.y + size);
     const float rounding = size * 0.25f;
     if (checked) {
-        const ImU32 box = fill != 0 ? fill : theme::accent;
+        const ImU32 box = fill != 0 ? fill
+                                    : (theme::glass_enabled() ? with_alpha(theme::accent, 185)
+                                                              : theme::accent);
         list->AddRectFilled(p0, p1, faded(box), rounding);
+        if (theme::glass_enabled()) {
+            list->AddRect(p0, p1, faded(with_alpha(theme::accent_line, 160)), rounding);
+            draw_sheen(list, p0, p1, rounding);
+        }
         draw_icon(list, Icon::check, ImVec2(p0.x + size * 0.5f, p0.y + size * 0.5f), size,
                   faded(theme::accent_ink));
     } else {
@@ -568,8 +611,15 @@ bool icon_button(const char* id, const Icon icon, const float diameter, const To
 
     const Colors colors = colors_for(tone);
     const ImU32 fill = smoothed_color(ImGui::GetID(id), state_fill(colors, hovered, held));
-    if ((fill & IM_COL32_A_MASK) != 0U)
+    if ((fill & IM_COL32_A_MASK) != 0U) {
         list->AddCircleFilled(c, diameter * 0.5f, faded(fill), 48);
+        if (theme::glass_enabled()) {
+            const ImU32 border_col = (tone == Tone::primary)
+                                         ? with_alpha(theme::accent_line, 160)
+                                         : theme::border;
+            list->AddCircle(c, diameter * 0.5f, faded(border_col), 48);
+        }
+    }
     const ImU32 glyph = tone == Tone::quiet && hovered ? theme::text : colors.text;
     const float scale = tone == Tone::quiet ? 0.62f : 0.48f;
     draw_icon(list, icon, c, diameter * scale, faded(glyph));
@@ -645,12 +695,43 @@ bool toggle(const char* label, bool* value) {
     const ImVec2 t0(p0.x, p0.y + (row - height) * 0.5f);
     const ImVec2 t1(t0.x + width, t0.y + height);
     const float radius = height * 0.5f;
-    const ImU32 track = *value ? (hovered ? theme::accent_hover : theme::accent)
-                               : (hovered ? theme::field_active : theme::field_hover);
-    list->AddRectFilled(t0, t1, faded(track), radius);
-    const float knob_x = *value ? t1.x - radius : t0.x + radius;
-    list->AddCircleFilled(ImVec2(knob_x, t0.y + radius), radius - px(3),
-                          faded(*value ? IM_COL32_WHITE : theme::text_dim), 24);
+
+    if (theme::glass_enabled()) {
+        const ImU32 track = *value
+            ? (hovered ? with_alpha(theme::accent_hover, 210) : with_alpha(theme::accent, 175))
+            : (hovered ? with_alpha(theme::field_hover, 70) : with_alpha(theme::field, 40));
+        list->AddRectFilled(t0, t1, faded(track), radius);
+        const ImU32 track_border = *value ? with_alpha(theme::accent_line, 170) : theme::border;
+        list->AddRect(t0, t1, faded(track_border), radius);
+        draw_sheen(list, t0, t1, radius);
+
+        const float knob_x = *value ? t1.x - radius : t0.x + radius;
+        const ImVec2 knob_center(knob_x, t0.y + radius);
+        const float knob_r = radius - px(2.5f);
+        if (*value) {
+            list->AddCircleFilled(knob_center, knob_r, faded(IM_COL32_WHITE), 24);
+            list->AddCircle(knob_center, knob_r, faded(with_alpha(IM_COL32_WHITE, 180)), 24);
+            list->AddCircleFilled(ImVec2(knob_center.x - knob_r * 0.3f, knob_center.y - knob_r * 0.3f),
+                                  knob_r * 0.28f, faded(with_alpha(IM_COL32_WHITE, 220)), 12);
+        } else {
+            list->AddCircleFilled(knob_center, knob_r,
+                                  faded(hovered ? with_alpha(IM_COL32_WHITE, 120)
+                                                : with_alpha(IM_COL32_WHITE, 80)), 24);
+            list->AddCircle(knob_center, knob_r, faded(with_alpha(IM_COL32_WHITE, 140)), 24);
+            list->AddCircleFilled(ImVec2(knob_center.x - knob_r * 0.3f, knob_center.y - knob_r * 0.3f),
+                                  knob_r * 0.25f, faded(with_alpha(IM_COL32_WHITE, 160)), 12);
+        }
+    } else {
+        const ImU32 track = *value ? (hovered ? theme::accent_hover : theme::accent)
+                                   : (hovered ? theme::field_hover : theme::field);
+        list->AddRectFilled(t0, t1, faded(track), radius);
+        if (!*value)
+            list->AddRect(t0, t1, faded(theme::border), radius);
+        const float knob_x = *value ? t1.x - radius : t0.x + radius;
+        list->AddCircleFilled(ImVec2(knob_x, t0.y + radius), radius - px(2.5f),
+                              faded(*value ? IM_COL32_WHITE : theme::text_dim), 24);
+    }
+
     list->AddText(ImVec2(t1.x + spacing, p0.y + (row - text_size.y) * 0.5f), faded(theme::text),
                   label, label_end);
     return pressed;
@@ -805,10 +886,18 @@ bool slider(const char* id, float* value, const float minimum, const float maxim
     const float x = x0 + (x1 - x0) * std::clamp(to_fraction(*value), 0.0f, 1.0f);
     list->AddRectFilled(ImVec2(x0, cy - track * 0.5f), ImVec2(x1, cy + track * 0.5f),
                         faded(theme::field_active), track * 0.5f);
+    const ImU32 fill_accent = theme::glass_enabled() ? with_alpha(theme::accent, 185) : theme::accent;
     list->AddRectFilled(ImVec2(x0, cy - track * 0.5f), ImVec2(x, cy + track * 0.5f),
-                        faded(theme::accent), track * 0.5f);
+                        faded(fill_accent), track * 0.5f);
+    if (theme::glass_enabled()) {
+        list->AddRect(ImVec2(x0, cy - track * 0.5f), ImVec2(x1, cy + track * 0.5f),
+                      faded(theme::border), track * 0.5f);
+    }
     const float r = (hovered || active) ? knob : knob - px(1);
     list->AddCircleFilled(ImVec2(x, cy), r, faded(IM_COL32(245, 245, 248, 255)), 24);
+    if (theme::glass_enabled()) {
+        list->AddCircle(ImVec2(x, cy), r, faded(with_alpha(IM_COL32_WHITE, 160)), 24);
+    }
 
     ImGui::SameLine(0, px(14));
     ImGui::AlignTextToFramePadding();

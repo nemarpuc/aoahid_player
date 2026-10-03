@@ -309,21 +309,24 @@ How the window looks, all saved between runs:
   text on it stays readable); the *Size* of everything (Small, Normal,
   Large, Larger, on top of the display's own scale); and *Motion*, a short
   fade when the tab changes.
-- *Glass*: *Glass*, how much the cards let the background show through (0%
-  is solid, up to 70%); *Gloss* and *Rim*, the light on their top and edges
-  (0-200%); *Corners*, their corner radius (0-24 px).
+- *Glass*: *Glass look* turns the cards, popups, and keys translucent over the
+  background (with glass off, cards and keys are solid colours with high
+  contrast). With glass on: *Clear*, how much the cards let the background
+  show through (0% is solid, up to 90%); *Gloss* and *Rim*, the light on their
+  top and edges (0-200%). *Corners* sets the corner radius (0-24 px) in both
+  modes.
 - *Background*: *None* (the theme's colour), a *Color*, or an *Image*
   (.png/.jpg/.bmp: *Choose...* opens the system's file picker, or type a
   path and press Enter, or drop it on the window on any tab but Live). The
   background also shows around the phone on the Live tab. An image covers
-  the whole window, full screen Live included; the cards show a blurred
-  copy of what is behind them (*Blur*, in window pixels; 0 shows the picture
-  sharp, as clear glass), and *Dim* darkens it (lightens it in the light
-  theme) so text stays readable. The image is loaded again at the next
+  the whole window, full screen Live included; with glass on, the cards show
+  a blurred copy of what is behind them (*Blur*, in window pixels; 0 shows
+  the picture sharp, as clear glass), and *Dim* darkens it (lightens it in the
+  light theme) so text stays readable. The image is loaded again at the next
   start while the file is still there.
-- *Live preview*: *Glass phone screen* makes the phone's screen in the Live
-  preview glass like the cards instead of black, with its own *Clear*
-  (0% solid to 100% clear); *Corners* rounds the phone's corners (0-60 px),
+- *Live preview*: *Glass phone screen* (when Glass look is on) makes the phone's
+  screen in the Live preview glass like the cards instead of black, with its own
+  *Clear* (0% solid to 100% clear); *Corners* rounds the phone's corners (0-60 px),
   glass or black. Around the phone, the window's background always shows.
   Also the reference image described under *Live tab*.
 - *Layout*: the sidebar on the *Left* or *Right*; *Show activity panel*;

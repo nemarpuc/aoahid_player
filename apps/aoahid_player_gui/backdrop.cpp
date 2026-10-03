@@ -218,7 +218,12 @@ std::string load(const std::string& file) {
     s.small_width = small_width;
     s.small_height = small_height;
     s.path = file;
-    make_blurred();
+    if (theme::glass_enabled())
+        make_blurred();
+    else if (s.blurred != 0) {
+        glDeleteTextures(1, &s.blurred);
+        s.blurred = 0;
+    }
     return {};
 }
 
@@ -243,12 +248,21 @@ void set_blur(const int radius) {
     if (clamped == s.blur)
         return;
     s.blur = clamped;
-    make_blurred();
+    if (theme::glass_enabled())
+        make_blurred();
+    else if (s.blurred != 0) {
+        glDeleteTextures(1, &s.blurred);
+        s.blurred = 0;
+    }
 }
 
 void draw(ImDrawList* list, const ImVec2 min, const ImVec2 max, const bool image, const ImU32 color,
           const float dim) {
     State& s = state();
+    if (!theme::glass_enabled() && s.blurred != 0) {
+        glDeleteTextures(1, &s.blurred);
+        s.blurred = 0;
+    }
     s.shown = image && s.full != 0;
     s.color = color;
     if (!s.shown) {
@@ -272,8 +286,12 @@ void draw(ImDrawList* list, const ImVec2 min, const ImVec2 max, const bool image
 }
 
 void draw_frosted(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float rounding) {
-    const State& s = state();
-    if (!s.shown || s.blurred == 0)
+    State& s = state();
+    if (!s.shown)
+        return;
+    if (s.blurred == 0 && !s.reduced.empty())
+        make_blurred();
+    if (s.blurred == 0)
         return;
     // With no blur the glass shows the picture itself, sharp.
     const GLuint texture = s.blur == 0 ? s.full : s.blurred;

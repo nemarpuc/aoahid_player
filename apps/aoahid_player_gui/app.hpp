@@ -424,8 +424,9 @@ class App {
     // Set by the Settings tab's theme switch, cleared by consume_theme_change().
     bool theme_dirty_{};
     // The Settings tab; see Settings for what each means.
-    int accent_{0xB4A5FF};
-    float glass_{0.4f};
+    int accent_{0x388BFD};
+    bool glass_on_{};
+    float glass_{0.5f};
     float gloss_{1.0f};
     float rim_{1.0f};
     int card_rounding_{12};
@@ -459,9 +460,9 @@ class App {
     std::string theme_current_; // the last one applied or saved, shown only
     bool themes_stale_{true};   // re-read the list the next time it is drawn
     int bg_mode_{}; // 0 theme colour, 1 bg_color_, 2 picture (see backdrop.hpp)
-    int bg_color_{0x14131A};
-    int bg_blur_{6};
-    float bg_dim_{0.4f};
+    int bg_color_{0x000000};
+    int bg_blur_{1};
+    float bg_dim_{0.25f};
     // The picture to show, kept even when it could not be loaded (a drive
     // not mounted yet), so the next start tries it again.
     std::string bg_image_;
@@ -476,9 +477,9 @@ class App {
     AdbStatus adb_status_{AdbStatus::unknown};
 
     // Profile settings; frozen while connected.
-    bool use_touch_{};
-    bool use_mouse_{};
-    bool use_key_{};
+    bool use_touch_{true};
+    bool use_mouse_{true};
+    bool use_key_{true};
     bool use_gamepad_{};
     bool use_pen_{};
     bool use_toggle_{};
@@ -583,7 +584,7 @@ class App {
     int live_ratio_h_{};
     int live_rotation_{};
     bool live_phone_glass_{}; // the phone's screen is glass instead of black
-    float live_phone_clear_{0.4f};
+    float live_phone_clear_{0.75f};
     int live_phone_rounding_{}; // unscaled pixels
     bool live_fullscreen_{};
     uint16_t live_held_key_{}; // the side key held down now, 0 for none

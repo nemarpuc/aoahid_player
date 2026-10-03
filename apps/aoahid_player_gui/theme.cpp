@@ -86,10 +86,11 @@ std::string find_cjk_font_path() {
 } // namespace
 
 namespace {
-unsigned glass_tint = 0x201F26; // `surface` without its alpha
-float glass_transparency = 0.4f;
+unsigned glass_tint = 0x161B22; // `surface` without its alpha
+float glass_transparency = 0.5f;
 bool dark_mode = true;
-unsigned accent_seed = 0xB4A5FF;
+bool glass_on = false;
+unsigned accent_seed = 0x388BFD;
 // Each mode's own gloss and rim strengths, before set_shine() scales them.
 unsigned gloss_base = 20;
 unsigned rim_top_base = 80;
@@ -173,21 +174,23 @@ void set_accent(const unsigned seed) {
     if (dark_mode) {
         // A very dark choice is lifted until it shows against the cards (3:1,
         // as for graphics); its text shade until it reads (4.5:1).
-        const unsigned base = lift_on(accent_seed, 0x2A2833, 3.0f);
+        const unsigned ground = glass_on ? 0x2A2833 : 0x161B22;
+        const unsigned base = lift_on(accent_seed, ground, 3.0f);
         accent = rgb(base);
         accent_hover = rgb(mix(base, 0xFFFFFF, 0.2f));
         accent_active = rgb(mix(base, 0x000000, 0.12f));
-        accent_text = rgb(lift_on(mix(base, 0xFFFFFF, 0.35f), 0x2A2833, 4.5f));
+        accent_text = rgb(lift_on(mix(base, 0xFFFFFF, 0.35f), ground, 4.5f));
         accent_soft = rgb(base, 44);
         accent_line = rgb(base, 150);
-        accent_ink = rgb(contrast(base, 0x1A1233) >= 4.5f ? 0x1A1233 : 0xFFFFFF);
+        accent_ink = rgb(contrast(base, 0x0D1117) >= 4.5f ? 0x0D1117 : 0xFFFFFF);
         text_selected_bg = rgb(base, 110);
     } else {
         const unsigned base = deepen(accent_seed);
+        const unsigned ground = glass_on ? 0xECEAF3 : 0xFFFFFF;
         accent = rgb(base);
         accent_hover = rgb(mix(base, 0xFFFFFF, 0.12f));
         accent_active = rgb(mix(base, 0x000000, 0.12f));
-        accent_text = rgb(readable_on(base, 0xECEAF3));
+        accent_text = rgb(readable_on(base, ground));
         accent_soft = rgb(base, 40);
         accent_line = rgb(base, 160);
         accent_ink = rgb(0xFFFFFF);
@@ -206,91 +209,146 @@ void set_shine(const float gloss, const float rim) {
     rim_bottom_alpha = scaled(rim_bottom_base, rim_scale);
 }
 
+bool glass_enabled() { return glass_on; }
+
 void set_glass(const float transparency) {
-    glass_transparency = std::clamp(transparency, 0.0f, 0.7f);
-    surface = rgb(glass_tint,
-                  static_cast<unsigned>(std::lround((1.0f - glass_transparency) * 255.0f)));
+    glass_transparency = std::clamp(transparency, 0.0f, 0.9f);
+    surface = glass_fill(glass_transparency);
 }
 
 ImU32 glass_fill(const float transparency) {
+    if (!glass_on)
+        return rgb(glass_tint);
     return rgb(glass_tint, static_cast<unsigned>(
                                std::lround((1.0f - std::clamp(transparency, 0.0f, 1.0f)) * 255.0f)));
 }
 
+void set_glass_enabled(const bool on) {
+    glass_on = on;
+    set_mode(dark_mode);
+}
+
 // Two full palettes, assigned wholesale so nothing is left half-updated.
 // Both keep the same roles and hues: the dark one has light fills with dark
-// ink on them, the light one deep fills with white ink. Cards, wells and
-// borders, keys and rows are alpha over what is behind them. Text and status
-// colours stay at or above 4.5:1 on the resulting surfaces over a plain
-// background.
+// ink on them, the light one deep fills with white ink. Solid by default;
+// with glass on, cards, wells, borders, keys and rows are alpha over what
+// is behind them.
 void set_mode(const bool dark) {
     dark_mode = dark;
     if (dark) {
-        background = rgb(0x14131A);
-        glass_tint = 0x201F26;
         dim_base = 0x000000;
-        surface_hi = rgb(0xFFFFFF, 14);
-        well = rgb(0x000000, 96);
-        well_hover = rgb(0x000000, 64);
-        field = rgb(0xFFFFFF, 24);
-        field_hover = rgb(0xFFFFFF, 40);
-        field_active = rgb(0xFFFFFF, 56);
-        sheen = rgb(0xFFFFFF, 40);
-        gloss_base = 20;
-        rim_top_base = 80;
-        rim_bottom_base = 14;
-        border = rgb(0xFFFFFF, 26);
-        border_strong = rgb(0xFFFFFF, 64);
-        text = rgb(0xECEAF4);
-        text_dim = rgb(0xB8B5C6);
-        text_faint = rgb(0x9D9AAD);
-
         accent2 = rgb(0x4FD1C5);
         accent2_soft = rgb(0x4FD1C5, 36);
         accent2_line = rgb(0x4FD1C5, 140);
         accent2_text = rgb(0x8FE4DA);
 
-        success = rgb(0x57C78F);
-        warning = rgb(0xE2B04A);
-        danger = rgb(0xF4776F);
-        danger_soft = rgb(0xF4776F, 36);
+        success = rgb(0x3FB950);
+        warning = rgb(0xD29922);
+        danger = rgb(0xF85149);
+        danger_soft = rgb(0xF85149, 36);
 
-        scrollbar_hover = rgb(0xFFFFFF, 96);
-        scrollbar_active = rgb(0xFFFFFF, 128);
         check_mark = rgb(0xFFFFFF);
-    } else {
-        background = rgb(0xECEAF3);
-        glass_tint = 0xFFFFFF;
-        dim_base = 0xFFFFFF;
-        surface_hi = rgb(0x2A2440, 14);
-        well = rgb(0xFFFFFF, 225);
-        well_hover = rgb(0xFFFFFF);
-        field = rgb(0x2A2440, 26);
-        field_hover = rgb(0x2A2440, 42);
-        field_active = rgb(0x2A2440, 58);
-        sheen = rgb(0xFFFFFF, 230);
-        gloss_base = 110;
-        rim_top_base = 255;
-        rim_bottom_base = 90;
-        border = rgb(0x2A2440, 30);
-        border_strong = rgb(0x2A2440, 84);
-        text = rgb(0x1C1A26);
-        text_dim = rgb(0x4B485A);
-        text_faint = rgb(0x5A5769);
 
+        if (glass_on) {
+            background = rgb(0x14131A);
+            glass_tint = 0x201F26;
+            surface_hi = rgb(0xFFFFFF, 14);
+            well = rgb(0x000000, 96);
+            well_hover = rgb(0x000000, 64);
+            field = rgb(0xFFFFFF, 24);
+            field_hover = rgb(0xFFFFFF, 40);
+            field_active = rgb(0xFFFFFF, 56);
+            popup_fill = rgb(glass_tint);
+            sheen = rgb(0xFFFFFF, 40);
+            gloss_base = 20;
+            rim_top_base = 80;
+            rim_bottom_base = 14;
+            border = rgb(0xFFFFFF, 26);
+            border_strong = rgb(0xFFFFFF, 64);
+            text = rgb(0xECEAF4);
+            text_dim = rgb(0xB8B5C6);
+            text_faint = rgb(0x9D9AAD);
+            scrollbar_hover = rgb(0xFFFFFF, 96);
+            scrollbar_active = rgb(0xFFFFFF, 128);
+        } else {
+            background = rgb(0x000000);
+            glass_tint = 0x161B22;
+            surface_hi = rgb(0x21262D);
+            well = rgb(0x0D1117);
+            well_hover = rgb(0x161B22);
+            field = rgb(0x21262D);
+            field_hover = rgb(0x30363D);
+            field_active = rgb(0x38414D);
+            popup_fill = rgb(0x1C2128);
+            sheen = rgb(0x000000, 0);
+            gloss_base = 0;
+            rim_top_base = 0;
+            rim_bottom_base = 0;
+            border = rgb(0x30363D);
+            border_strong = rgb(0x484F58);
+            text = rgb(0xF0F6FC);
+            text_dim = rgb(0x9DA7B3);
+            text_faint = rgb(0x828994);
+            scrollbar_hover = rgb(0x484F58);
+            scrollbar_active = rgb(0x6E7681);
+        }
+    } else {
+        dim_base = 0xFFFFFF;
         accent2 = rgb(0x0B7F72);
         accent2_soft = rgb(0x0B7F72, 40);
         accent2_line = rgb(0x0B7F72, 170);
         accent2_text = rgb(0x086A5F);
 
-        success = rgb(0x146C43);
-        warning = rgb(0x7A5200);
-        danger = rgb(0xB3261E);
-        danger_soft = rgb(0xB3261E, 36);
+        success = rgb(0x1A7F37);
+        warning = rgb(0x9A6700);
+        danger = rgb(0xCF222E);
+        danger_soft = rgb(0xCF222E, 36);
 
-        scrollbar_hover = rgb(0x2A2440, 110);
-        scrollbar_active = rgb(0x2A2440, 140);
         check_mark = rgb(0x1C1A26);
+
+        if (glass_on) {
+            background = rgb(0xECEAF3);
+            glass_tint = 0xFFFFFF;
+            surface_hi = rgb(0x2A2440, 14);
+            well = rgb(0xFFFFFF, 225);
+            well_hover = rgb(0xFFFFFF);
+            field = rgb(0x2A2440, 26);
+            field_hover = rgb(0x2A2440, 42);
+            field_active = rgb(0x2A2440, 58);
+            popup_fill = rgb(glass_tint);
+            sheen = rgb(0xFFFFFF, 230);
+            gloss_base = 110;
+            rim_top_base = 255;
+            rim_bottom_base = 90;
+            border = rgb(0x2A2440, 30);
+            border_strong = rgb(0x2A2440, 84);
+            text = rgb(0x1C1A26);
+            text_dim = rgb(0x4B485A);
+            text_faint = rgb(0x5A5769);
+            scrollbar_hover = rgb(0x2A2440, 110);
+            scrollbar_active = rgb(0x2A2440, 140);
+        } else {
+            background = rgb(0xF6F8FA);
+            glass_tint = 0xFFFFFF;
+            surface_hi = rgb(0xF3F4F6);
+            well = rgb(0xF6F8FA);
+            well_hover = rgb(0xEAEEF2);
+            field = rgb(0xEAEEF2);
+            field_hover = rgb(0xDFE3E8);
+            field_active = rgb(0xD0D7DE);
+            popup_fill = rgb(0xFFFFFF);
+            sheen = rgb(0x000000, 0);
+            gloss_base = 0;
+            rim_top_base = 0;
+            rim_bottom_base = 0;
+            border = rgb(0xD0D7DE);
+            border_strong = rgb(0xAFB8C1);
+            text = rgb(0x1F2328);
+            text_dim = rgb(0x656D76);
+            text_faint = rgb(0x57606A);
+            scrollbar_hover = rgb(0xAFB8C1);
+            scrollbar_active = rgb(0x8C959F);
+        }
     }
     set_glass(glass_transparency);
     set_accent(accent_seed);

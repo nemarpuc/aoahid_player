@@ -96,9 +96,9 @@ std::string choose_image(const std::string& beside, std::string& error) {
     return path;
 }
 
-// The accent swatches: the default light purple first.
-constexpr int accent_swatches[] = {0xB4A5FF, 0x7CB7FF, 0x4FD1C5, 0x7FDCA4,
-                                   0xE8D36A, 0xFFB38A, 0xF58FB5, 0xE8E8EE};
+// The accent swatches: the default electric blue first.
+constexpr int accent_swatches[] = {0x388BFD, 0x2DD4BF, 0x34D399, 0xFBBF24,
+                                   0xFB923C, 0xFB7185, 0xA78BFA, 0xE6EDF3};
 
 // A round colour swatch; a ring marks the chosen one. True when clicked.
 bool swatch(const int color, const bool chosen) {
@@ -151,20 +151,45 @@ void App::load_background(const std::string& path) {
         log_.message(aoap::Severity::warning, "Background: " + error);
         return;
     }
+    const bool should_apply_preset = !glass_on_ || bg_image_.empty();
     bg_image_ = path;
     bg_image_input_ = path;
     bg_mode_ = 2;
+
+    if (should_apply_preset) {
+        glass_on_ = true;
+        glass_ = 0.65f;
+        accent_ = 0xA78BFA;
+        card_rounding_ = 24;
+        bg_blur_ = 1;
+        bg_dim_ = 0.25f;
+        live_phone_glass_ = true;
+        live_phone_clear_ = 0.75f;
+        live_phone_rounding_ = 0;
+        log_hidden_ = true;
+
+        theme::set_glass_enabled(glass_on_);
+        theme::set_mode(dark_theme_);
+        theme::set_accent(static_cast<unsigned>(accent_));
+        theme::set_glass(glass_);
+        theme::set_shine(gloss_, rim_);
+        theme::card_rounding = static_cast<float>(card_rounding_);
+        backdrop::set_blur(bg_blur_);
+        theme_dirty_ = true;
+    }
 }
 
 void App::apply_look(const Settings& settings) {
     dark_theme_ = settings.dark_theme;
     accent_ = settings.accent;
+    glass_on_ = settings.glass_on;
     glass_ = settings.glass;
     gloss_ = settings.gloss;
     rim_ = settings.rim;
     card_rounding_ = settings.card_rounding;
     motion_ = settings.motion;
     ui_scale_ = nearest_ui_scale(settings.ui_scale);
+    theme::set_glass_enabled(glass_on_);
     theme::set_mode(dark_theme_);
     theme::set_accent(static_cast<unsigned>(accent_));
     theme::set_glass(glass_);
@@ -283,7 +308,14 @@ void App::draw_toasts() {
         const ImVec2 p1(p0.x + ImGui::GetWindowWidth(), p0.y + ImGui::GetWindowHeight());
         ImDrawList* list = ImGui::GetWindowDrawList();
         list->PushClipRect(p0, p1);
-        ui::paint_glass(list, p0, p1, ImGui::GetStyle().ChildRounding, theme::glass_fill(0.08f));
+        if (theme::glass_enabled()) {
+            ui::paint_glass(list, p0, p1, ImGui::GetStyle().ChildRounding, theme::glass_fill(0.08f));
+        } else {
+            list->AddRectFilled(p0, p1, ImGui::GetColorU32(theme::surface_hi),
+                                ImGui::GetStyle().ChildRounding);
+            list->AddRect(p0, p1, ImGui::GetColorU32(theme::border_strong),
+                          ImGui::GetStyle().ChildRounding);
+        }
         list->PopClipRect();
         // A stripe on the left edge says what kind of notice it is.
         const ImU32 kind = toast.severity == aoap::Severity::error     ? theme::danger
@@ -494,9 +526,14 @@ void App::draw_appearance_card() {
 
 void App::draw_glass_card() {
     ui::begin_card("##glass", "Glass");
-    field("Glass");
+    if (ui::toggle("Glass look", &glass_on_)) {
+        theme::set_glass_enabled(glass_on_);
+        theme_dirty_ = true;
+    }
+    ImGui::BeginDisabled(!glass_on_);
+    field("Clear");
     float percent = glass_ * 100.0f;
-    if (ui::slider("##glass", &percent, 0.0f, 70.0f, 0, "%", 1.0f)) {
+    if (ui::slider("##glass", &percent, 0.0f, 90.0f, 0, "%", 1.0f)) {
         glass_ = percent / 100.0f;
         theme::set_glass(glass_);
     }
@@ -512,13 +549,16 @@ void App::draw_glass_card() {
         rim_ = rim_percent / 100.0f;
         theme::set_shine(gloss_, rim_);
     }
+    ImGui::EndDisabled();
     field("Corners");
     if (ui::slider_int("##card_rounding", &card_rounding_, 0, 24, "px")) {
         theme::card_rounding = static_cast<float>(card_rounding_);
         theme_dirty_ = true;
     }
-    small_dim("Glass is how much the cards let the background show through (0% is solid); "
-              "Gloss and Rim are the light on their top and edges.");
+    small_dim(glass_on_ ? "Clear is how much the cards let the background show through (0% is "
+                          "solid); Gloss and Rim are the light on their top and edges."
+                        : "Off, cards and keys are solid colours. On, they are translucent "
+                          "glass over the background.");
     ui::end_card();
 }
 
@@ -561,27 +601,39 @@ void App::draw_background_card() {
                       : "Choose a .png, .jpg, or .bmp, or drop one on the window outside the "
                         "Live tab.");
         gap(2);
+        // Blur only shows through glass cards.
+        ImGui::BeginDisabled(!glass_on_);
         field("Blur");
         if (ui::slider_int("##bg_blur", &bg_blur_, 0, 40, "px"))
             backdrop::set_blur(bg_blur_);
+        ImGui::EndDisabled();
         field("Dim");
         float dim_percent = bg_dim_ * 100.0f;
         if (ui::slider("##bg_dim", &dim_percent, 0.0f, 80.0f, 0, "%", 1.0f))
             bg_dim_ = dim_percent / 100.0f;
-        small_dim(dark_theme_ ? "Blur softens the picture behind the glass (0 keeps it sharp); "
-                                "Dim darkens all of it so text stays readable."
-                              : "Blur softens the picture behind the glass (0 keeps it sharp); "
-                                "Dim lightens all of it so text stays readable.");
+        const char* dim_hint = dark_theme_ ? "Dim darkens the picture so text stays readable."
+                                           : "Dim lightens the picture so text stays readable.";
+        if (glass_on_)
+            small_dim((std::string("Blur softens the picture behind the glass (0 keeps it "
+                                   "sharp). ") +
+                       dim_hint)
+                          .c_str());
+        else
+            small_dim(dim_hint);
     }
     ui::end_card();
 }
 
 void App::draw_live_look_card() {
     ui::begin_card("##live_look", "Live preview");
+    ImGui::BeginDisabled(!glass_on_);
     ui::toggle("Glass phone screen", &live_phone_glass_);
-    small_dim("Off, the phone's screen is black. Around the phone, the window's background "
-              "always shows.");
-    if (live_phone_glass_) {
+    ImGui::EndDisabled();
+    small_dim(glass_on_ ? "Off, the phone's screen is black. Around the phone, the window's "
+                          "background always shows."
+                        : "Needs the Glass look (in the Glass card). Around the phone, the "
+                          "window's background always shows.");
+    if (glass_on_ && live_phone_glass_) {
         field("Clear");
         float clear_percent = live_phone_clear_ * 100.0f;
         if (ui::slider("##phone_clear", &clear_percent, 0.0f, 100.0f, 0, "%", 1.0f))

@@ -243,8 +243,10 @@ void read_lines(std::istream& file, Settings& settings) {
             read_bool(value, settings.log_hidden);
         else if (key == "ui.toasts")
             read_bool(value, settings.toasts);
+        else if (key == "ui.glass_on")
+            read_bool(value, settings.glass_on);
         else if (key == "ui.glass")
-            read_float(value, 0.0f, 0.7f, settings.glass);
+            read_float(value, 0.0f, 0.9f, settings.glass);
         else if (key == "ui.bg_mode")
             read_int(value, 0, 2, settings.bg_mode);
         else if (key == "ui.bg_color")
@@ -322,6 +324,7 @@ void read_lines(std::istream& file, Settings& settings) {
 void write_look(std::ostream& out, const Settings& settings) {
     out << "ui.dark_theme = " << (settings.dark_theme ? 1 : 0) << '\n';
     out << "ui.accent = " << rgb_text(settings.accent) << '\n';
+    out << "ui.glass_on = " << (settings.glass_on ? 1 : 0) << '\n';
     out << "ui.glass = " << settings.glass << '\n';
     out << "ui.gloss = " << settings.gloss << '\n';
     out << "ui.rim = " << settings.rim << '\n';

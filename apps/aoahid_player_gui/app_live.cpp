@@ -581,7 +581,7 @@ void App::draw_live_surface(const ImVec2 size) {
     // rounded as set, never past half the shorter side.
     const float rounding =
         std::min(px(static_cast<float>(live_phone_rounding_)), std::min(width, height) * 0.5f);
-    if (live_phone_glass_)
+    if (live_phone_glass_ && theme::glass_enabled())
         ui::paint_glass(list, p0, p1, rounding, theme::glass_fill(live_phone_clear_));
     else
         list->AddRectFilled(p0, p1, IM_COL32(0, 0, 0, 255), rounding);

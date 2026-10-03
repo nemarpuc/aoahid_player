@@ -5,7 +5,23 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
-## [0.21.0] - 2026-10-03
+## [0.22.0] - 2026-10-03
+
+- GUI look: solid by default with a high-contrast dark theme (#000000 background)
+  and electric blue accent (#388BFD). Cards, popups, and keys are opaque with
+  sharp 12 px rounding.
+- Background image auto-preset: setting a background picture automatically activates
+  the glass look, lavender accent (#A78BFA), 24 px card rounding, 1 px blur,
+  25% dim, and 75% live phone glass.
+- Glass UI widgets: translucent buttons, toggles, checkboxes, and sliders with
+  hairline rims and gloss; glass clear range expanded to 90%.
+- Sidebar: removed the outer card wrapper from Connect / Accessory Mode
+  buttons to eliminate double borders and streamline layout.
+- Image decoding: unsupported image formats (WebP, AVIF, HEIC, TIFF, JPEG XL,
+  SVG, PDF) report the actual format and provide a clear remediation message
+  when selected as a background or overlay image.
+- Background: when the glass look is off, the precomputed blur texture for
+  background images is skipped and freed to conserve memory.
 
 - GUI look: glass. Cards, popups, tooltips, and keys are translucent with a
   gloss and a lit rim; the accent is light purple. With a background image,

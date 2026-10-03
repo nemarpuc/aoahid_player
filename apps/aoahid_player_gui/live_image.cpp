@@ -20,8 +20,11 @@
 #endif
 
 #include <algorithm>
+#include <cctype>
 #include <cmath>
+#include <filesystem>
 #include <fstream>
+#include <string_view>
 #include <vector>
 
 namespace gui {
@@ -59,6 +62,47 @@ bool read_file(const std::string& path, std::vector<unsigned char>& out) {
     return true;
 }
 
+struct UnsupportedFormat {
+    const char* description{};
+    std::string_view extension{};
+};
+
+// The name and common extension of a picture format this program cannot
+// read, recognised by the file's first bytes.
+UnsupportedFormat recognize_unsupported(const std::vector<unsigned char>& bytes) {
+    const auto at = [&](const size_t offset, const std::string_view text) {
+        return bytes.size() >= offset + text.size() &&
+               std::equal(text.begin(), text.end(), bytes.begin() + static_cast<long>(offset),
+                          [](const char a, const unsigned char b) {
+                              return static_cast<unsigned char>(a) == b;
+                          });
+    };
+    if (at(0, "RIFF") && at(8, "WEBP"))
+        return {"a WebP image", ".webp"};
+    if (at(4, "ftyp")) {
+        if (at(8, "avif") || at(8, "avis"))
+            return {"an AVIF image", ".avif"};
+        if (at(8, "heic") || at(8, "heix") || at(8, "mif1") || at(8, "msf1") || at(8, "hevc"))
+            return {"a HEIC image", ".heic"};
+    }
+    // Spelled with their lengths: both signatures contain a zero byte.
+    if (at(0, std::string_view("II*\0", 4)) || at(0, std::string_view("MM\0*", 4)))
+        return {"a TIFF image", ".tiff"};
+    if (at(0, "\xFF\x0A") || at(4, "JXL "))
+        return {"a JPEG XL image", ".jxl"};
+    if (at(0, "<svg"))
+        return {"an SVG image", ".svg"};
+    if (at(0, "<?xml")) {
+        const size_t limit = std::min(bytes.size(), static_cast<size_t>(1024));
+        const std::string_view head(reinterpret_cast<const char*>(bytes.data()), limit);
+        if (head.find("<svg") != std::string_view::npos)
+            return {"an SVG image", ".svg"};
+    }
+    if (at(0, "%PDF"))
+        return {"a PDF", ".pdf"};
+    return {};
+}
+
 } // namespace
 
 std::string decode_image(const std::string& path, DecodedImage& image) {
@@ -69,6 +113,20 @@ std::string decode_image(const std::string& path, DecodedImage& image) {
     unsigned char* pixels = stbi_load_from_memory(bytes.data(), static_cast<int>(bytes.size()),
                                                   &image.width, &image.height, &channels, 4);
     if (pixels == nullptr) {
+        // A file named .png or .jpg is often something else inside (a WebP
+        // saved from a browser); say what it is and what to do about it.
+        if (const auto [format, expected_ext] = recognize_unsupported(bytes); format != nullptr) {
+            std::filesystem::path p = aoap::utf8_path(path);
+            std::string ext = aoap::path_utf8(p.extension());
+            for (char& c : ext)
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            const bool matches = (!expected_ext.empty() && ext == expected_ext) ||
+                                 (expected_ext == ".tiff" && ext == ".tif") ||
+                                 (expected_ext == ".avif" && ext == ".avis");
+            const std::string qualifier = matches ? "" : ", whatever its name says";
+            return "\"" + path + "\" is " + format + qualifier +
+                   ". Save it as PNG, JPG, or BMP and choose that file.";
+        }
         const char* reason = stbi_failure_reason();
         return "Could not decode \"" + path + "\"" +
                (reason != nullptr ? std::string(": ") + reason : std::string()) + ".";
