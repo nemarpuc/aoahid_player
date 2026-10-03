@@ -15,6 +15,9 @@ namespace gui {
 inline constexpr float ui_scales[] = {0.85f, 1.0f, 1.15f, 1.3f};
 [[nodiscard]] float nearest_ui_scale(float scale);
 
+// The control API's port until the user picks another.
+inline constexpr int default_api_port = 47821;
+
 // What the GUI remembers between runs: the profile choices and the adb
 // option. Defaults are what a first run shows.
 struct Settings {
@@ -42,7 +45,7 @@ struct Settings {
     // The local HTTP control API (see control_api.hpp). Off by default;
     // binds 127.0.0.1 only.
     bool api_enabled{};
-    int api_port{47821};
+    int api_port{default_api_port};
     // The GLFW key that releases the captured pointer in Live control's
     // mouse mode. 0 means "not set", which live control treats as Escape.
     int live_release_key{};

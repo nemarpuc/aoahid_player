@@ -5,6 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-03
+
+- Update the vendored aoahid_adb_proxy to 3.1.0. The bridge behaves the same;
+  the proxy's result codes now have names (`AOAHID_ADB_PROXY_ERR_*`) and the
+  bridge code uses them instead of bare numbers.
+- CI and release builds link libaoahid 4.0.3 (was 4.0.2), a maintenance
+  release with no behavior change.
+- The control API's default port (47821) is defined once.
+
 ## [1.0.1] - 2026-10-03
 
 - GUI glass look: the primary keys (Connect and the like) are now translucent

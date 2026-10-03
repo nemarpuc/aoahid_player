@@ -59,8 +59,9 @@ class Device {
     // so `adb connect` works while this program holds the USB device. Call it
     // after every open_node(), with no adb server holding the interface; the
     // Context must use AOAHID_EVENT_INTERNAL_THREAD. Returns
-    // aoahid_adb_proxy_start()'s code: 0 on success; describe it with
-    // explain_adb_bridge_error(). close() stops it before the Device closes.
+    // aoahid_adb_proxy_start()'s code (AOAHID_ADB_PROXY_*): 0 on success;
+    // describe it with explain_adb_bridge_error(). close() stops it before
+    // the Device closes.
     int start_adb_bridge(uint16_t port) noexcept;
     // Joins the bridge's threads and closes its Channel; no-op when stopped.
     void stop_adb_bridge() noexcept;
@@ -108,5 +109,8 @@ std::string device_label(const aoahid_device_info* info);
 
 // A sentence for a nonzero Device::start_adb_bridge() result.
 std::string explain_adb_bridge_error(int code, uint16_t port);
+// Whether that result is the proxy's AOAHID_ADB_PROXY_ERR_INTERFACE: the
+// phone's ADB interface could not be claimed.
+[[nodiscard]] bool adb_bridge_interface_unavailable(int code) noexcept;
 
 } // namespace aoap

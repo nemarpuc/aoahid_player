@@ -397,7 +397,7 @@ class App {
     // again at the next startup (see the constructor) and written back
     // whenever draw_control_api_card() changes it.
     bool api_enabled_{};
-    int api_port_{47821};
+    int api_port_{default_api_port};
     bool control_api_open_{}; // the Control API card's folded settings
     // ADB Bridge port per device key (DeviceEntry::key), saved between runs.
     std::map<std::string, int> adb_ports_;

@@ -34,19 +34,19 @@ TEST_CASE("adb_connect_succeeded reads adb's own wording") {
 }
 
 TEST_CASE("explain_adb_bridge_error names the cause") {
-    CHECK(aoap::explain_adb_bridge_error(-2, 6555).find("USB debugging") != std::string::npos);
-    CHECK(aoap::explain_adb_bridge_error(-4, 6556).find("6556") != std::string::npos);
-    CHECK(aoap::explain_adb_bridge_error(-5, 6555).find("127.0.0.1:6555") != std::string::npos);
+    CHECK(aoap::explain_adb_bridge_error(AOAHID_ADB_PROXY_ERR_INTERFACE, 6555).find("USB debugging") != std::string::npos);
+    CHECK(aoap::explain_adb_bridge_error(AOAHID_ADB_PROXY_ERR_BIND, 6556).find("6556") != std::string::npos);
+    CHECK(aoap::explain_adb_bridge_error(AOAHID_ADB_PROXY_ERR_LISTEN, 6555).find("127.0.0.1:6555") != std::string::npos);
 }
 
 TEST_CASE("the bridge does not start without an open device") {
     aoahid_adb_proxy_context* proxy = nullptr;
-    CHECK(aoahid_adb_proxy_start(nullptr, 6555, &proxy) == -1);
+    CHECK(aoahid_adb_proxy_start(nullptr, 6555, &proxy) == AOAHID_ADB_PROXY_ERR_ARGUMENT);
     CHECK(proxy == nullptr);
     aoahid_adb_proxy_stop(nullptr); // ignored
 
     aoap::Device device;
-    CHECK(device.start_adb_bridge(6555) == -1);
+    CHECK(device.start_adb_bridge(6555) == AOAHID_ADB_PROXY_ERR_ARGUMENT);
     CHECK(device.adb_port() == 0U);
     device.close();
     CHECK(device.adb_port() == 0U);

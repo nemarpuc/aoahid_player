@@ -99,8 +99,9 @@ class DeviceGroup {
     [[nodiscard]] std::vector<DeviceStatus> snapshot() const;
 
     // The ADB Bridge of the device at `index` (snapshot() order); see
-    // Device::start_adb_bridge(). Start returns -1 for an unknown or dropped
-    // device. Stopping can block up to ~1 s, so not while a script plays.
+    // Device::start_adb_bridge(). Start returns -1, the proxy's null-argument
+    // code, for an unknown or dropped device. Stopping can block up to ~1 s,
+    // so not while a script plays.
     int start_adb_bridge(size_t index, uint16_t port);
     void stop_adb_bridge(size_t index) noexcept;
 

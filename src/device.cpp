@@ -138,7 +138,7 @@ std::string device_label(const aoahid_device_info* info) {
 std::string explain_adb_bridge_error(const int code, const uint16_t port) {
     const std::string at = "127.0.0.1:" + std::to_string(port);
     switch (code) {
-    case -2: {
+    case AOAHID_ADB_PROXY_ERR_INTERFACE: {
         // The proxy makes no libaoahid call after a failed aoahid_channel_open,
         // so this thread's last diagnostic is that failure.
         const aoahid_error_detail* detail = aoahid_last_error();
@@ -155,16 +155,20 @@ std::string explain_adb_bridge_error(const int code, const uint16_t port) {
         return "the phone's ADB interface could not be opened: " + describe_error(result) +
                ", libusb status " + usb_status + hint;
     }
-    case -4:
+    case AOAHID_ADB_PROXY_ERR_BIND:
         return "port " + std::to_string(port) + " is already in use; choose another port";
-    case -3:
-    case -5:
+    case AOAHID_ADB_PROXY_ERR_SOCKET:
+    case AOAHID_ADB_PROXY_ERR_LISTEN:
         return "could not listen on " + at;
-    case -6:
+    case AOAHID_ADB_PROXY_ERR_RESOURCE:
         return "out of memory, or no thread could be started";
     default:
         return "failed (code " + std::to_string(code) + ")";
     }
+}
+
+bool adb_bridge_interface_unavailable(const int code) noexcept {
+    return code == AOAHID_ADB_PROXY_ERR_INTERFACE;
 }
 
 Device::~Device() { close(); }
@@ -269,9 +273,9 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
 
 int Device::start_adb_bridge(const uint16_t port) noexcept {
     if (handle_ == nullptr || adb_bridge_ != nullptr)
-        return -1;
+        return AOAHID_ADB_PROXY_ERR_ARGUMENT;
     const int result = aoahid_adb_proxy_start(handle_, port, &adb_bridge_);
-    if (result == 0)
+    if (result == AOAHID_ADB_PROXY_OK)
         adb_port_ = port;
     else
         adb_bridge_ = nullptr;
