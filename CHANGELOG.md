@@ -5,6 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+- GUI glass look: the primary keys (Connect and the like) are now translucent
+  and follow the Glass *Clear* setting instead of a fixed opacity; their text
+  stays light over a dark window. *Accessory Mode* is a quiet key so Connect
+  leads.
+- Background picture: a preview in the Background card shows the picture with
+  the dim in effect, and *Auto dim for readability* (on by default, saved as
+  `ui.bg_auto_dim`) raises the dim on a picture too bright for the dark theme
+  (or too dark for the light one). It never lowers the *Dim* you set.
+
 ## [1.0.0] - 2026-10-03
 
 First stable release.

@@ -44,6 +44,7 @@ struct State {
     ImVec2 size{1, 1};
     ImVec2 uv0{};
     ImVec2 uv1{1, 1};
+    float luminance{0.5f}; // mean brightness of the picture, 0 to 1
     ImU32 dim{};
     ImU32 color{}; // what draw() filled the window with when there is no picture
 };
@@ -210,6 +211,15 @@ std::string load(const std::string& file) {
     State& s = state();
     const auto [small_width, small_height] = fit(full_width, full_height, blur_side);
     s.reduced = shrink(pixels, full_width, full_height, small_width, small_height);
+    uint64_t luma_sum = 0;
+    for (size_t index = 0; index + 3 < s.reduced.size(); index += 4) {
+        luma_sum += static_cast<unsigned>(s.reduced[index] * 54 + s.reduced[index + 1] * 183 +
+                                          s.reduced[index + 2] * 19) >>
+                    8;
+    }
+    s.luminance = s.reduced.empty() ? 0.5f
+                                    : static_cast<float>(luma_sum) * 4.0f /
+                                          (255.0f * static_cast<float>(s.reduced.size()));
     if (s.full != 0)
         glDeleteTextures(1, &s.full);
     s.full = upload_mipmapped(pixels, full_width, full_height);
@@ -241,6 +251,36 @@ void clear() {
 bool loaded() { return state().full != 0; }
 
 const std::string& path() { return state().path; }
+
+float suggested_dim(const bool dark) {
+    const State& s = state();
+    if (s.full == 0)
+        return 0.0f;
+    const float need = dark ? s.luminance - 0.35f : 0.65f - s.luminance;
+    return std::clamp(need, 0.0f, 0.6f);
+}
+
+void draw_preview(ImDrawList* list, const ImVec2 p0, const ImVec2 p1, const float dim,
+                  const float rounding) {
+    const State& s = state();
+    if (s.full == 0)
+        return;
+    const ImVec2 size(std::max(p1.x - p0.x, 1.0f), std::max(p1.y - p0.y, 1.0f));
+    const float scale = std::max(size.x / static_cast<float>(s.width),
+                                 size.y / static_cast<float>(s.height));
+    const float visible_u = size.x / (static_cast<float>(s.width) * scale);
+    const float visible_v = size.y / (static_cast<float>(s.height) * scale);
+    list->AddImageRounded(static_cast<ImTextureID>(s.full), p0, p1,
+                          ImVec2(0.5f - visible_u * 0.5f, 0.5f - visible_v * 0.5f),
+                          ImVec2(0.5f + visible_u * 0.5f, 0.5f + visible_v * 0.5f),
+                          ImGui::GetColorU32(IM_COL32_WHITE), rounding);
+    list->AddRectFilled(
+        p0, p1,
+        ImGui::GetColorU32(theme::rgb(
+            theme::dim_base,
+            static_cast<unsigned>(std::lround(std::clamp(dim, 0.0f, 1.0f) * 255.0f)))),
+        rounding);
+}
 
 void set_blur(const int radius) {
     State& s = state();

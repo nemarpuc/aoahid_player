@@ -463,6 +463,9 @@ class App {
     int bg_color_{0x000000};
     int bg_blur_{1};
     float bg_dim_{0.25f};
+    bool bg_auto_dim_{true};
+    // `bg_dim_`, raised when the picture is too bright (or dark) for the text.
+    [[nodiscard]] float effective_dim() const;
     // The picture to show, kept even when it could not be loaded (a drive
     // not mounted yet), so the next start tries it again.
     std::string bg_image_;

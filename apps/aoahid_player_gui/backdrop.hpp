@@ -20,6 +20,15 @@ void clear();
 // The loaded picture's path, empty when none is loaded.
 [[nodiscard]] const std::string& path();
 
+// The dim (0 to 0.6) that keeps text readable on the loaded picture: none for
+// a picture that already suits the theme, more for a bright one in the dark
+// theme (or a dark one in the light theme). Zero when none is loaded.
+[[nodiscard]] float suggested_dim(bool dark);
+
+// Draws the loaded picture, cover-fitted and dimmed by `dim`, into a small
+// box such as a settings preview. Nothing when none is loaded.
+void draw_preview(ImDrawList* list, ImVec2 p0, ImVec2 p1, float dim, float rounding);
+
 // Blur radius in window pixels, 0 to 40; recomputes the blurred copy.
 void set_blur(int radius);
 

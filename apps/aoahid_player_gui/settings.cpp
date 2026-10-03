@@ -257,6 +257,8 @@ void read_lines(std::istream& file, Settings& settings) {
             read_int(value, 0, 40, settings.bg_blur);
         else if (key == "ui.bg_dim")
             read_float(value, 0.0f, 0.8f, settings.bg_dim);
+        else if (key == "ui.bg_auto_dim")
+            read_bool(value, settings.bg_auto_dim);
         else if (key == "window.x")
             read_int(value, -32768, 32767, settings.window_x);
         else if (key == "window.y")
@@ -336,6 +338,7 @@ void write_look(std::ostream& out, const Settings& settings) {
     out << "ui.bg_image = " << one_line(settings.bg_image) << '\n';
     out << "ui.bg_blur = " << settings.bg_blur << '\n';
     out << "ui.bg_dim = " << settings.bg_dim << '\n';
+    out << "ui.bg_auto_dim = " << (settings.bg_auto_dim ? 1 : 0) << '\n';
     out << "live.phone_glass = " << (settings.live_phone_glass ? 1 : 0) << '\n';
     out << "live.phone_clear = " << settings.live_phone_clear << '\n';
     out << "live.phone_rounding = " << settings.live_phone_rounding << '\n';

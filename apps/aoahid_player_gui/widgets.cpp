@@ -55,10 +55,18 @@ Colors colors_for(const Tone tone) {
     switch (tone) {
     case Tone::primary:
         if (theme::glass_enabled()) {
-            return {with_alpha(theme::accent, 175),
-                    with_alpha(theme::accent_hover, 215),
-                    with_alpha(theme::accent_active, 240),
-                    theme::accent_ink};
+            // Follows the Glass "Clear" setting; hover and press firm up the
+            // fill without ever making it solid.
+            const float opacity = 0.80f - 0.50f * theme::current_glass();
+            const auto alpha = [](const float value) {
+                return static_cast<unsigned>(std::lround(255.0f * std::clamp(value, 0.0f, 0.9f)));
+            };
+            // Over a dark window the fill ends up darker than the accent,
+            // so light text reads better than the accent's own ink.
+            return {with_alpha(theme::accent, alpha(opacity)),
+                    with_alpha(theme::accent_hover, alpha(opacity + 0.14f)),
+                    with_alpha(theme::accent_active, alpha(opacity + 0.26f)),
+                    theme::is_dark() ? theme::text : theme::accent_ink};
         }
         return {theme::accent, theme::accent_hover, theme::accent_active, theme::accent_ink};
     case Tone::record:

@@ -211,6 +211,10 @@ void set_shine(const float gloss, const float rim) {
 
 bool glass_enabled() { return glass_on; }
 
+float current_glass() { return glass_transparency; }
+
+bool is_dark() { return dark_mode; }
+
 void set_glass(const float transparency) {
     glass_transparency = std::clamp(transparency, 0.0f, 0.9f);
     surface = glass_fill(glass_transparency);

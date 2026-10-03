@@ -87,6 +87,9 @@ struct Settings {
     std::string bg_image;
     int bg_blur{1};
     float bg_dim{0.25f};
+    // Raise the dim on a picture too bright (or, in the light theme, too
+    // dark) for the text, never lowering `bg_dim`.
+    bool bg_auto_dim{true};
 
     // Window geometry in OS pixels. 0 width/height means "unset": main.cpp
     // then falls back to its own centred, monitor-fitted default instead of

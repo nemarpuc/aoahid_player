@@ -186,6 +186,7 @@ Settings App::current_settings() const {
     settings.bg_image = bg_image_;
     settings.bg_blur = bg_blur_;
     settings.bg_dim = bg_dim_;
+    settings.bg_auto_dim = bg_auto_dim_;
     settings.window_x = window_x_;
     settings.window_y = window_y_;
     settings.window_width = window_width_;
@@ -1120,7 +1121,7 @@ void App::frame() {
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     backdrop::draw(ImGui::GetBackgroundDrawList(), viewport->Pos,
                    ImVec2(viewport->Pos.x + viewport->Size.x, viewport->Pos.y + viewport->Size.y),
-                   bg_mode_ == 2, background_color(), bg_dim_);
+                   bg_mode_ == 2, background_color(), effective_dim());
     ImGui::SetNextWindowPos(viewport->WorkPos);
     ImGui::SetNextWindowSize(viewport->WorkSize);
     // Full screen gives the preview the whole window, with no padding around it.

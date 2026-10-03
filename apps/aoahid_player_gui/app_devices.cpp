@@ -478,7 +478,7 @@ void App::draw_connect_card() {
         if (no_profile && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
             ImGui::SetTooltip("Turn on at least one profile first.");
         ImGui::SameLine();
-        if (ui::button("Accessory Mode", ImVec2(w, size.y), ui::Tone::primary))
+        if (ui::button("Accessory Mode", ImVec2(w, size.y)))
             accessory();
         ImGui::EndDisabled();
         break;

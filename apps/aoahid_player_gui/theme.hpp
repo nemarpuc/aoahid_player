@@ -99,6 +99,10 @@ void set_glass(float transparency);
 // set_mode(), and rewrites the palette like it.
 void set_glass_enabled(bool on);
 [[nodiscard]] bool glass_enabled();
+// The transparency set_glass() last chose (0 opaque to 0.9), and whether the
+// dark palette is active; keys that float over the glass follow both.
+[[nodiscard]] float current_glass();
+[[nodiscard]] bool is_dark();
 // Every accent shade from one colour (0xRRGGBB): used as is in the dark
 // theme, made more vivid and deep enough for white text in the light one.
 // Kept across set_mode().

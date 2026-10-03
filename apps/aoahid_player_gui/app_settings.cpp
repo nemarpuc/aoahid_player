@@ -201,6 +201,7 @@ void App::apply_look(const Settings& settings) {
     bg_color_ = settings.bg_color;
     bg_blur_ = settings.bg_blur;
     bg_dim_ = settings.bg_dim;
+    bg_auto_dim_ = settings.bg_auto_dim;
     backdrop::set_blur(bg_blur_);
     if (settings.bg_image != bg_image_) {
         bg_image_ = settings.bg_image;
@@ -562,6 +563,12 @@ void App::draw_glass_card() {
     ui::end_card();
 }
 
+float App::effective_dim() const {
+    if (!bg_auto_dim_)
+        return bg_dim_;
+    return std::max(bg_dim_, backdrop::suggested_dim(dark_theme_));
+}
+
 void App::draw_background_card() {
     ui::begin_card("##background", "Background");
     field("Show");
@@ -600,6 +607,17 @@ void App::draw_background_card() {
                         "works too."
                       : "Choose a .png, .jpg, or .bmp, or drop one on the window outside the "
                         "Live tab.");
+        if (backdrop::loaded()) {
+            gap(2);
+            // How the picture looks with the dim in effect (the cards add
+            // their glass over it).
+            const ImVec2 p0 = ImGui::GetCursorScreenPos();
+            const float width = ImGui::GetContentRegionAvail().x;
+            const ImVec2 p1(p0.x + width, p0.y + std::min(width * 0.45f, px(150)));
+            backdrop::draw_preview(ImGui::GetWindowDrawList(), p0, p1, effective_dim(),
+                                   px(8));
+            ImGui::Dummy(ImVec2(width, p1.y - p0.y));
+        }
         gap(2);
         // Blur only shows through glass cards.
         ImGui::BeginDisabled(!glass_on_);
@@ -611,6 +629,7 @@ void App::draw_background_card() {
         float dim_percent = bg_dim_ * 100.0f;
         if (ui::slider("##bg_dim", &dim_percent, 0.0f, 80.0f, 0, "%", 1.0f))
             bg_dim_ = dim_percent / 100.0f;
+        ui::toggle("Auto dim for readability", &bg_auto_dim_);
         const char* dim_hint = dark_theme_ ? "Dim darkens the picture so text stays readable."
                                            : "Dim lightens the picture so text stays readable.";
         if (glass_on_)
