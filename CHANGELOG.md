@@ -5,14 +5,43 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [0.21.0] - 2026-10-03
+
+- GUI look: glass. Cards, popups, tooltips, and keys are translucent with a
+  gloss and a lit rim; the accent is light purple. With a background image,
+  the cards show a blurred copy of what is behind them (computed once when
+  the image loads, not per frame).
+- New *Settings* tab, all of it saved in `aoahid_player_gui.ini`:
+  - *Presets*: the whole look saved under a name as `themes/<name>.theme`,
+    applied or deleted from a list.
+  - *Appearance*: Dark or Light (moved here from the header), the accent
+    colour, the UI size (Small to Larger), and a short fade on tab changes.
+  - *Glass*: how see-through the cards are, the gloss and rim strength, and
+    the cards' corner radius.
+  - *Background*: the theme's colour, a colour, or an image (.png/.jpg/.bmp,
+    chosen with the system's file picker, typed, or dropped on the window
+    outside the Live tab), with *Blur* and *Dim*.
+  - *Live preview*: the phone's screen can be glass instead of black, with
+    its own clearness and corner radius; the reference image's settings
+    moved here from the Live tab (its lock stays on the Live tab too, and is
+    now saved).
+  - *Layout*: the sidebar on the left or right, the Activity panel shown or
+    hidden, and notifications.
+- Notifications: warnings, errors, connecting, and disconnecting show for a
+  few seconds in a bottom corner.
+- Live tab: the window's background shows around the phone instead of a
+  black panel.
+- Building the GUI now also fetches nativefiledialog-extended 1.4.1 (zlib,
+  linked statically); on Linux it needs `libdbus-1` (the file picker goes
+  through xdg-desktop-portal).
 - Toggle profile: `BrightnessUp` (`0x6F`) and `BrightnessDown` (`0x70`) join
   the media keys, in `c` rows and on the Live tab. Not yet tested on a device.
 - Live tab: the phone's side keys sit beside the preview (*Volume* + and −
   with *Mute*, *Brightness* + and −; volume and brightness stay down while
   held), the media keys under it (*Prev*, *Play/Pause*, *Next*), and *All
   keys* opens every Toggle key. The switches, *Paste Text*, *Rotate*, and the
-  input log moved to a panel on the right; *Reference image*, *Mouse release
-  key*, and *Shape* are folded rows there. Full screen keeps 5 px around the
+  input log moved to a panel on the right; *Mouse release key* and *Shape*
+  are folded rows there. Full screen keeps 5 px around the
   phone and draws its edge on all four sides.
 - Player tab: the Playlist tab is now the Player's *Playlist* mode (the
   *Script | Playlist* switch), sharing one play bar; pause, seek, speed, and
