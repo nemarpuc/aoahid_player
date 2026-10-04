@@ -6,7 +6,7 @@ the order a change travels in. It lives here because this repository is the
 only one that depends on both of the others.
 
 Source references are `repo/path#Lnnn`, valid at libaoahid v4.0.4,
-aoahid_adb_proxy v3.1.2, and aoahid_player v1.1.0.
+aoahid_adb_proxy v3.1.3, and aoahid_player v1.1.1.
 
 ## Stack
 
@@ -35,8 +35,8 @@ libaoahid          C++20 library, stable C ABI (aoahid.h): AOA 2.0 HID over libu
 | Transfer | `libaoahid/src/transport/transport.cpp#L286` | AOA request 57 on endpoint 0. |
 
 The ADB path is separate: adb's TCP connection to
-`aoahid_adb_proxy/src/aoahid_adb_proxy.cpp#L143` and
-`aoahid_adb_proxy/src/aoahid_adb_proxy.cpp#L178`, then
+`aoahid_adb_proxy/src/aoahid_adb_proxy.cpp#L140` and
+`aoahid_adb_proxy/src/aoahid_adb_proxy.cpp#L175`, then
 `aoahid_channel_write` and `aoahid_channel_read` on the same USB handle.
 
 ## What each boundary uses

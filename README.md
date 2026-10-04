@@ -896,7 +896,7 @@ its own licence in `third-party/`:
   backing the control API's HTTP server
 - [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
   (zlib), linked into the GUI for the file picker
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.1.2
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.1.3
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored

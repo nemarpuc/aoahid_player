@@ -5,6 +5,13 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.1.1] - 2026-10-04
+
+- The vendored aoahid_adb_proxy is 3.1.3. When the phone is lost the ADB
+  Bridge closes its port, so `adb connect` is refused. 3.1.2 kept the port
+  bound and closed each new connection instead; 3.1.3 went back to the simpler
+  behavior, which needs no extra state. Nothing else changed.
+
 ## [1.1.0] - 2026-10-04
 
 Fixes from a review of the three repositories; the full list, with what is
