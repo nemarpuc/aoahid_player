@@ -17,7 +17,7 @@ concurrency:
 
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
-  AOAHID_TAG: v4.0.4
+  AOAHID_TAG: v4.0.5
 
 jobs:
   build:

@@ -5,6 +5,12 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.1.2] - 2026-10-04
+
+- CI and release builds link libaoahid 4.0.5 (was 4.0.4). It takes two
+  internal 4.0.4 changes out again and keeps the field-width fix; nothing
+  changes for this program. The docs follow.
+
 ## [1.1.1] - 2026-10-04
 
 - The vendored aoahid_adb_proxy is 3.1.3. When the phone is lost the ADB

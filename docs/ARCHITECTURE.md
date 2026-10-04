@@ -6,7 +6,7 @@ thread may touch what, how time is kept, and what each layer assumes about
 the one below. The user-facing behavior (CSV format, control API routes,
 options) is in [README.md](../README.md).
 
-Source references are `path#Lnnn` and are valid at v1.1.1.
+Source references are `path#Lnnn` and are valid at v1.1.2.
 
 ## Layers
 
