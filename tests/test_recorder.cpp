@@ -120,3 +120,33 @@ TEST_CASE("A position slightly past the panel range is kept inside the file's ra
     CHECK(script.load(path.string(), error)); // a recording must always load
     std::filesystem::remove(path);
 }
+
+TEST_CASE("A recording only replaces an existing script once it holds rows") {
+    const std::filesystem::path path =
+        std::filesystem::temp_directory_path() / "aoahid_player_test_commit.csv";
+    const std::string target = path.string();
+    const std::string partial = aoap::partial_record_path(target);
+    const auto write = [](const std::string& file, const char* text) {
+        std::ofstream(file, std::ios::binary | std::ios::trunc) << text;
+    };
+    const auto read = [](const std::string& file) {
+        std::ifstream input(file, std::ios::binary);
+        return std::string(std::istreambuf_iterator<char>(input), {});
+    };
+    CHECK(partial != target);
+
+    // Nothing captured: the earlier script stays as it was.
+    write(target, "old\n");
+    write(partial, "# header only\n");
+    CHECK(aoap::commit_recording(target, false));
+    CHECK(read(target) == "old\n");
+    CHECK_FALSE(std::filesystem::exists(partial));
+
+    // Rows captured: the recording takes the script's place.
+    write(partial, "t,0,1,1,1,0.000\n");
+    CHECK(aoap::commit_recording(target, true));
+    CHECK(read(target) == "t,0,1,1,1,0.000\n");
+    CHECK_FALSE(std::filesystem::exists(partial));
+
+    std::filesystem::remove(path);
+}

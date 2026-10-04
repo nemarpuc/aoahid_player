@@ -88,12 +88,18 @@ class Player {
     void run(PlaybackPosition start = {});
 
     // Controls, callable from any thread. stop() is also async-signal-safe.
+    // A stop() or seek() posted while no run() is active stays pending and is
+    // applied when the next run() starts; see discard_requests().
     void stop() noexcept;
     void pause() noexcept;
     void resume() noexcept;
-    // Moves playback (or the paused position) to `target`. No effect while
-    // stopped; pass the start position to run() instead.
+    // Moves playback (or the paused position) to `target`. To start somewhere
+    // else, pass the start position to run().
     void seek(PlaybackPosition target) noexcept;
+    // Drops controls that were posted after the last run() returned and so
+    // have nothing left to act on. Call between runs, from the thread that
+    // calls run(), while nothing can post a control meant for the next run.
+    void discard_requests() noexcept;
     void set_speed(double speed) noexcept; // 2.0 plays twice as fast
     void set_loop_limit(int64_t loops) noexcept; // 0 = repeat until stopped
     // Shifts every later deadline; positive delays. Returns the new total.

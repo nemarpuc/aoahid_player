@@ -17,6 +17,7 @@
 
 #include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <csignal>
 #include <cstdio>
 #include <cstdlib>
@@ -37,6 +38,8 @@
 namespace {
 
 constexpr double ns_per_ms = 1'000'000.0;
+// The largest step the offset prompt takes; the same bound as a row's wait_ms.
+constexpr double max_offset_step_ms = 1.0e9;
 
 std::atomic<aoap::Player*> g_player{nullptr};
 
@@ -259,7 +262,9 @@ void start_offset_prompt(const std::shared_ptr<OffsetBridge>& bridge) {
                 return;
             char* end = nullptr;
             const double milliseconds = std::strtod(buffer, &end);
-            if (end == buffer)
+            // strtod also reads "nan", "inf", and values no int64 can hold.
+            if (end == buffer || !std::isfinite(milliseconds) ||
+                std::fabs(milliseconds) > max_offset_step_ms)
                 continue;
             const std::lock_guard lock(bridge->mutex);
             if (bridge->player == nullptr)

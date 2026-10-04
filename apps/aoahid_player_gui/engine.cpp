@@ -16,6 +16,11 @@ namespace {
 
 constexpr size_t live_inbox_limit = 4096;
 
+// Folded live deltas stop at the int32 limits instead of overflowing.
+int32_t saturating_add(const int32_t a, const int32_t b) noexcept {
+    return static_cast<int32_t>(std::clamp<int64_t>(int64_t{a} + b, INT32_MIN, INT32_MAX));
+}
+
 std::string plural(const uint64_t count, const char* one, const char* many) {
     return std::to_string(count) + ' ' + (count == 1 ? one : many);
 }
@@ -69,27 +74,37 @@ void Engine::push(Command command, const Phase optimistic) {
     ready_.notify_one();
 }
 
+bool Engine::push_from(const Phase expected, Command command, const Phase optimistic) {
+    {
+        const std::lock_guard lock(mutex_);
+        if (phase_.load(std::memory_order_acquire) != expected)
+            return false;
+        queue_.push_back(std::move(command));
+        phase_.store(optimistic, std::memory_order_release);
+    }
+    ready_.notify_one();
+    return true;
+}
+
 void Engine::refresh() {
-    if (phase() != Phase::idle)
-        return;
-    push(Command{Command::Kind::refresh, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::refreshing);
+    push_from(Phase::idle, Command{Command::Kind::refresh, {}, {}, {}, {}, {}, 0, {}, 0},
+              Phase::refreshing);
 }
 
 void Engine::connect(std::vector<size_t> selection, aoap::ProfileSetup setup) {
-    if (phase() != Phase::idle)
-        return;
-    push(Command{Command::Kind::connect, std::move(selection), std::move(setup), {}, {}, {}, 0,
-                 {}, 0},
-         Phase::connecting);
+    push_from(Phase::idle,
+              Command{Command::Kind::connect, std::move(selection), std::move(setup), {}, {}, {},
+                      0, {}, 0},
+              Phase::connecting);
 }
 
 void Engine::accessory(std::vector<size_t> selection) {
-    if (selection.empty() || phase() != Phase::idle)
+    if (selection.empty())
         return;
     Command command{};
     command.kind = Command::Kind::accessory;
     command.selection = std::move(selection);
-    push(std::move(command), Phase::connecting);
+    push_from(Phase::idle, std::move(command), Phase::connecting);
 }
 
 void Engine::disconnect() {
@@ -115,27 +130,31 @@ void Engine::disconnect() {
     push(Command{Command::Kind::disconnect, {}, {}, {}, {}, {}, 0, {}, 0}, Phase::disconnecting);
 }
 
-void Engine::play(std::shared_ptr<const aoap::EventScript> script, std::string name,
+bool Engine::play(std::shared_ptr<const aoap::EventScript> script, std::string name,
                   const aoap::PlaybackPosition start, const int64_t loops) {
     // Live control, if on, keeps running alongside playback (see
     // pump_live()); it is not stopped here.
-    if (phase() != Phase::connected || !script)
-        return;
-    push(Command{Command::Kind::play, {}, {}, std::move(script), std::move(name), start, loops,
-                 {}, 0},
-         Phase::playing);
+    if (!script)
+        return false;
+    return push_from(Phase::connected,
+                     Command{Command::Kind::play, {}, {}, std::move(script), std::move(name),
+                             start, loops, {}, 0},
+                     Phase::playing);
 }
 
 void Engine::play_playlist(std::vector<PlaylistStep> steps, const int64_t time_limit_ns) {
-    if (phase() != Phase::connected || steps.empty())
+    if (steps.empty())
         return;
     {
         const std::lock_guard lock(mutex_);
+        if (phase_.load(std::memory_order_acquire) != Phase::connected)
+            return;
         playlist_abort_ = false;
+        queue_.push_back(Command{Command::Kind::playlist, {}, {}, {}, {}, {}, 0,
+                                 std::move(steps), time_limit_ns});
+        phase_.store(Phase::playing, std::memory_order_release);
     }
-    push(Command{Command::Kind::playlist, {}, {}, {}, {}, {}, 0, std::move(steps),
-                 time_limit_ns},
-         Phase::playing);
+    ready_.notify_one();
 }
 
 void Engine::stop() {
@@ -200,8 +219,8 @@ void Engine::live_send(const aoap::EventPayload& payload) {
             aoap::EventPayload& last = live_inbox_.back().payload;
             if (const auto* move = std::get_if<aoap::MouseMove>(&payload)) {
                 if (auto* previous = std::get_if<aoap::MouseMove>(&last)) {
-                    previous->dx += move->dx;
-                    previous->dy += move->dy;
+                    previous->dx = saturating_add(previous->dx, move->dx);
+                    previous->dy = saturating_add(previous->dy, move->dy);
                     live_pending_.store(true, std::memory_order_release);
                     ready_.notify_one();
                     player_.wake_live();
@@ -245,7 +264,7 @@ void Engine::live_scroll(const int32_t wheel) {
     {
         const std::lock_guard lock(mutex_);
         if (!live_inbox_.empty() && live_inbox_.back().wheel) {
-            live_inbox_.back().wheel_delta += wheel;
+            live_inbox_.back().wheel_delta = saturating_add(live_inbox_.back().wheel_delta, wheel);
         } else {
             if (live_inbox_.size() >= live_inbox_limit)
                 return;
@@ -371,6 +390,9 @@ void Engine::loop() {
         execute(command);
         {
             const std::lock_guard lock(mutex_);
+            // Still set only when the command ended without finish_run().
+            if (running_play_)
+                player_.discard_requests();
             running_play_ = false;
         }
         if (wake_)
@@ -387,6 +409,12 @@ void Engine::loop() {
 void Engine::finish_run() {
     {
         const std::lock_guard lock(mutex_);
+        // A stop() or seek that arrived after the last Player::run() returned
+        // has nothing left to act on; left pending, it would end or move the
+        // next playback as soon as it starts. Dropped under the lock that
+        // stop() posts under and that lets the next play be queued.
+        player_.discard_requests();
+        running_play_ = false;
         if (queue_.empty()) {
             phase_.store(Phase::connected, std::memory_order_release);
             if (live_active_.load(std::memory_order_relaxed)) {

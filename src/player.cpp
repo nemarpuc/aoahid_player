@@ -81,6 +81,8 @@ void Player::set_speed(const double speed) noexcept {
 
 void Player::wake_live() noexcept { wake_.notify(); }
 
+void Player::discard_requests() noexcept { requests_.store(0U, std::memory_order_release); }
+
 void Player::set_loop_limit(const int64_t loops) noexcept {
     loop_limit_.store(std::max<int64_t>(loops, 0), std::memory_order_relaxed);
 }
@@ -327,9 +329,11 @@ Player::Outcome Player::hold_paused() {
     publish(PlaybackState::paused, pause_position_);
 
     while (true) {
+        // Read before the pump runs: input queued while it runs then differs
+        // from `seen` and ends the wait below instead of sleeping through it.
+        const uint32_t seen = wake_.epoch();
         if (live_pump_)
             live_pump_();
-        const uint32_t seen = wake_.epoch();
         const uint32_t pending = requests_.exchange(0U, std::memory_order_acq_rel);
         if ((pending & request_stop) != 0U) {
             paused_ = false;
@@ -363,9 +367,10 @@ Player::Outcome Player::hold_paused() {
 
 Player::Outcome Player::wait_to(const int64_t script_time) {
     while (true) {
+        // Read before the pump runs; see hold_paused().
+        const uint32_t seen = wake_.epoch();
         if (live_pump_)
             live_pump_();
-        const uint32_t seen = wake_.epoch();
         if (requests_.load(std::memory_order_acquire) != 0U) {
             const Outcome outcome = service();
             if (outcome != Outcome::proceed)

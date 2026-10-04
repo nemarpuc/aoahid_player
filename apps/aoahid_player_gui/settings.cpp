@@ -83,7 +83,8 @@ void read_float(const std::string& text, const float minimum, const float maximu
     const float value = std::strtof(text.c_str(), &end);
     if (errno != 0 || end == text.c_str() || *end != '\0')
         return;
-    if (value < minimum || value > maximum)
+    // Written this way round so "nan", which strtof accepts, is rejected too.
+    if (!(value >= minimum && value <= maximum))
         return;
     out = value;
 }

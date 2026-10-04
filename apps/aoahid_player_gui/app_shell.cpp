@@ -94,7 +94,8 @@ void App::draw_header() {
                          : adb_status_ == AdbStatus::not_found ? theme::danger
                                                                 : theme::warning;
     const float spacing = px(12);
-    const float divider_w = px(1) + spacing;
+    // A divider has `spacing` on both sides.
+    const float divider_w = px(1) + spacing * 2;
     float width = ui::status_item_width(adb_label) + divider_w +
                   ui::status_item_width(connection.c_str()) + divider_w +
                   ui::status_item_width(playback);

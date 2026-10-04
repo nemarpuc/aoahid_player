@@ -235,8 +235,9 @@ void GeteventParser::feed(std::string_view line, const int64_t host_now_ns,
         if (!parse_hex32(value, raw))
             return;
         if (code == "ABS_MT_SLOT") {
-            if (raw < max_slots)
-                state.slot = raw;
+            // A slot beyond the tracked ones selects none, so its events are
+            // dropped instead of landing on the slot selected before it.
+            state.slot = raw < max_slots ? raw : max_slots;
             return;
         }
         if (state.slot >= max_slots)

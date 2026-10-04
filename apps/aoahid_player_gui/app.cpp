@@ -107,6 +107,7 @@ App::~App() {
     control_api_.stop();
     live_capture_pointer(false);
     live_paste_active_.store(false, std::memory_order_relaxed);
+    window_moving_ = false;
     persist_settings();
     backdrop::clear();
     stop_recording();
@@ -287,6 +288,8 @@ void App::apply_settings(const Settings& settings) {
 
 void App::set_window_geometry(const int x, const int y, const int width,
                               const int height) noexcept {
+    window_moving_ =
+        x != window_x_ || y != window_y_ || width != window_width_ || height != window_height_;
     window_x_ = x;
     window_y_ = y;
     window_width_ = width;
@@ -300,6 +303,10 @@ bool App::consume_theme_change() noexcept {
 }
 
 void App::persist_settings() {
+    // A window being dragged or resized has a new geometry on every frame;
+    // it is saved once it rests instead of rewriting the file per frame.
+    if (window_moving_)
+        return;
     Settings current = current_settings();
     if (current == saved_settings_)
         return;

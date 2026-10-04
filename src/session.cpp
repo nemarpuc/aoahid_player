@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/session.hpp"
 
+#include "aoahid_player/timing.hpp"
+
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -10,6 +12,10 @@ namespace aoap {
 namespace {
 
 constexpr uint32_t discover_timeout_ms = 500U;
+// Android registers a HID device asynchronously after aoahid_node_open
+// returns, and a report sent before that is refused (STALL) or lost.
+// libaoahid's docs/API.md asks for a short gap such as 100 ms.
+constexpr int32_t registration_settle_ms = 100;
 
 std::string text_or(const char* value, const char* fallback) {
     return value != nullptr && value[0] != '\0' ? std::string(value) : std::string(fallback);
@@ -218,6 +224,7 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
         return false;
     }
     setup_ = setup;
+    Timing::sleep_ms(registration_settle_ms);
     return true;
 }
 

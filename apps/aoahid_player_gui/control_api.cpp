@@ -126,12 +126,29 @@ std::string json_ok() {
 
 // --- Query parameter parsing -------------------------------------------------
 
-bool parse_bool(const std::string& text, const bool default_value) noexcept {
-    if (text == "1" || text == "true" || text == "on" || text == "yes")
+// A parameter that is not given takes `fallback`. One that is given must be
+// one of the spellings below: a typo answers 400 instead of quietly becoming
+// the fallback, which for "down" would press a key meant to be released.
+bool read_flag(const httplib::Request& req, httplib::Response& res, const char* key,
+               const bool fallback, bool& out) {
+    if (!req.has_param(key)) {
+        out = fallback;
         return true;
-    if (text == "0" || text == "false" || text == "off" || text == "no")
-        return false;
-    return default_value;
+    }
+    const std::string text = req.get_param_value(key);
+    if (text == "1" || text == "true" || text == "on" || text == "yes") {
+        out = true;
+        return true;
+    }
+    if (text == "0" || text == "false" || text == "off" || text == "no") {
+        out = false;
+        return true;
+    }
+    res.status = 400;
+    res.set_content(json_error(std::string("Invalid \"") + key +
+                               "\" (use true/false, 1/0, on/off, or yes/no)."),
+                    "application/json");
+    return false;
 }
 
 // Decimal, or hex with a "0x" prefix, as in CSV scripts; a leading zero is
@@ -292,6 +309,17 @@ std::string ControlApi::start(const int port) {
         return httplib::Server::HandlerResponse::Unhandled;
     });
     register_routes();
+    // cpp-httplib's own default is SO_REUSEPORT where it exists, which lets a
+    // second program (another copy of this one included) bind the same port
+    // and take a share of the requests; on Windows SO_REUSEADDR would do the
+    // same. With these options a port in use fails to bind.
+    server_->set_socket_options([](const socket_t sock) {
+#ifdef _WIN32
+        httplib::set_socket_opt(sock, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, 1);
+#else
+        httplib::set_socket_opt(sock, SOL_SOCKET, SO_REUSEADDR, 1);
+#endif
+    });
     // set_address_family is not needed: passing "127.0.0.1" already binds
     // that interface alone, never a public one.
     if (!server_->bind_to_port("127.0.0.1", port)) {
@@ -440,7 +468,8 @@ void ControlApi::register_routes() {
             return;
         }
         request.device = static_cast<size_t>(device - 1);
-        request.on = parse_bool(req.get_param_value("on"), true);
+        if (!read_flag(req, res, "on", true, request.on))
+            return;
         request.port = static_cast<int>(port);
         run_ui(request, res);
     });
@@ -477,7 +506,12 @@ void ControlApi::register_routes() {
                             "application/json");
             return;
         }
-        engine_.play(script, aoap::display_name(script_param), {}, loops);
+        if (!engine_.play(script, aoap::display_name(script_param), {}, loops)) {
+            res.status = 409;
+            res.set_content(json_error("Not connected (or already playing)."),
+                            "application/json");
+            return;
+        }
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/stop", [this](const Req&, Res& res) {
@@ -490,7 +524,10 @@ void ControlApi::register_routes() {
             res.set_content(json_error("Nothing is playing."), "application/json");
             return;
         }
-        if (parse_bool(req.get_param_value("paused"), true))
+        bool paused = true;
+        if (!read_flag(req, res, "paused", true, paused))
+            return;
+        if (paused)
             engine_.player().pause();
         else
             engine_.player().resume();
@@ -503,7 +540,9 @@ void ControlApi::register_routes() {
             return;
         }
         int64_t time_ms = 0;
-        if (!parse_int(req.get_param_value("time_ms"), time_ms) || time_ms < 0) {
+        // The upper bound keeps the conversion to nanoseconds inside int64.
+        if (!parse_int(req.get_param_value("time_ms"), time_ms) || time_ms < 0 ||
+            time_ms > INT64_MAX / 1'000'000) {
             res.status = 400;
             res.set_content(json_error("Missing or invalid \"time_ms\"."), "application/json");
             return;
@@ -544,7 +583,9 @@ void ControlApi::register_routes() {
             res.set_content(json_error("Missing or invalid \"x\"/\"y\"."), "application/json");
             return;
         }
-        const bool state = parse_bool(req.get_param_value("state"), true);
+        bool state = true;
+        if (!read_flag(req, res, "state", true, state))
+            return;
         engine_.live_send(aoap::TouchEvent{api_finger(), state, x, y});
         res.set_content(json_ok(), "application/json");
     });
@@ -568,8 +609,10 @@ void ControlApi::register_routes() {
                             "application/json");
             return;
         }
-        engine_.live_send(
-            aoap::MouseButton{static_cast<uint32_t>(button), parse_bool(req.get_param_value("down"), true)});
+        bool down = true;
+        if (!read_flag(req, res, "down", true, down))
+            return;
+        engine_.live_send(aoap::MouseButton{static_cast<uint32_t>(button), down});
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/mouse/wheel", [this](const Req& req, Res& res) {
@@ -591,7 +634,10 @@ void ControlApi::register_routes() {
                 "application/json");
             return;
         }
-        engine_.live_send(aoap::KeyEvent{usage, parse_bool(req.get_param_value("down"), true)});
+        bool down = true;
+        if (!read_flag(req, res, "down", true, down))
+            return;
+        engine_.live_send(aoap::KeyEvent{usage, down});
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/gamepad/button", [this](const Req& req, Res& res) {
@@ -602,8 +648,10 @@ void ControlApi::register_routes() {
                             "application/json");
             return;
         }
-        engine_.live_send(aoap::GamepadButton{static_cast<uint32_t>(index),
-                                              parse_bool(req.get_param_value("down"), true)});
+        bool down = true;
+        if (!read_flag(req, res, "down", true, down))
+            return;
+        engine_.live_send(aoap::GamepadButton{static_cast<uint32_t>(index), down});
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/gamepad/axis", [this](const Req& req, Res& res) {
@@ -620,10 +668,13 @@ void ControlApi::register_routes() {
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/gamepad/dpad", [this](const Req& req, Res& res) {
-        engine_.live_send(aoap::GamepadDpad{parse_bool(req.get_param_value("up"), false),
-                                            parse_bool(req.get_param_value("down"), false),
-                                            parse_bool(req.get_param_value("right"), false),
-                                            parse_bool(req.get_param_value("left"), false)});
+        aoap::GamepadDpad dpad{};
+        if (!read_flag(req, res, "up", false, dpad.up) ||
+            !read_flag(req, res, "down", false, dpad.down) ||
+            !read_flag(req, res, "right", false, dpad.right) ||
+            !read_flag(req, res, "left", false, dpad.left))
+            return;
+        engine_.live_send(dpad);
         res.set_content(json_ok(), "application/json");
     });
     svr.Post("/media", [this](const Req& req, Res& res) {
@@ -638,7 +689,10 @@ void ControlApi::register_routes() {
         }
         // Without "down" it is a tap: press, then release in the next report.
         if (req.has_param("down")) {
-            engine_.live_send(aoap::MediaKey{usage, parse_bool(req.get_param_value("down"), true)});
+            bool down = true;
+            if (!read_flag(req, res, "down", true, down))
+                return;
+            engine_.live_send(aoap::MediaKey{usage, down});
         } else {
             engine_.live_send(aoap::MediaKey{usage, true});
             engine_.live_send(aoap::MediaKey{usage, false});
@@ -658,8 +712,11 @@ void ControlApi::register_routes() {
                             "application/json");
             return;
         }
-        const bool in_range = parse_bool(req.get_param_value("in_range"), true);
-        const bool tip = parse_bool(req.get_param_value("tip"), false);
+        bool in_range = true;
+        bool tip = false;
+        if (!read_flag(req, res, "in_range", true, in_range) ||
+            !read_flag(req, res, "tip", false, tip))
+            return;
         if (tip && !in_range) {
             res.status = 400;
             res.set_content(json_error("\"tip\" needs \"in_range\"."), "application/json");

@@ -84,7 +84,8 @@ class Engine final : private aoap::PlaybackObserver {
     void disconnect();
     void accessory(std::vector<size_t> selection);
     // `loops` 0 repeats until stopped.
-    void play(std::shared_ptr<const aoap::EventScript> script, std::string name,
+    // False when nothing was queued (not connected, or already playing).
+    bool play(std::shared_ptr<const aoap::EventScript> script, std::string name,
               aoap::PlaybackPosition start, int64_t loops);
     // Plays the steps in order; `time_limit_ns` 0 means no limit.
     void play_playlist(std::vector<PlaylistStep> steps, int64_t time_limit_ns);
@@ -167,6 +168,9 @@ class Engine final : private aoap::PlaybackObserver {
     };
 
     void push(Command command, Phase optimistic);
+    // Queues only while the phase is `expected`; the check and the queueing
+    // share one lock, so two callers cannot both pass it.
+    bool push_from(Phase expected, Command command, Phase optimistic);
     void loop();
     void execute(Command& command);
     void run_live();

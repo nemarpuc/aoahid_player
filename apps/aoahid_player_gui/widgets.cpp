@@ -747,7 +747,8 @@ bool toggle(const char* label, bool* value) {
 
 float status_item_width(const char* text) {
     ImGui::PushFont(nullptr, theme::font_small);
-    const float width = ImGui::CalcTextSize(text).x + px(3) * 2 + px(10);
+    // The dot and its gap, as status_item() lays them out.
+    const float width = ImGui::CalcTextSize(text).x + px(6) + px(7);
     ImGui::PopFont();
     return width;
 }

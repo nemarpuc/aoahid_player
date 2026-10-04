@@ -476,6 +476,8 @@ class App {
     int window_y_{};
     int window_width_{};
     int window_height_{};
+    // The geometry differs from the previous frame's (see persist_settings()).
+    bool window_moving_{};
     Engine::Phase last_phase_{Engine::Phase::idle};
     AdbStatus adb_status_{AdbStatus::unknown};
 

@@ -122,6 +122,19 @@ std::string resolve_record_path(std::string_view name) {
     return path_utf8(path);
 }
 
+std::string partial_record_path(const std::string& path) { return path + ".part"; }
+
+bool commit_recording(const std::string& path, const bool keep) {
+    const std::filesystem::path partial = utf8_path(partial_record_path(path));
+    std::error_code code;
+    if (!keep) {
+        std::filesystem::remove(partial, code);
+        return true;
+    }
+    std::filesystem::rename(partial, utf8_path(path), code);
+    return !code;
+}
+
 bool Recorder::run(const RecordOptions& options) {
     rows_.store(0, std::memory_order_relaxed);
     const auto note = [this](const Severity severity, const std::string& text) {
@@ -138,7 +151,11 @@ bool Recorder::run(const RecordOptions& options) {
     std::error_code code;
     if (path.has_parent_path())
         std::filesystem::create_directories(path.parent_path(), code);
-    std::ofstream output(path, std::ios::binary | std::ios::trunc);
+    // Written beside the target and moved over it at the end, so a recording
+    // that cannot start or captures nothing never destroys an earlier script
+    // of the same name.
+    std::ofstream output(utf8_path(partial_record_path(options.output_path)),
+                         std::ios::binary | std::ios::trunc);
     if (!output) {
         note(Severity::error, "Cannot create " + options.output_path + ".");
         return false;
@@ -188,7 +205,7 @@ bool Recorder::run(const RecordOptions& options) {
     std::string error;
     if (!adb.start(adb_command(options.adb_serial, {"shell", "getevent", "-lt"}), error)) {
         output.close();
-        std::filesystem::remove(path, code);
+        commit_recording(options.output_path, false);
         note(Severity::error, "Recording could not start: " + error +
                                   ". Install Android SDK Platform-Tools and add it to PATH.");
         return false;
@@ -253,11 +270,16 @@ bool Recorder::run(const RecordOptions& options) {
     const uint64_t total = rows_.load(std::memory_order_relaxed);
     const std::string adb_reason = first_complaint(adb.error_output());
     if (!written) {
-        note(Severity::error, "Writing " + options.output_path + " failed.");
+        note(Severity::error, "Writing " + partial_record_path(options.output_path) + " failed.");
+        return false;
+    }
+    if (total != 0 && !commit_recording(options.output_path, true)) {
+        note(Severity::error, "The recording could not be saved as " + options.output_path +
+                                  "; it is in " + partial_record_path(options.output_path) + ".");
         return false;
     }
     if (total == 0) {
-        std::filesystem::remove(path, code);
+        commit_recording(options.output_path, false);
         if (adb_ended)
             note(Severity::error, "adb stopped before anything was recorded" +
                                       (adb_reason.empty() ? std::string()

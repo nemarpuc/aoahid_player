@@ -48,7 +48,8 @@ struct RecordOptions {
 // Runs `adb shell getevent -lt`, turns completed touch and key frames into
 // lowercase CSV rows with measured waits, and streams them to a file the
 // player can use directly. `-t` makes getevent print the timestamps the
-// waits come from; a line without one falls back to the host clock.
+// waits come from; a line without one falls back to the host clock. The rows
+// go to partial_record_path() while recording; see commit_recording().
 //
 // One Recorder records once: a stop() that arrives before run() is honoured.
 class Recorder {
@@ -59,7 +60,8 @@ class Recorder {
     Recorder& operator=(const Recorder&) = delete;
 
     // Blocks until stop() or until adb exits. Returns true when a file with
-    // at least one row was saved; an empty recording leaves no file behind.
+    // at least one row was saved; an empty recording leaves no file behind
+    // and does not touch a file already saved under that name.
     bool run(const RecordOptions& options);
 
     // Any thread; async-signal-safe.
@@ -87,5 +89,14 @@ std::string timestamped_record_name();
 // bare name goes into script_directory() with ".csv" added when missing, and
 // anything containing a directory is used as given.
 std::string resolve_record_path(std::string_view name);
+
+// The file a recording saved as `path` is written to until it has stopped.
+std::string partial_record_path(const std::string& path);
+
+// Ends a recording: with `keep`, the partial file takes `path`'s place
+// (replacing a file already there); without it, the partial file is deleted
+// and `path` is left as it was. Returns false when the move failed, in which
+// case the partial file stays.
+bool commit_recording(const std::string& path, bool keep);
 
 } // namespace aoap

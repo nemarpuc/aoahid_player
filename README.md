@@ -253,7 +253,9 @@ it to one `/dev/input/eventN`. Type the *File name* before you start (`.csv` is
 added; blank gives `record-<date>-<time>`). Names with characters Windows or
 Linux cannot store are refused, and a name that already exists turns the
 button into *Replace and record*. *Stop and save* writes the file into `csv/`,
-and *Open in player* loads it.
+and *Open in player* loads it. The existing file is replaced only when the new
+recording stops with something captured; until then the rows are kept in
+`<name>.csv.part` beside it.
 
 *Coordinates* chooses how touch positions are written: **Raw** (the panel's own
 numbers) or **Normalized** (fractions from 0 to 1). The line under the switch
@@ -367,7 +369,8 @@ on, so turning it on is a deliberate choice, same as opening a debug port.
 Every route takes plain query parameters — `curl -X POST
 "http://127.0.0.1:47821/touch?x=500&y=900&state=true"` — with no request body
 to build. Boolean parameters take `true`/`false`, `1`/`0`, `on`/`off`, or
-`yes`/`no`. Numbers are decimal, or hex with a `0x` prefix (a leading zero
+`yes`/`no`; one that is left out takes the default in the table below, and
+one that is given with any other value answers `400`. Numbers are decimal, or hex with a `0x` prefix (a leading zero
 is still decimal, as in CSV scripts). `GET /` and `GET /status` are the only GET routes; every other
 route is POST. A route answers `200` with a small JSON object, at least
 `{"ok":true}` or `{"ok":false,"error":"..."}`; a malformed request answers
@@ -501,7 +504,8 @@ aoa_record [options]
 
 Runs `adb shell getevent -lt`, turns touch (`ABS_MT_*`) and key (`EV_KEY`)
 frames into lowercase `t` and `k` rows with measured `wait_ms`, and streams
-them to the file. The touch panel's own coordinate range is read with
+them to `<name>.part`, which becomes the file when the recording stops. The
+touch panel's own coordinate range is read with
 `getevent -lp`, so playback can scale the recording to whatever touchscreen
 resolution is connected:
 
@@ -512,7 +516,8 @@ resolution is connected:
 
 If the panel's range cannot be read, the recording is written raw and a
 warning says so. Ctrl+C stops; the file is flushed and closed first. A
-recording that captured nothing leaves no file behind.
+recording that captured nothing, or could not start, leaves no file behind and
+does not touch a file already saved under that name.
 
 ## CSV script format
 
@@ -752,6 +757,15 @@ warnings. They use [doctest](https://github.com/doctest/doctest),
 vendored under `tests/third_party/`. They are built only when this is the
 top-level project; pass `-DBUILD_TESTING=OFF` to skip them.
 
+## Documentation for contributors
+
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the core, the GUI's threads,
+  how time is kept, and what each layer assumes.
+- [docs/CROSS_REPO.md](docs/CROSS_REPO.md): what crosses the boundaries to
+  libaoahid and aoahid_adb_proxy, the version pins, and the release order.
+- [docs/REVIEW_2026-10.md](docs/REVIEW_2026-10.md): the October 2026 review:
+  what was fixed, and what is open with a proposed change.
+
 ## Using `aoahid_player_core` as a library
 
 The engine behind all three programs is a static library with no console
@@ -882,7 +896,7 @@ its own licence in `third-party/`:
   backing the control API's HTTP server
 - [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
   (zlib), linked into the GUI for the file picker
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.1.0
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.1.2
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored

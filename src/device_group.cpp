@@ -160,9 +160,10 @@ aoahid_result DeviceGroup::apply(const EventPayload& payload) {
             // alone instead of disconnecting it.
             continue;
         }
-        if (result == AOAHID_ERR_PARAM) {
-            // The row is outside what the Spec declared: identical on every
-            // device, so reject the row instead of dropping hardware.
+        if (result == AOAHID_ERR_PARAM || result == AOAHID_ERR_OVERFLOW) {
+            // The row is outside what the Spec declared (OVERFLOW: more
+            // contacts than its slots): identical on every device, so reject
+            // the row instead of dropping hardware.
             ++rejected_rows_;
             if (rejection_detail_.empty())
                 rejection_detail_ = explain_error(result);

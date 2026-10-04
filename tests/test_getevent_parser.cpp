@@ -189,3 +189,32 @@ TEST_CASE("GeteventParser ignores touchscreen BTN_TOUCH and BTN_TOOL_* keys") {
     CHECK(parser.unmapped_keys() == 0);
     CHECK(parser.first_unmapped_key().empty());
 }
+
+TEST_CASE("GeteventParser drops events for a slot it does not track") {
+    GeteventParser parser;
+    std::vector<EventRecord> out;
+
+    feed_lines(parser,
+               {
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_SLOT          00000000",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_TRACKING_ID   00000005",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_X    00000064",
+                   "[   100.100000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_Y    000000c8",
+                   "[   100.100000] /dev/input/event4: EV_SYN       SYN_REPORT           00000000",
+                   // Slot 16 is past the 16 this parser tracks (0-15).
+                   "[   100.200000] /dev/input/event4: EV_ABS       ABS_MT_SLOT          00000010",
+                   "[   100.200000] /dev/input/event4: EV_ABS       ABS_MT_TRACKING_ID   00000007",
+                   "[   100.200000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_X    000003e7",
+                   "[   100.200000] /dev/input/event4: EV_ABS       ABS_MT_POSITION_Y    000003e7",
+                   "[   100.200000] /dev/input/event4: EV_SYN       SYN_REPORT           00000000",
+               },
+               out);
+    parser.finish(out);
+
+    // Only slot 0's own placement: nothing from slot 16 lands on it.
+    REQUIRE(out.size() == 1);
+    const auto& down = std::get<TouchEvent>(out[0].payload);
+    CHECK(down.finger_id == 0);
+    CHECK(down.x == 0x64);
+    CHECK(down.y == 0xc8);
+}

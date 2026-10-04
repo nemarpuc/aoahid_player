@@ -5,6 +5,59 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-04
+
+Fixes from a review of the three repositories; the full list, with what is
+still open, is in `docs/REVIEW_2026-10.md`. Checked with the test suite and
+against libaoahid's fake USB backend, not on a phone.
+
+### Fixed
+
+- Connecting waits 100 ms after the HID devices are registered, so the first
+  input is not sent before Android has finished creating them. `aoa_touch`
+  started playing at once, and a first row that arrived too early was refused
+  and the phone dropped.
+- A touch row that needs more contacts than the profile declares is skipped
+  with a warning. It dropped the phone ("stopped responding").
+- A Stop pressed just as a script or a playlist step ends no longer makes the
+  next playback stop as soon as it starts.
+- Live input queued while a script waits for its next row, or is paused, is
+  sent at once; it could wait for the next row.
+- Recording: an existing script is replaced only when the new recording stops
+  with something captured. A recording that could not start, or captured
+  nothing, deleted the script of the same name. Rows are written to
+  `<name>.part` until then.
+- Recording: events for a touch slot above the 16 tracked ones are dropped.
+  They were applied to the slot selected before.
+- `aoa_touch`: the offset prompt ignores `nan`, `inf`, and steps beyond 1e9 ms.
+- GUI: the status row at the top right lines up with the cards' edge; it ran
+  past it, and into the window edge while recording.
+- GUI: the settings file is no longer rewritten on every frame while the
+  window is moved or resized; `nan` in it is ignored for a number.
+
+### Changed
+
+- Control API: a boolean parameter that is given must be `true`/`false`,
+  `1`/`0`, `on`/`off`, or `yes`/`no`, or the route answers 400. A typo such as
+  `down=flase` used to press the key. A parameter that is left out still takes
+  its default.
+- Control API: `/play` answers 409 when another request started a playback
+  first; two simultaneous requests could both be queued. `/seek` answers 400
+  for a `time_ms` too large to convert.
+- Control API: the port is bound for this program alone. On Linux a second
+  program could bind the same port and receive part of the requests.
+- The vendored aoahid_adb_proxy is 3.1.2: when the phone is lost, a new
+  `adb connect` to the bridge's port fails at once instead of waiting for an
+  answer that never comes. The port stays bound until the bridge is stopped.
+- CI and release builds link libaoahid 4.0.4 (was 4.0.3).
+- `aoahid_player_core`: `Player::discard_requests()`, `partial_record_path()`,
+  and `commit_recording()` are new.
+
+### Documentation
+
+- Added `docs/ARCHITECTURE.md`, `docs/CROSS_REPO.md`, and
+  `docs/REVIEW_2026-10.md`.
+
 ## [1.0.2] - 2026-10-03
 
 - Update the vendored aoahid_adb_proxy to 3.1.0. The bridge behaves the same;
