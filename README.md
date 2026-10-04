@@ -48,6 +48,13 @@ themselves. On Linux, install the udev rule first (see
 (Android SDK Platform-Tools) on PATH; playback does not. The Windows ARM64
 archive is cross-compiled, so CI checks its contents but does not run it.
 
+On Windows, if the phone cannot be opened or the ADB Bridge does not start, the
+cause is often the phone's driver: libusb needs WinUSB (or libusbK / libusb0).
+Input alone worked with Samsung's own driver on the Galaxy Tab S11, while the
+ADB Bridge needed the whole device switched to WinUSB. Replacing the driver
+with [Zadig](https://zadig.akeo.ie/) may fix it, but it is not guaranteed on
+every phone; see [Troubleshooting](#troubleshooting).
+
 ## The GUI
 
 Start `aoahid_player_gui`. The profile settings are saved to
@@ -783,7 +790,7 @@ The main headers in `include/aoahid_player/`:
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| Windows: the ADB Bridge does not start, and the error contains `libusb status -12` | The phone's adb interface uses a driver that libusb cannot use. Some manufacturers install their own USB driver by default. | Switch the phone to WinUSB with Zadig ([example below](#example-samsung-on-windows)). |
+| Windows: the ADB Bridge does not start, and the error contains `libusb status -12` | The phone's adb interface uses a driver that libusb cannot use. Some manufacturers install their own USB driver by default. | Switching the whole phone to WinUSB with Zadig may fix it ([example below](#example-samsung-on-windows)); it is not guaranteed on every phone. |
 
 ### Example: Samsung on Windows
 
