@@ -661,7 +661,7 @@ one phone instead, for systems without logind.
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/libaoahid) 4.0.0 or newer 4.x
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 4.2.0 or newer 4.x
   (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, and D-Bus for the file picker, for example on Debian/Ubuntu:
@@ -763,8 +763,6 @@ top-level project; pass `-DBUILD_TESTING=OFF` to skip them.
   how time is kept, and what each layer assumes.
 - [docs/CROSS_REPO.md](docs/CROSS_REPO.md): what crosses the boundaries to
   libaoahid and aoahid_adb_proxy, the version pins, and the release order.
-- [docs/REVIEW_2026-10.md](docs/REVIEW_2026-10.md): the October 2026 review:
-  what was fixed, and what is open with a proposed change.
 
 ## Using `aoahid_player_core` as a library
 

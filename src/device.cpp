@@ -177,16 +177,8 @@ Device::Device(Device&& other) noexcept
     : handle_(std::exchange(other.handle_, nullptr)),
       adb_bridge_(std::exchange(other.adb_bridge_, nullptr)),
       adb_port_(std::exchange(other.adb_port_, uint16_t{0})), nodes_(other.nodes_),
-      profile_mask_(std::exchange(other.profile_mask_, 0U)), touch_(other.touch_),
-      mouse_(other.mouse_), key_(other.key_), gamepad_(other.gamepad_), pen_(other.pen_),
-      toggle_(other.toggle_), label_(std::move(other.label_)) {
+      profile_mask_(std::exchange(other.profile_mask_, 0U)), label_(std::move(other.label_)) {
     other.nodes_.fill(nullptr);
-    other.touch_ = {};
-    other.mouse_ = {};
-    other.key_ = {};
-    other.gamepad_ = {};
-    other.pen_ = {};
-    other.toggle_ = {};
 }
 
 Device& Device::operator=(Device&& other) noexcept {
@@ -197,20 +189,8 @@ Device& Device::operator=(Device&& other) noexcept {
         adb_port_ = std::exchange(other.adb_port_, uint16_t{0});
         nodes_ = other.nodes_;
         profile_mask_ = std::exchange(other.profile_mask_, 0U);
-        touch_ = other.touch_;
-        mouse_ = other.mouse_;
-        key_ = other.key_;
-        gamepad_ = other.gamepad_;
-        pen_ = other.pen_;
-        toggle_ = other.toggle_;
         label_ = std::move(other.label_);
         other.nodes_.fill(nullptr);
-        other.touch_ = {};
-        other.mouse_ = {};
-        other.key_ = {};
-        other.gamepad_ = {};
-        other.pen_ = {};
-        other.toggle_ = {};
     }
     return *this;
 }
@@ -236,35 +216,6 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     const aoahid_result opened = aoahid_node_open(handle_, spec, &options, &opened_node);
     if (opened != AOAHID_OK)
         return opened;
-
-    aoahid_result bound = AOAHID_OK;
-    switch (profile) {
-    case Profile::touch:
-        bound = aoa::bind(opened_node, touch_);
-        break;
-    case Profile::mouse:
-        bound = aoa::bind(opened_node, mouse_);
-        break;
-    case Profile::key:
-        bound = aoa::bind(opened_node, key_);
-        break;
-    case Profile::gamepad:
-        bound = aoa::bind(opened_node, gamepad_);
-        break;
-    case Profile::pen:
-        bound = aoa::bind(opened_node, pen_);
-        break;
-    case Profile::toggle:
-        bound = aoa::bind(opened_node, toggle_);
-        break;
-    default:
-        bound = AOAHID_ERR_PARAM;
-        break;
-    }
-    if (bound != AOAHID_OK) {
-        static_cast<void>(aoahid_node_close(opened_node));
-        return bound;
-    }
 
     nodes_[index] = opened_node;
     profile_mask_ |= profile_bit(profile);
@@ -299,12 +250,6 @@ void Device::close() noexcept {
     handle_ = nullptr;
     nodes_.fill(nullptr);
     profile_mask_ = 0U;
-    touch_ = {};
-    mouse_ = {};
-    key_ = {};
-    gamepad_ = {};
-    pen_ = {};
-    toggle_ = {};
 }
 
 } // namespace aoap

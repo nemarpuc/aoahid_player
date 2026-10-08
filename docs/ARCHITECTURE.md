@@ -6,7 +6,7 @@ thread may touch what, how time is kept, and what each layer assumes about
 the one below. The user-facing behavior (CSV format, control API routes,
 options) is in [README.md](../README.md).
 
-Source references are `path#Lnnn` and are valid at v1.1.2.
+Source references are `path#Lnnn` and are valid at v1.1.3.
 
 ## Layers
 
@@ -32,8 +32,8 @@ to show. `aoa_record` links the core but never calls libaoahid, which is why
 | `Context` | `src/context.cpp#L96` | Owns the libaoahid Context, always in internal-thread mode with logging off. |
 | `Session` | `src/session.cpp#L148` | Owns the Context, the discovery snapshot, the Specs, and the `DeviceGroup`. |
 | `SpecSet` | `include/aoahid_player/spec_builder.hpp#L240` | One immutable Spec per enabled profile, built once per connection and shared by every device. |
-| `Device` | `src/device.cpp#L227` | One phone: its libaoahid Device, one Node per profile, and an optional ADB Bridge. |
-| `DeviceGroup` | `src/device_group.cpp#L136` | Applies one event to every device and submits the dirty profiles. |
+| `Device` | `src/device.cpp#L207` | One phone: its libaoahid Device, one Node per profile, and an optional ADB Bridge. |
+| `DeviceGroup` | `src/device_group.cpp#L139` | Applies one event to every device and submits the dirty profiles. |
 | `EventScript`, `Timeline` | `src/event_script.cpp#L429` | The parsed CSV and the start time of every row per lap. |
 | `Player` | `src/player.cpp#L420` | Runs a script on the calling thread against a `DeviceGroup`. |
 | `InputState` | `src/input_state.cpp#L111` | What is currently held, so stop, pause, and seek can release or restore it. libaoahid has no release-all call. |
@@ -84,9 +84,9 @@ Only devices that answered AOA request 51 with version 2 or more are listed.
 
 ## Applying and sending
 
-`src/device_group.cpp#L136` changes the Node
+`src/device_group.cpp#L139` changes the Node
 state on every active device. It sends nothing.
-`src/device_group.cpp#L230` then submits every dirty
+`src/device_group.cpp#L233` then submits every dirty
 profile on every device, and only after that waits for each completion
 (`aoahid_node_submit_blocking`, 500 ms). The wait is as long as the slowest
 device, not the sum.
@@ -99,7 +99,7 @@ What `apply` does with a libaoahid result:
 | `AOAHID_ERR_BUSY`, nothing applied yet | The opposite edge of the same control is not reported yet. | The caller flushes and tries once more. |
 | `AOAHID_ERR_BUSY`, already applied elsewhere | One device is behind. | The event is dropped for that device only. |
 | `AOAHID_ERR_PARAM`, `AOAHID_ERR_OVERFLOW` | The row does not fit what the Spec declares (a value out of range, more contacts than slots). | The row is rejected for every device; no device is dropped. |
-| Anything else | The device failed. | That device is closed and marked inactive (`src/device_group.cpp#L107`). |
+| Anything else | The device failed. | That device is closed and marked inactive (`src/device_group.cpp#L110`). |
 
 The profile mask is the intersection of all devices' profiles and is not
 recomputed when a device drops. A dropped device is closed on the thread that

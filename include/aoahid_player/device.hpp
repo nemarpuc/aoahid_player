@@ -2,7 +2,6 @@
 #pragma once
 
 #include <aoahid.h>
-#include <aoahid.hpp>
 
 #include <array>
 #include <cstddef>
@@ -51,7 +50,7 @@ class Device {
     aoahid_result open(const Context& context, const aoahid_device_info* selected);
     void close() noexcept;
 
-    // Opens one Node for `spec` and binds the matching typed node_ref. The
+    // Opens one Node for `spec`. The
     // Spec is retained by the Node, so the caller keeps its own reference.
     aoahid_result open_node(Profile profile, aoahid_spec* spec) noexcept;
 
@@ -76,13 +75,6 @@ class Device {
         return nodes_[static_cast<size_t>(profile)];
     }
 
-    [[nodiscard]] const aoa::touchscreen_node_ref& touch() const noexcept { return touch_; }
-    [[nodiscard]] const aoa::mouse_node_ref& mouse() const noexcept { return mouse_; }
-    [[nodiscard]] const aoa::keyboard_node_ref& key() const noexcept { return key_; }
-    [[nodiscard]] const aoa::gamepad_node_ref& gamepad() const noexcept { return gamepad_; }
-    [[nodiscard]] const aoa::pen_node_ref& pen() const noexcept { return pen_; }
-    [[nodiscard]] const aoa::toggle_node_ref& toggle() const noexcept { return toggle_; }
-
     [[nodiscard]] aoahid_device* native_handle() const noexcept { return handle_; }
     [[nodiscard]] const std::string& label() const noexcept { return label_; }
 
@@ -92,13 +84,6 @@ class Device {
     uint16_t adb_port_{};
     std::array<aoahid_node*, profile_count> nodes_{};
     uint32_t profile_mask_{};
-
-    aoa::touchscreen_node_ref touch_{};
-    aoa::mouse_node_ref mouse_{};
-    aoa::keyboard_node_ref key_{};
-    aoa::gamepad_node_ref gamepad_{};
-    aoa::pen_node_ref pen_{};
-    aoa::toggle_node_ref toggle_{};
 
     std::string label_;
 };

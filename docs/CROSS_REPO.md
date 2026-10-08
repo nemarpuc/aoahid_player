@@ -5,8 +5,8 @@ what crosses each boundary, which values have to be kept in step by hand, and
 the order a change travels in. It lives here because this repository is the
 only one that depends on both of the others.
 
-Source references are `repo/path#Lnnn`, valid at libaoahid v4.0.5,
-aoahid_adb_proxy v3.1.3, and aoahid_player v1.1.2.
+Source references are `repo/path#Lnnn`, valid at libaoahid v4.2.0,
+aoahid_adb_proxy v3.1.3, and aoahid_player v1.1.3.
 
 ## Stack
 
@@ -28,9 +28,9 @@ libaoahid          C++20 library, stable C ABI (aoahid.h): AOA 2.0 HID over libu
 | --- | --- | --- |
 | Parse | `aoahid_player/src/event_script.cpp#L123` | CSV text to an `EventPayload` variant plus `wait_ns`. |
 | Schedule | `aoahid_player/src/player.cpp#L263` | The row's absolute deadline on the playback thread. |
-| Apply | `aoahid_player/src/device_group.cpp#L33` | One `aoa::*_node_ref` call per device, for example `touch(id, state, x, y)`. |
+| Apply | `aoahid_player/src/device_group.cpp#L35` | One `aoahid::` call per device, for example `touch(node, id, state, x, y, nullptr)`. |
 | State | libaoahid `src/profiles/state.cpp` | The Node's state changes; nothing is sent. |
-| Submit | `aoahid_player/src/device_group.cpp#L230` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
+| Submit | `aoahid_player/src/device_group.cpp#L233` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
 | Serialize | `libaoahid/src/profiles/state.cpp#L318` | The input report, straight into a transfer pool slot. |
 | Transfer | `libaoahid/src/transport/transport.cpp#L286` | AOA request 57 on endpoint 0. |
 
@@ -48,8 +48,8 @@ aoahid_player calls these libaoahid functions: `aoahid_context_create`,
 `aoahid_spec_create_touchscreen`, `_mouse`, `_keyboard`, `_gamepad`, `_pen`,
 `_toggle`, `aoahid_spec_release`, `aoahid_node_open`, `aoahid_node_close`,
 `aoahid_node_submit`, `aoahid_node_submit_blocking`, `aoahid_last_error`,
-`aoahid_result_name`, and the profile calls through the `aoa::*_node_ref`
-wrappers in `aoahid.hpp`.
+`aoahid_result_name`, and the profile calls through the `aoahid::`
+forwarders in `aoahid.hpp`.
 
 aoahid_adb_proxy calls four: `aoahid_channel_open`, `aoahid_channel_read`,
 `aoahid_channel_write`, `aoahid_channel_close`.
@@ -66,7 +66,7 @@ one side has to be made on the other.
 | --- | --- | --- |
 | Every call on one Context comes from one thread at a time. | The whole core; the GUI funnels calls through one worker (`aoahid_player/apps/aoahid_player_gui/engine.cpp#L370`). | libaoahid's header contract. |
 | The Context is in internal-thread mode. | The proxy reads and writes the Channel from two threads. | `aoahid_player/src/context.cpp#L100` |
-| The proxy is stopped before the Device is closed. | The proxy's Channel must not be closed while its threads run. | `aoahid_player/src/device.cpp#L293` |
+| The proxy is stopped before the Device is closed. | The proxy's Channel must not be closed while its threads run. | `aoahid_player/src/device.cpp#L244` |
 | Input starts no sooner than about 100 ms after `aoahid_node_open`. | Android registers the HID device asynchronously; an earlier report is refused. | `aoahid_player/src/session.cpp#L18` |
 | `aoahid_device_close` consumes the Device and its Nodes even when it returns `AOAHID_CLOSE_PENDING`. | The player drops its pointers after one call. | libaoahid's header contract for `aoahid_device_close`. |
 | After `AOAHID_ADB_PROXY_ERR_INTERFACE`, the calling thread's `aoahid_last_error()` is the failed `aoahid_channel_open`. | `aoahid_player/src/device.cpp#L138` reads `libusb_status` to tell a driver problem (-12, `LIBUSB_ERROR_NOT_SUPPORTED`) from an adb server holding the interface. | The proxy makes no libaoahid call after a failed open. |

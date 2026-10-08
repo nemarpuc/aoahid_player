@@ -5,6 +5,14 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [1.1.3] - 2026-10-09
+
+- Builds against libaoahid 4.2.0 (the minimum is now 4.2.0, and CI and release
+  builds link it). libaoahid 4.2.0 removed the typed node references from
+  `aoahid.hpp`; the player now calls the `aoahid::` functions on the Node
+  pointers it already keeps, so `Device` no longer holds a typed reference per
+  profile. Nothing changes for a user.
+
 ## [1.1.2] - 2026-10-04
 
 - CI and release builds link libaoahid 4.0.5 (was 4.0.4). It takes two
@@ -20,8 +28,7 @@ were reconstructed from the commit history.
 
 ## [1.1.0] - 2026-10-04
 
-Fixes from a review of the three repositories; the full list, with what is
-still open, is in `docs/REVIEW_2026-10.md`. Checked with the test suite and
+Fixes from a review of the three repositories. Checked with the test suite and
 against libaoahid's fake USB backend, not on a phone.
 
 ### Fixed
@@ -68,8 +75,7 @@ against libaoahid's fake USB backend, not on a phone.
 
 ### Documentation
 
-- Added `docs/ARCHITECTURE.md`, `docs/CROSS_REPO.md`, and
-  `docs/REVIEW_2026-10.md`.
+- Added `docs/ARCHITECTURE.md` and `docs/CROSS_REPO.md`.
 
 ## [1.0.2] - 2026-10-03
 

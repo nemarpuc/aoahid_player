@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/device_group.hpp"
 
+#include <aoahid.hpp>
+
 #include <type_traits>
 #include <utility>
 
@@ -35,26 +37,27 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
         [&](const auto& value) -> aoahid_result {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, TouchEvent>) {
-                return device.touch().touch(static_cast<uint32_t>(value.finger_id), value.state,
-                                            value.x, value.y);
+                return aoahid::touch(device.node(Profile::touch),
+                                     static_cast<uint32_t>(value.finger_id), value.state, value.x,
+                                     value.y, nullptr);
             } else if constexpr (std::is_same_v<T, MouseMove>) {
-                return device.mouse().move(value.dx, value.dy);
+                return aoahid::mouse_move(device.node(Profile::mouse), value.dx, value.dy);
             } else if constexpr (std::is_same_v<T, MouseButton>) {
                 // Both the CSV column and aoahid_mouse_button are one-based.
-                return device.mouse().button(value.button, value.pressed);
+                return aoahid::mouse_button(device.node(Profile::mouse), value.button, value.pressed);
             } else if constexpr (std::is_same_v<T, KeyEvent>) {
-                return device.key().key(value.usage, value.down);
+                return aoahid::kbd(device.node(Profile::key), value.usage, value.down);
             } else if constexpr (std::is_same_v<T, GamepadButton>) {
-                return device.gamepad().button(value.button, value.pressed);
+                return aoahid::gamepad_button(device.node(Profile::gamepad), value.button, value.pressed);
             } else if constexpr (std::is_same_v<T, GamepadAxis>) {
-                return device.gamepad().axis(value.axis_index, value.value);
+                return aoahid::gamepad_set_axis(device.node(Profile::gamepad), value.axis_index, value.value);
             } else if constexpr (std::is_same_v<T, GamepadDpad>) {
-                return device.gamepad().dpad(value.up, value.down, value.right, value.left);
+                return aoahid::dpad(device.node(Profile::gamepad), value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, MediaKey>) {
                 // Usage 0 releases whichever key is held. Live control, the
                 // Live tab's buttons, and a script share the one field, so
                 // the key this row names may already have been replaced.
-                return device.toggle().set(value.down ? value.usage : uint16_t{0}, value.down);
+                return aoahid::toggle(device.node(Profile::toggle), value.down ? value.usage : uint16_t{0}, value.down);
             } else {
                 aoahid_pen_sample sample{};
                 sample.in_range = value.in_range ? 1U : 0U;
@@ -62,7 +65,7 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
                 sample.x = value.x;
                 sample.y = value.y;
                 sample.pressure = value.pressure;
-                return device.pen().update(sample);
+                return aoahid::pen_update(device.node(Profile::pen), &sample);
             }
         },
         payload);
@@ -184,7 +187,7 @@ aoahid_result DeviceGroup::scroll(const int32_t wheel) {
     for (const std::unique_ptr<Slot>& slot : slots_) {
         if (!slot->active.load(std::memory_order_relaxed))
             continue;
-        const aoahid_result result = slot->device.mouse().scroll(wheel, 0);
+        const aoahid_result result = aoahid::mouse_scroll(slot->device.node(Profile::mouse), wheel, 0);
         if (result == AOAHID_OK) {
             applied = true;
             continue;
@@ -210,7 +213,7 @@ aoahid_result DeviceGroup::toggle(const uint16_t usage, const uint8_t value) {
     for (const std::unique_ptr<Slot>& slot : slots_) {
         if (!slot->active.load(std::memory_order_relaxed))
             continue;
-        const aoahid_result result = slot->device.toggle().set(usage, value != 0);
+        const aoahid_result result = aoahid::toggle(slot->device.node(Profile::toggle), usage, value != 0);
         if (result == AOAHID_OK) {
             applied = true;
             continue;
