@@ -6,7 +6,7 @@ thread may touch what, how time is kept, and what each layer assumes about
 the one below. The user-facing behavior (CSV format, control API routes,
 options) is in [README.md](../README.md).
 
-Source references are `path#Lnnn` and are valid at v1.1.3.
+Source references are `path#Lnnn` and are valid at v2.0.0.
 
 ## Layers
 
@@ -34,9 +34,9 @@ to show. `aoa_record` links the core but never calls libaoahid, which is why
 | `SpecSet` | `include/aoahid_player/spec_builder.hpp#L240` | One immutable Spec per enabled profile, built once per connection and shared by every device. |
 | `Device` | `src/device.cpp#L207` | One phone: its libaoahid Device, one Node per profile, and an optional ADB Bridge. |
 | `DeviceGroup` | `src/device_group.cpp#L139` | Applies one event to every device and submits the dirty profiles. |
-| `EventScript`, `Timeline` | `src/event_script.cpp#L429` | The parsed CSV and the start time of every row per lap. |
-| `Player` | `src/player.cpp#L420` | Runs a script on the calling thread against a `DeviceGroup`. |
-| `InputState` | `src/input_state.cpp#L111` | What is currently held, so stop, pause, and seek can release or restore it. libaoahid has no release-all call. |
+| `EventScript`, `LapWalk` | `src/event_script.cpp#L571` | The parsed CSV, its rows grouped by the laps they run on, and the walk over one lap's rows. |
+| `Player` | `src/player.cpp#L416` | Runs a script on the calling thread against a `DeviceGroup`. |
+| `InputState` | `src/input_state.cpp#L109` | What is currently held, so stop, pause, and seek can release or restore it. libaoahid has no release-all call. |
 | `Recorder`, `GeteventParser` | `src/recorder.cpp#L138` | Turn `adb shell getevent -lt` output into script rows. |
 | `ChildProcess` | `src/process.cpp#L98` | Runs `adb` without a shell and reads its output with a timeout. |
 
@@ -110,23 +110,24 @@ noticed, which can hold up the others for the close budget.
 - A row's `wait_ms` is the delay after it. It is parsed once, into
   nanoseconds (`src/event_script.cpp#L90`). The accepted
   range is 0 to 1e9 ms.
-- `src/event_script.cpp#L622` gives every row a start
-  time measured from the start of its lap. The first lap holds every row. The
-  repeat lap holds only the rows that are not once-only; a `keep-time` row
-  still adds its wait there.
+- `src/event_script.cpp#L845` (`LapWalk`) steps through the rows that run on
+  one lap and gives each a start time measured from the start of that lap. A
+  lap holds the rows outside any block plus those of the blocks whose
+  selector (first, last, every, negated for `@else`) includes its number; a
+  `keep-time` block that does not run still adds its duration.
 - Every deadline is absolute:
   `anchor_real + (script_time - anchor_script) / speed + offset`
-  (`src/player.cpp#L167`). A slow transfer delays
+  (`src/player.cpp#L164`). A slow transfer delays
   one row, never the ones after it. A row that is already late is sent at once.
 - A speed change, a seek, and a lap end re-anchor. A lap end moves the real
   anchor by exactly the lap's length, so laps do not drift.
 - Rows with wait 0 share a report with the next row. A row whose control is
   already staged in the batch flushes first
-  (`src/event_script.cpp#L316`): touch per finger, buttons
+  (`src/event_script.cpp#L325`): touch per finger, buttons
   and keys per number, axes per index; the dpad, the pen, and the media key
   are one control each; mouse motion accumulates and never conflicts.
 - Coordinates are scaled once, before playback
-  (`src/event_script.cpp#L395`), from the space the file names
+  (`src/event_script.cpp#L537`), from the space the file names
   onto the connected surface. Without a named space they are used as written.
 
 `src/timing.cpp#L164` sleeps until 100 µs before the
@@ -137,19 +138,21 @@ immediately. The clock is `CLOCK_MONOTONIC` or QueryPerformanceCounter.
 ## Player controls
 
 Controls set a bit in `requests_` and wake the playback thread
-(`src/player.cpp#L54`). The thread acts on them in
-`src/player.cpp#L303`.
+(`src/player.cpp#L43`). The thread acts on them in
+`src/player.cpp#L297`.
 
 - Pause flushes, releases everything held, and waits. Resume and seek rebuild
   the state the script would have at the target
-  (`src/input_state.cpp#L163`) and send the difference: releases
-  in one report, presses in the next (`src/player.cpp#L224`).
+  (`src/input_state.cpp#L161`) and send the difference: releases
+  in one report, presses in the next (`src/player.cpp#L223`). The state at
+  the start of a lap comes from the latest earlier lap each block ran on, so
+  the cost does not grow with the lap number.
 - `status()` is a seqlock read of values the playback thread publishes; the
   position while playing is interpolated from the anchor.
 - A control posted while no `run()` is active stays pending and applies when
   the next `run()` starts. That is what lets `aoa_touch` honor Ctrl+C pressed
   just before playback, and it is why an owner that runs several scripts must
-  call `src/player.cpp#L84` between them.
+  call `src/player.cpp#L81` between them.
 - The wake epoch is read before the live pump runs. Input queued while the
   pump runs then ends the next wait instead of being slept through.
 
@@ -186,7 +189,7 @@ are in the vendored proxy's upstream `docs/USAGE.md`.
 
 | Thread | Runs | Owns |
 | --- | --- | --- |
-| UI | GLFW, Dear ImGui, `apps/aoahid_player_gui/app.cpp#L1071` | All `App` state. |
+| UI | GLFW, Dear ImGui, `apps/aoahid_player_gui/app.cpp#L1065` | All `App` state. |
 | Engine worker | `apps/aoahid_player_gui/engine.cpp#L370` | The `Session`, the `Player`, and every libaoahid call. |
 | HTTP pool | cpp-httplib, 1 to 8 threads (`apps/aoahid_player_gui/control_api.cpp#L294`) | Nothing; see below. |
 | Recorder, paste, adb tasks | Short-lived helpers | Their own work only. |
@@ -282,7 +285,7 @@ and the lines after it.
 
 ## Tests
 
-`tests/` uses doctest and covers the script parser and timeline, `batch_key`,
+`tests/` uses doctest and covers the script parser and laps, `batch_key`,
 `InputState`, the getevent parser, the recorder's formatting and file
 hand-over, the Spec helpers, and the adb string helpers. `Player`,
 `DeviceGroup`, `Session`, and the GUI have no automated tests; they need a

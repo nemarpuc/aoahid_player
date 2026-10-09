@@ -6,7 +6,7 @@ the order a change travels in. It lives here because this repository is the
 only one that depends on both of the others.
 
 Source references are `repo/path#Lnnn`, valid at libaoahid v4.2.0,
-aoahid_adb_proxy v3.2.1, and aoahid_player v1.1.3.
+aoahid_adb_proxy v3.2.1, and aoahid_player v2.0.0.
 
 ## Stack
 

@@ -120,13 +120,14 @@ bool parse_fraction(std::string_view text, int32_t& out) noexcept {
     return true;
 }
 
-bool parse_row(const char prefix, std::string_view* field, const size_t count,
+bool parse_row(const char prefix, std::string_view* field, const size_t count, size_t& columns,
                EventPayload& payload, std::string& reason, const bool normalized) {
     int64_t values[6]{};
     switch (prefix) {
     case 't': {
-        if (count != 5) {
-            reason = "touch needs finger_id,state,x,y,wait_ms";
+        columns = 5;
+        if (count != columns && count != columns - 1) {
+            reason = "touch needs finger_id,state,x,y[,wait_ms]";
             return false;
         }
         bool state = false;
@@ -154,8 +155,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'm': {
-        if (count != 3) {
-            reason = "mouse move needs dx,dy,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "mouse move needs dx,dy[,wait_ms]";
             return false;
         }
         if (!parse_bounded(field[0], INT32_MIN, INT32_MAX, values[0]) ||
@@ -167,8 +169,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'b': {
-        if (count != 3) {
-            reason = "mouse button needs button_no,pressed,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "mouse button needs button_no,pressed[,wait_ms]";
             return false;
         }
         bool pressed = false;
@@ -180,8 +183,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'k': {
-        if (count != 3) {
-            reason = "key needs usage_or_name,down,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "key needs usage_or_name,down[,wait_ms]";
             return false;
         }
         bool down = false;
@@ -205,8 +209,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'g': {
-        if (count != 3) {
-            reason = "gamepad button needs button_no,pressed,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "gamepad button needs button_no,pressed[,wait_ms]";
             return false;
         }
         bool pressed = false;
@@ -218,8 +223,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'a': {
-        if (count != 3) {
-            reason = "gamepad axis needs axis_index,value,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "gamepad axis needs axis_index,value[,wait_ms]";
             return false;
         }
         if (!parse_bounded(field[0], 0, 65535, values[0]) ||
@@ -231,8 +237,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'h': {
-        if (count != 5) {
-            reason = "dpad needs up,down,right,left,wait_ms";
+        columns = 5;
+        if (count != columns && count != columns - 1) {
+            reason = "dpad needs up,down,right,left[,wait_ms]";
             return false;
         }
         bool direction[4]{};
@@ -246,8 +253,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'p': {
-        if (count != 6) {
-            reason = "pen needs in_range,tip,x,y,pressure,wait_ms";
+        columns = 6;
+        if (count != columns && count != columns - 1) {
+            reason = "pen needs in_range,tip,x,y,pressure[,wait_ms]";
             return false;
         }
         bool in_range = false;
@@ -281,8 +289,9 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count,
         return true;
     }
     case 'c': {
-        if (count != 3) {
-            reason = "media key needs usage_or_name,down,wait_ms";
+        columns = 3;
+        if (count != columns && count != columns - 1) {
+            reason = "media key needs usage_or_name,down[,wait_ms]";
             return false;
         }
         bool down = false;
@@ -342,6 +351,56 @@ uint64_t batch_key(const EventPayload& payload) noexcept {
 
 namespace {
 
+bool matches(const LapSelector& when, const uint64_t lap) noexcept {
+    return lap >= when.first && lap <= when.last && (lap - when.first) % when.every == 0;
+}
+
+} // namespace
+
+bool runs_on(const LapSelector& when, const uint64_t lap) noexcept {
+    return lap >= 1 && matches(when, lap) != when.negate;
+}
+
+uint64_t last_run_before(const LapSelector& when, const uint64_t lap) noexcept {
+    if (lap <= 1)
+        return 0;
+    const uint64_t top = lap - 1;
+    if (!when.negate) {
+        if (top < when.first)
+            return 0;
+        const uint64_t capped = std::min(top, when.last);
+        return capped - (capped - when.first) % when.every;
+    }
+    if (!matches(when, top))
+        return top;
+    // `top` matches. With a step above 1 the lap before it cannot; with a
+    // step of 1 every lap back to `first` matches. Either result may be 0.
+    return when.every > 1 ? top - 1 : when.first - 1;
+}
+
+uint64_t next_run_from(const LapSelector& when, uint64_t lap) noexcept {
+    lap = std::max<uint64_t>(lap, 1);
+    if (!when.negate) {
+        if (lap > when.last)
+            return 0;
+        if (lap <= when.first)
+            return when.first;
+        const uint64_t past = (lap - when.first) % when.every;
+        if (past == 0)
+            return lap;
+        const uint64_t step = when.every - past;
+        return step > when.last - lap ? 0 : lap + step;
+    }
+    if (!matches(when, lap))
+        return lap;
+    // `lap` matches. With a step above 1 the next lap cannot; with a step of
+    // 1 every lap up to `last` matches.
+    const uint64_t edge = when.every > 1 ? lap : when.last;
+    return edge == UINT64_MAX ? 0 : edge + 1;
+}
+
+namespace {
+
 // "1080x2400" -> 1080, 2400.
 bool parse_size(std::string_view text, int32_t& width, int32_t& height) {
     text = trim(text);
@@ -364,8 +423,8 @@ bool parse_size(std::string_view text, int32_t& width, int32_t& height) {
     return true;
 }
 
-// "# screen 1080x2400" -> 1080, 2400. Anything else is an ordinary comment.
-bool parse_screen_directive(std::string_view comment, int32_t& width, int32_t& height) {
+// True for a comment that reads "screen WxH", the old way to name the space.
+bool screen_comment(std::string_view comment) {
     comment = trim(comment);
     constexpr std::string_view keyword = "screen";
     if (comment.size() <= keyword.size())
@@ -376,7 +435,90 @@ bool parse_screen_directive(std::string_view comment, int32_t& width, int32_t& h
     }
     if (comment[keyword.size()] != ' ' && comment[keyword.size()] != '\t')
         return false;
+    int32_t width = 0;
+    int32_t height = 0;
     return parse_size(comment.substr(keyword.size()), width, height);
+}
+
+// Splits on spaces and tabs into at most `capacity` words. Returns the
+// count, or capacity + 1 when there are more.
+size_t split_words(std::string_view text, std::string_view* words, const size_t capacity) {
+    size_t count = 0;
+    while (true) {
+        text = trim(text);
+        if (text.empty())
+            return count;
+        if (count == capacity)
+            return capacity + 1;
+        const size_t space = text.find_first_of(" \t");
+        words[count++] = text.substr(0, space);
+        if (space == std::string_view::npos)
+            return count;
+        text.remove_prefix(space);
+    }
+}
+
+bool parse_lap_number(std::string_view text, uint64_t& out) noexcept {
+    int64_t value = 0;
+    if (!parse_bounded(text, 1, INT64_MAX, value))
+        return false;
+    out = static_cast<uint64_t>(value);
+    return true;
+}
+
+// "A", "A..B", or "A..", then optionally "keep-time". `argument` is lowercase.
+bool parse_lap_block(std::string_view argument, LapSelector& out) {
+    std::string_view words[2];
+    const size_t count = split_words(argument, words, 2);
+    if (count == 0 || count > 2 || (count == 2 && words[1] != "keep-time"))
+        return false;
+    LapSelector when;
+    const std::string_view laps = words[0];
+    const size_t dots = laps.find("..");
+    if (dots == std::string_view::npos) {
+        if (!parse_lap_number(laps, when.first))
+            return false;
+        when.last = when.first;
+    } else {
+        const std::string_view tail = laps.substr(dots + 2);
+        if (!parse_lap_number(laps.substr(0, dots), when.first) ||
+            (!tail.empty() && !parse_lap_number(tail, when.last)) || when.last < when.first)
+            return false;
+    }
+    when.keep_time = count == 2;
+    out = when;
+    return true;
+}
+
+// "N", then optionally "from A", "to B", and "keep-time", in that order.
+bool parse_every_block(std::string_view argument, LapSelector& out) {
+    std::string_view words[6];
+    size_t count = split_words(argument, words, 6);
+    if (count == 0 || count > 6)
+        return false;
+    LapSelector when;
+    if (words[count - 1] == "keep-time") {
+        when.keep_time = true;
+        --count;
+    }
+    if (count == 0 || !parse_lap_number(words[0], when.every))
+        return false;
+    when.first = when.every;
+    size_t index = 1;
+    if (index + 1 < count && words[index] == "from") {
+        if (!parse_lap_number(words[index + 1], when.first))
+            return false;
+        index += 2;
+    }
+    if (index + 1 < count && words[index] == "to") {
+        if (!parse_lap_number(words[index + 1], when.last))
+            return false;
+        index += 2;
+    }
+    if (index != count || when.last < when.first)
+        return false;
+    out = when;
+    return true;
 }
 
 // Coordinates are indices (0..count-1), so the highest index in `from`,
@@ -429,6 +571,9 @@ bool scale_script(const EventScript& script, const int32_t touch_width,
 bool EventScript::load(const std::string& path, std::string& error) {
     rows.clear();
     errors.clear();
+    segments.clear();
+    segments.push_back(Segment{});
+    lap_blocks = 0;
     screen_width = 0;
     screen_height = 0;
     coords_normalized = false;
@@ -458,9 +603,15 @@ bool EventScript::load(const std::string& path, std::string& error) {
     bool seen_row = false;
     bool screen_directive = false;
     bool coords_directive = false;
-    bool in_once = false;
-    bool keep_time = false;
-    size_t once_line = 0;
+    bool in_block = false;
+    bool seen_else = false;
+    size_t block_line = 0;
+    LapSelector block;
+    // Rows from here on belong to a new segment with this selector.
+    const auto open_segment = [&](const LapSelector& when) {
+        const auto at = static_cast<uint32_t>(rows.size());
+        segments.push_back(Segment{at, at, when, 0, 0});
+    };
     while (!stopped && std::getline(input, line)) {
         ++number;
         std::string_view view(line);
@@ -473,8 +624,8 @@ bool EventScript::load(const std::string& path, std::string& error) {
 
         const size_t comment = view.find('#');
         if (comment != std::string_view::npos) {
-            if (screen_width == 0 && trim(view.substr(0, comment)).empty())
-                parse_screen_directive(view.substr(comment + 1), screen_width, screen_height);
+            if (trim(view.substr(0, comment)).empty() && screen_comment(view.substr(comment + 1)))
+                fail(number, "\"# screen WxH\" was removed; write @screen WxH");
             view = view.substr(0, comment);
         }
         view = trim(view);
@@ -493,27 +644,53 @@ bool EventScript::load(const std::string& path, std::string& error) {
             for (char& c : argument_text)
                 c = static_cast<char>(c >= 'A' && c <= 'Z' ? c | 0x20 : c);
             const std::string_view argument = argument_text;
-            if (word == "once") {
-                if (in_once) {
-                    fail(number, "@once cannot be nested");
+            if (word == "lap" || word == "every") {
+                if (in_block) {
+                    fail(number, "blocks cannot be nested");
                     continue;
                 }
-                in_once = true;
-                keep_time = argument == "keep-time";
-                once_line = number;
-                if (!argument.empty() && !keep_time)
-                    fail(number, "@once takes no option except keep-time");
+                in_block = true;
+                seen_else = false;
+                block_line = number;
+                block = {};
+                const bool ok = word == "lap" ? parse_lap_block(argument, block)
+                                              : parse_every_block(argument, block);
+                if (!ok)
+                    fail(number, word == "lap"
+                                     ? "@lap needs A, A..B, or A.. (laps count from 1), then "
+                                       "optionally keep-time"
+                                     : "@every needs N, then optionally from A, to B, and "
+                                       "keep-time, in that order");
+                ++lap_blocks;
+                open_segment(block);
+            } else if (word == "else") {
+                if (!in_block || seen_else)
+                    fail(number, "@else needs an open @lap or @every block, once");
+                else if (block.keep_time)
+                    fail(number, "@else cannot follow a keep-time block");
+                else if (!argument.empty())
+                    fail(number, "@else takes no option");
+                else {
+                    seen_else = true;
+                    LapSelector others = block;
+                    others.negate = true;
+                    open_segment(others);
+                }
             } else if (word == "end") {
-                if (!in_once)
-                    fail(number, "@end without @once");
-                in_once = false;
-                keep_time = false;
+                if (!in_block)
+                    fail(number, "@end without @lap or @every");
+                else
+                    open_segment(LapSelector{});
+                in_block = false;
+            } else if (word == "once") {
+                fail(number, "@once was removed; write @lap 1");
             } else if (word == "format") {
                 int64_t version = 0;
                 if (seen_row)
                     fail(number, "@format must come before the first row");
-                else if (!parse_bounded(argument, 1, 2, version))
-                    fail(number, "unsupported @format (this version reads 1 and 2)");
+                else if (!parse_bounded(argument, 3, 3, version))
+                    fail(number, "this version reads @format 3 only; see \"Migrating from "
+                                 "format 1 and 2\" in README.md");
             } else if (word == "screen") {
                 int32_t w = 0;
                 int32_t h = 0;
@@ -550,12 +727,15 @@ bool EventScript::load(const std::string& path, std::string& error) {
         seen_row = true;
 
         const char prefix = view.front();
-        const char lowered = static_cast<char>(prefix | 0x20);
-        if (lowered < 'a' || lowered > 'z') {
+        if (prefix >= 'A' && prefix <= 'Z') {
+            fail(number, "uppercase row prefixes were removed; put the row inside "
+                         "@lap 1 ... @end");
+            continue;
+        }
+        if (prefix < 'a' || prefix > 'z') {
             fail(number, "row must start with a profile letter");
             continue;
         }
-        const bool once = prefix >= 'A' && prefix <= 'Z';
         view.remove_prefix(1);
         view = trim(view);
         if (view.empty() || view.front() != ',') {
@@ -571,24 +751,46 @@ bool EventScript::load(const std::string& path, std::string& error) {
             continue;
         }
 
+        Segment& segment = segments.back();
+        if (prefix == 'w') {
+            int64_t wait_ns = 0;
+            if (count != 1 || !parse_wait_ns(fields[0], wait_ns)) {
+                fail(number, "wait row needs w,wait_ms (zero or a positive number)");
+                continue;
+            }
+            // Onto the row before it, or ahead of the segment's first row.
+            if (segment.begin == segment.end)
+                segment.lead_ns += wait_ns;
+            else
+                rows.back().wait_ns += wait_ns;
+            segment.duration += wait_ns;
+            continue;
+        }
+
         EventPayload payload{};
         std::string reason;
-        if (!parse_row(lowered, fields, count, payload, reason, coords_normalized)) {
+        size_t columns = 0;
+        if (!parse_row(prefix, fields, count, columns, payload, reason, coords_normalized)) {
             fail(number, reason);
             continue;
         }
 
         int64_t wait_ns = 0;
-        if (!parse_wait_ns(fields[count - 1], wait_ns)) {
+        if (count == columns && !parse_wait_ns(fields[count - 1], wait_ns)) {
             fail(number, "wait_ms must be zero or a positive number of milliseconds");
             continue;
         }
 
-        rows.push_back(EventRecord{payload, once || in_once, wait_ns, in_once && keep_time});
+        rows.push_back(EventRecord{payload, wait_ns});
+        segment.end = static_cast<uint32_t>(rows.size());
+        segment.duration += wait_ns;
     }
 
-    if (in_once && !stopped)
-        fail(once_line, "@once is not closed by @end");
+    if (in_block && !stopped)
+        fail(block_line, "the block is not closed by @end");
+    std::erase_if(segments, [](const Segment& segment) {
+        return segment.begin == segment.end && segment.duration == 0;
+    });
     if (coords_normalized) {
         screen_width = normalized_space;
         screen_height = normalized_space;
@@ -612,41 +814,100 @@ uint32_t EventScript::required_profiles() const noexcept {
     return mask;
 }
 
-size_t Timeline::row_at(const Lap lap, const int64_t time_ns) const noexcept {
-    const std::vector<int64_t>& list = starts(lap);
-    // The trailing entry is the lap length, not a row.
-    const auto last = list.end() - 1;
-    return static_cast<size_t>(std::lower_bound(list.begin(), last, time_ns) - list.begin());
+int64_t lap_length(const EventScript& script, const uint64_t lap) noexcept {
+    int64_t total = 0;
+    for (const Segment& segment : script.segments) {
+        if (segment.when.keep_time || runs_on(segment.when, lap))
+            total += segment.duration;
+    }
+    return total;
 }
 
-Timeline build_timeline(const EventScript& script) {
-    Timeline timeline;
-    timeline.first.clear();
-    timeline.repeat.clear();
-    timeline.first.reserve(script.rows.size() + 1);
-    timeline.repeat.reserve(script.rows.size() + 1);
-    int64_t first_time = 0;
-    int64_t repeat_time = 0;
-    for (size_t index = 0; index < script.rows.size(); ++index) {
-        const EventRecord& record = script.rows[index];
-        timeline.first.push_back(first_time);
-        if (!record.once) {
-            timeline.repeat.push_back(repeat_time);
-            timeline.repeat_row.push_back(static_cast<uint32_t>(index));
-            repeat_time += record.wait_ns;
-        } else if (record.keep_time) {
-            repeat_time += record.wait_ns; // skipped, but the wait stays
+uint64_t next_lap(const EventScript& script, const uint64_t from, const bool rows_only) noexcept {
+    uint64_t best = 0;
+    const auto consider = [&best](const uint64_t lap) {
+        if (lap != 0 && (best == 0 || lap < best))
+            best = lap;
+    };
+    for (const Segment& segment : script.segments) {
+        if (segment.begin != segment.end || (!rows_only && segment.duration > 0))
+            consider(next_run_from(segment.when, from));
+        if (!rows_only && segment.when.keep_time && segment.duration > 0) {
+            // The laps it skips still take its time.
+            LapSelector skipped = segment.when;
+            skipped.negate = !skipped.negate;
+            consider(next_run_from(skipped, from));
         }
-        const int64_t end = first_time + record.wait_ns;
-        if (!timeline.first_runs.empty() && timeline.first_runs.back().once == record.once)
-            timeline.first_runs.back().end = end;
-        else
-            timeline.first_runs.push_back({first_time, end, record.once});
-        first_time = end;
     }
-    timeline.first.push_back(first_time);
-    timeline.repeat.push_back(repeat_time);
-    return timeline;
+    return best;
+}
+
+void LapWalk::start(const EventScript& script, const uint64_t lap_number) noexcept {
+    lap = lap_number;
+    length = lap_length(script, lap_number);
+    segment_ = 0;
+    time_ = 0;
+    done = false;
+    settle(script);
+}
+
+void LapWalk::settle(const EventScript& script) noexcept {
+    for (; segment_ < script.segments.size(); ++segment_) {
+        const Segment& segment = script.segments[segment_];
+        if (!runs_on(segment.when, lap)) {
+            if (segment.when.keep_time)
+                time_ += segment.duration;
+            continue;
+        }
+        time_ += segment.lead_ns;
+        if (segment.begin == segment.end)
+            continue;
+        row = segment.begin;
+        due = time_;
+        return;
+    }
+    row = static_cast<uint32_t>(script.rows.size());
+    due = length;
+    done = true;
+}
+
+void LapWalk::next(const EventScript& script) noexcept {
+    time_ += script.rows[row].wait_ns;
+    if (++row == script.segments[segment_].end) {
+        ++segment_;
+        settle(script);
+    } else {
+        due = time_;
+    }
+}
+
+void LapWalk::seek(const EventScript& script, const uint64_t lap_number,
+                   const int64_t time_ns) noexcept {
+    start(script, lap_number);
+    while (!done && due < time_ns)
+        next(script);
+}
+
+int64_t lap_layout(const EventScript& script, const uint64_t lap, std::vector<LapSpan>& out) {
+    out.clear();
+    int64_t time = 0;
+    for (const Segment& segment : script.segments) {
+        const LapSelector& when = segment.when;
+        if (!runs_on(when, lap)) {
+            if (when.keep_time)
+                time += segment.duration;
+            continue;
+        }
+        const bool conditional =
+            when.negate || when.first != 1 || when.last != UINT64_MAX || when.every != 1;
+        const int64_t end = time + segment.duration;
+        if (!out.empty() && out.back().conditional == conditional && out.back().end == time)
+            out.back().end = end;
+        else
+            out.push_back({time, end, conditional});
+        time = end;
+    }
+    return time;
 }
 
 } // namespace aoap

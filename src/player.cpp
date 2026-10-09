@@ -12,18 +12,6 @@ static_assert(std::atomic<double>::is_always_lock_free);
 static_assert(std::atomic<int64_t>::is_always_lock_free);
 static_assert(std::atomic<uint64_t>::is_always_lock_free);
 
-constexpr uint64_t lap_bit = uint64_t{1} << 63;
-
-uint64_t encode(const PlaybackPosition position) noexcept {
-    const uint64_t time = static_cast<uint64_t>(std::max<int64_t>(position.time_ns, 0));
-    return (position.lap == Lap::repeat ? lap_bit : 0U) | (time & ~lap_bit);
-}
-
-PlaybackPosition decode(const uint64_t word) noexcept {
-    return {(word & lap_bit) != 0U ? Lap::repeat : Lap::first,
-            static_cast<int64_t>(word & ~lap_bit)};
-}
-
 int64_t scaled(const int64_t script_span, const double speed) noexcept {
     const double value = static_cast<double>(script_span) / speed;
     if (value >= 9.0e18)
@@ -39,12 +27,13 @@ Player::Player(DeviceGroup& group, EventSink* sink) : group_(group), sink_(sink)
 
 void Player::load(std::shared_ptr<const EventScript> script) {
     script_ = std::move(script);
-    timeline_ = script_ ? build_timeline(*script_) : Timeline{};
+    walk_ = {};
     // A batch never holds more rows than the script, and the transitions a
     // seek builds never hold more than the tracked state; reserving here
     // keeps the playback loop free of allocation.
     staged_keys_.clear();
     staged_keys_.reserve(script_ ? script_->size() + 1 : 1);
+    order_.reserve(script_ ? script_->segments.size() : 0);
     releases_.reserve(64);
     presses_.reserve(64);
 }
@@ -69,8 +58,16 @@ void Player::resume() noexcept {
 }
 
 void Player::seek(const PlaybackPosition target) noexcept {
-    seek_word_.store(encode(target), std::memory_order_release);
+    {
+        const std::lock_guard lock(seek_mutex_);
+        seek_target_ = target;
+    }
     post(request_seek);
+}
+
+PlaybackPosition Player::take_seek() {
+    const std::lock_guard lock(seek_mutex_);
+    return seek_target_;
 }
 
 void Player::set_speed(const double speed) noexcept {
@@ -108,7 +105,7 @@ void Player::set_stop_at(const int64_t stop_at_ns) noexcept {
 PlaybackStatus Player::status() const noexcept {
     PlaybackStatus status;
     uint8_t state = 0;
-    uint8_t lap = 0;
+    uint64_t lap = 1;
     int64_t anchor_real = 0;
     int64_t anchor_script = 0;
     int64_t offset_anchor = 0;
@@ -133,7 +130,7 @@ PlaybackStatus Player::status() const noexcept {
             break;
     }
     status.state = static_cast<PlaybackState>(state);
-    status.position.lap = static_cast<Lap>(lap);
+    status.position.lap = lap;
     status.loops = loops;
     status.reports = reports_.load(std::memory_order_relaxed);
     int64_t time = anchor_script;
@@ -152,11 +149,11 @@ void Player::publish(const PlaybackState state, const PlaybackPosition position)
     const uint32_t sequence = seq_.load(std::memory_order_relaxed);
     seq_.exchange(sequence + 1, std::memory_order_acquire);
     pub_state_.store(static_cast<uint8_t>(state), std::memory_order_relaxed);
-    pub_lap_.store(static_cast<uint8_t>(position.lap), std::memory_order_relaxed);
+    pub_lap_.store(position.lap, std::memory_order_relaxed);
     pub_anchor_real_.store(anchor_real_, std::memory_order_relaxed);
     pub_anchor_script_.store(position.time_ns, std::memory_order_relaxed);
     pub_offset_anchor_.store(offset_anchor_, std::memory_order_relaxed);
-    pub_duration_.store(timeline_.duration(position.lap), std::memory_order_relaxed);
+    pub_duration_.store(lap_length(*script_, position.lap), std::memory_order_relaxed);
     pub_speed_.store(anchor_speed_, std::memory_order_relaxed);
     pub_loops_.store(loops_, std::memory_order_relaxed);
     seq_.store(sequence + 2, std::memory_order_release);
@@ -176,8 +173,10 @@ int64_t Player::script_time_at(const int64_t now) const noexcept {
 }
 
 PlaybackPosition Player::clamp(PlaybackPosition position) const noexcept {
+    // The upper bound keeps lap + 1 and the status's signed lap in range.
+    position.lap = std::clamp<uint64_t>(position.lap, 1, static_cast<uint64_t>(INT64_MAX));
     position.time_ns =
-        std::clamp<int64_t>(position.time_ns, 0, timeline_.duration(position.lap));
+        std::clamp<int64_t>(position.time_ns, 0, lap_length(*script_, position.lap));
     return position;
 }
 
@@ -188,7 +187,7 @@ void Player::retime(const int64_t now) {
     anchor_real_ = now;
     offset_anchor_ = offset_ns_.load(std::memory_order_relaxed);
     anchor_speed_ = speed_.load(std::memory_order_acquire);
-    publish(PlaybackState::playing, {lap_, anchor_script_});
+    publish(PlaybackState::playing, {walk_.lap, anchor_script_});
 }
 
 // --- Sending --------------------------------------------------------------
@@ -278,18 +277,13 @@ void Player::execute(const EventRecord& record) {
 void Player::jump(const PlaybackPosition requested) {
     flush_now();
     const PlaybackPosition target = clamp(requested);
-    if (target.lap == Lap::first)
-        loops_ = 0;
-    else
-        loops_ = std::max<uint64_t>(loops_, 1); // reaching a repeat lap means lap 1 is done
+    walk_.seek(*script_, target.lap, target.time_ns);
+    loops_ = target.lap - 1;
 
     // Rebuild the state uninterrupted playback would have at `target`.
-    const size_t row = timeline_.row_at(target.lap, target.time_ns);
-    state_at(target_, *script_, timeline_, target.lap, row, loops_);
+    state_at(target_, *script_, target.lap, walk_.row, order_);
     settle(target_);
 
-    lap_ = target.lap;
-    index_ = row;
     cursor_ = target.time_ns;
     anchor_real_ = Timing::now_ns();
     anchor_script_ = target.time_ns;
@@ -308,13 +302,13 @@ Player::Outcome Player::service() {
     if ((pending & request_retime) != 0U)
         retime(Timing::now_ns());
     if ((pending & request_seek) != 0U) {
-        jump(decode(seek_word_.load(std::memory_order_acquire)));
+        jump(take_seek());
         outcome = Outcome::jumped;
     }
     if ((pending & request_pause) != 0U && want_paused_.load(std::memory_order_acquire)) {
         pause_position_ = outcome == Outcome::jumped
-                              ? PlaybackPosition{lap_, cursor_}
-                              : clamp({lap_, script_time_at(Timing::now_ns())});
+                              ? PlaybackPosition{walk_.lap, cursor_}
+                              : clamp({walk_.lap, script_time_at(Timing::now_ns())});
         return hold_paused();
     }
     return outcome;
@@ -340,11 +334,8 @@ Player::Outcome Player::hold_paused() {
             return Outcome::stop;
         }
         if ((pending & request_seek) != 0U) {
-            pause_position_ = clamp(decode(seek_word_.load(std::memory_order_acquire)));
-            if (pause_position_.lap == Lap::first)
-                loops_ = 0;
-            else
-                loops_ = std::max<uint64_t>(loops_, 1);
+            pause_position_ = clamp(take_seek());
+            loops_ = pause_position_.lap - 1;
             publish(PlaybackState::paused, pause_position_);
         }
         if ((pending & request_pause) != 0U && !want_paused_.load(std::memory_order_acquire)) {
@@ -395,25 +386,30 @@ Player::Outcome Player::wait_to(const int64_t script_time) {
 
 bool Player::finish_lap() {
     flush_now();
-    const Lap ending = lap_;
-    ++loops_;
-    // A script with nothing to repeat is finished after its first lap.
-    if (timeline_.rows(Lap::repeat) == 0)
+    const uint64_t ended = walk_.lap;
+    loops_ = ended;
+    // No later lap has a row left: the script is finished.
+    if (next_lap(*script_, ended + 1, true) == 0)
         return false;
     if (sink_ != nullptr)
         sink_->loop_completed(loops_, reports_.load(std::memory_order_relaxed));
+    // Laps with neither a row nor a wait are passed over without a turn of
+    // the loop each; a later lap with rows exists, so this is never 0.
+    const uint64_t next = next_lap(*script_, ended + 1, false);
     const int64_t limit = loop_limit_.load(std::memory_order_relaxed);
-    if (limit > 0 && loops_ >= static_cast<uint64_t>(limit))
+    if (limit > 0 && next > static_cast<uint64_t>(limit)) {
+        loops_ = std::max(ended, static_cast<uint64_t>(limit));
         return false;
+    }
 
     // The next lap starts exactly where this one ends in real time, so
     // loops do not drift even when a send overran.
-    anchor_real_ += scaled(timeline_.duration(ending) - anchor_script_, anchor_speed_);
+    anchor_real_ += scaled(walk_.length - anchor_script_, anchor_speed_);
     anchor_script_ = 0;
-    lap_ = Lap::repeat;
-    index_ = 0;
+    loops_ = next - 1;
+    walk_.start(*script_, next);
     cursor_ = 0;
-    publish(PlaybackState::playing, {lap_, 0});
+    publish(PlaybackState::playing, {next, 0});
     return true;
 }
 
@@ -463,9 +459,7 @@ void Player::run(const PlaybackPosition start) {
             timed_out_.store(true, std::memory_order_relaxed);
             break;
         }
-        const std::vector<int64_t>& starts = timeline_.starts(lap_);
-        const size_t rows = starts.size() - 1;
-        const int64_t due = starts[index_];
+        const int64_t due = walk_.due;
         if (due > cursor_) {
             // Everything due earlier goes out as one report before waiting.
             flush_now();
@@ -476,13 +470,13 @@ void Player::run(const PlaybackPosition start) {
                 continue;
             cursor_ = due;
         }
-        if (index_ == rows) {
+        if (walk_.done) {
             if (!finish_lap())
                 break;
             continue;
         }
-        execute(script_->rows[timeline_.script_row(lap_, index_)]);
-        ++index_;
+        execute(script_->rows[walk_.row]);
+        walk_.next(*script_);
     }
 
     flush_now();
@@ -490,7 +484,7 @@ void Player::run(const PlaybackPosition start) {
     paused_ = false;
     // Late control requests belong to this run, not the next one.
     requests_.store(0U, std::memory_order_release);
-    publish(PlaybackState::stopped, {lap_, 0});
+    publish(PlaybackState::stopped, {walk_.lap, 0});
 }
 
 } // namespace aoap

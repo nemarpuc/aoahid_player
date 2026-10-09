@@ -16,8 +16,7 @@ namespace aoap::record {
 // "[timestamp] /dev/input/eventN: EV_ABS ABS_MT_POSITION_X 000001a4" etc.)
 // and accumulates it into an in-progress touch/key event. getevent reports
 // one axis/key per line and an EV_SYN SYN_REPORT line marks a completed
-// frame; only completed frames become an EventRecord (always lowercase /
-// `once = false`, since a recording has no "first loop" concept).
+// frame; only completed frames become an EventRecord.
 //
 // A frame usually closes several contacts at once, so completed rows are
 // appended to a caller-owned vector rather than returned one at a time. The

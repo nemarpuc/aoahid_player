@@ -516,16 +516,11 @@ class App {
     // not resolve paths on disk.
     std::string script_reference_;
     std::shared_ptr<const aoap::EventScript> script_;
-    aoap::Timeline timeline_;
-    // The scripts of the playlist being played, each with its timeline, so the
-    // transport can draw the step that is running (see play_playlist()).
-    struct RunStep {
-        std::shared_ptr<const aoap::EventScript> script;
-        aoap::Timeline timeline;
-    };
-    std::vector<RunStep> run_steps_;
+    // The scripts of the playlist being played, so the transport can draw the
+    // step that is running (see play_playlist()).
+    std::vector<std::shared_ptr<const aoap::EventScript>> run_steps_;
+    std::vector<aoap::LapSpan> lap_spans_; // the lap the transport draws; rebuilt every frame
     std::vector<std::string> script_errors_;   // every problem of the last failed load
-    std::vector<std::string> script_warnings_; // aoap::lap_warnings() of script_
     std::string path_input_;
     std::string script_filter_;
     bool focus_search_{};

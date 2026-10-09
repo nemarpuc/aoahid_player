@@ -13,7 +13,7 @@
 namespace aoap {
 
 // How a recording writes touch coordinates.
-//   raw         the touch panel's own values, with "# screen WxH" naming the
+//   raw         the touch panel's own values, with "@screen WxH" naming the
 //               panel's range
 //   normalized  fractions 0..1 of the panel, under "@coords normalized"
 enum class CoordMode : uint8_t { raw, normalized };

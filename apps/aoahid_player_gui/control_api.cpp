@@ -375,7 +375,7 @@ void ControlApi::register_routes() {
         const aoap::PlaybackStatus status = engine_.player().status();
         JsonWriter playback;
         playback.str("state", playback_state_name(status.state))
-            .str("lap", status.position.lap == aoap::Lap::first ? "first" : "repeat")
+            .num("lap", static_cast<int64_t>(status.position.lap))
             .num("time_ms", status.position.time_ns / 1'000'000)
             .num("loops", static_cast<int64_t>(status.loops))
             .num("reports", static_cast<int64_t>(status.reports));
@@ -547,8 +547,18 @@ void ControlApi::register_routes() {
             res.set_content(json_error("Missing or invalid \"time_ms\"."), "application/json");
             return;
         }
-        const aoap::Lap lap =
-            req.get_param_value("lap") == "repeat" ? aoap::Lap::repeat : aoap::Lap::first;
+        // Without "lap", the seek stays in the lap that is playing.
+        uint64_t lap = engine_.player().status().position.lap;
+        if (req.has_param("lap")) {
+            int64_t number = 0;
+            if (!parse_int(req.get_param_value("lap"), number) || number < 1) {
+                res.status = 400;
+                res.set_content(json_error("Invalid \"lap\" (laps count from 1)."),
+                                "application/json");
+                return;
+            }
+            lap = static_cast<uint64_t>(number);
+        }
         engine_.player().seek({lap, time_ms * 1'000'000});
         res.set_content(json_ok(), "application/json");
     });

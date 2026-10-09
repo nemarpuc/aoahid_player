@@ -175,16 +175,10 @@ void App::draw_script_card() {
     if (script_) {
         gap(2);
         char summary[200];
-        std::snprintf(summary, sizeof summary,
-                      "%zu rows (%zu once)  ·  first lap %s  ·  repeat lap %s  ·  uses the %s",
-                      script_->size(), timeline_.once_rows(),
-                      format_time(timeline_.duration(aoap::Lap::first)).c_str(),
-                      format_time(timeline_.duration(aoap::Lap::repeat)).c_str(),
+        std::snprintf(summary, sizeof summary, "%zu rows  ·  %u lap blocks  ·  uses the %s",
+                      script_->size(), static_cast<unsigned>(script_->lap_blocks),
                       aoap::describe_profiles(script_->required_profiles()).c_str());
         small_dim(summary);
-
-        for (const std::string& warning : script_warnings_)
-            small_colored(theme::warning, warning);
 
         const uint32_t available = engine_.connected() ? engine_.connected_profiles()
                                                        : aoap::enabled_profiles(build_setup());
@@ -466,9 +460,6 @@ void App::draw_transport_card() {
     const PlaylistProgress playlist_now = engine_.playlist_progress();
     const bool playlist_run =
         playlist_mode && playlist_now.active && playlist_now.index < run_steps_.size();
-    // What the bar shows: the playlist step that is running, or the loaded script.
-    const aoap::Timeline& timeline =
-        playlist_run ? run_steps_[playlist_now.index].timeline : timeline_;
     // Between two playlist scripts the player is briefly stopped; the bar keeps
     // the player's position then instead of dropping back to the idle cursor.
     const aoap::PlaybackPosition position =
@@ -477,11 +468,14 @@ void App::draw_transport_card() {
     // drawn like in Script mode.
     const bool playlist_view = playlist_mode && (playlist_run || phase != Phase::playing);
     const bool have_script = playlist_view ? playlist_run : script_ != nullptr;
-    const int64_t first_ns = have_script ? timeline.duration(aoap::Lap::first) : 0;
-    const int64_t repeat_ns = have_script ? timeline.duration(aoap::Lap::repeat) : 0;
-    const bool has_repeat = have_script && timeline.rows(aoap::Lap::repeat) > 0;
-    // Two laps are drawn only when they differ; otherwise the bar is one lap.
-    const bool two_laps = has_repeat && timeline.once_rows() > 0;
+    // What the bar shows: the playlist step that is running, or the loaded script.
+    const aoap::EventScript* const shown =
+        !have_script ? nullptr
+                     : playlist_run ? run_steps_[playlist_now.index].get() : script_.get();
+    const uint64_t lap = std::max<uint64_t>(position.lap, 1);
+    lap_spans_.clear();
+    const int64_t lap_ns = shown != nullptr ? aoap::lap_layout(*shown, lap, lap_spans_) : 0;
+    const bool has_repeat = shown != nullptr && aoap::next_lap(*shown, 2, true) != 0;
 
     // Time readout and loop counter.
     const float top = ImGui::GetCursorPosY();
@@ -491,7 +485,6 @@ void App::draw_transport_card() {
     ImGui::PopFont();
     ImGui::SameLine(0, px(10));
     ImGui::SetCursorPosY(top + big_line - ImGui::GetTextLineHeight() - px(4));
-    const int64_t lap_ns = position.lap == aoap::Lap::first ? first_ns : repeat_ns;
     ImGui::TextDisabled("/ %s", format_time(lap_ns).c_str());
 
     std::string where;
@@ -502,7 +495,7 @@ void App::draw_transport_card() {
             where = std::to_string(playlist_now.index + 1) + "/" +
                     std::to_string(playlist_now.count);
             if (has_repeat) {
-                where += "  ·  Loop " + format_count((live ? status.loops : 0) + 1) + " of " +
+                where += "  ·  Lap " + format_count(lap) + " of " +
                          format_count(static_cast<uint64_t>(playlist_now.loops));
             }
         }
@@ -511,8 +504,7 @@ void App::draw_transport_card() {
     else if (!has_repeat)
         where = "Once";
     else {
-        const uint64_t current = (live ? status.loops : 0) + 1;
-        where = "Loop " + format_count(current);
+        where = "Lap " + format_count(lap);
         if (loop_limit_ > 0)
             where += " of " + format_count(static_cast<uint64_t>(loop_limit_));
     }
@@ -539,21 +531,16 @@ void App::draw_transport_card() {
                                             : "Plays the scripts below, in order.");
     }
 
-    // Timeline: the first lap (once-only rows purple, repeated rows green in
-    // the order written) and the repeat lap (green) as one continuous bar, so
-    // a single drag can seek across the whole cycle.
+    // Timeline: the lap being played, rows that run every lap in green and
+    // the lap blocks that run on this one in purple.
     const float width = ImGui::GetContentRegionAvail().x;
     const float length_w = ImGui::CalcTextSize("00:00.000").x;
     const float bar_w = std::max(width - length_w - px(20), px(60));
-    const int64_t total_ns = two_laps ? first_ns + repeat_ns : first_ns;
+    const int64_t total_ns = lap_ns;
     const double inverse_total = total_ns > 0 ? 1.0 / static_cast<double>(total_ns) : 0.0;
-    const int64_t lap_offset = (two_laps && position.lap == aoap::Lap::repeat) ? first_ns : 0;
     const float position_fraction =
-        have_script ? static_cast<float>(static_cast<double>(lap_offset + position.time_ns) *
-                                         inverse_total)
+        have_script ? static_cast<float>(static_cast<double>(position.time_ns) * inverse_total)
                     : 0.0f;
-    const float boundary_fraction =
-        two_laps ? static_cast<float>(static_cast<double>(first_ns) * inverse_total) : 1.0f;
 
     const float row_top = ImGui::GetCursorPosY();
     const float bar_h = px(9);
@@ -591,8 +578,8 @@ void App::draw_transport_card() {
             flags |= ImDrawFlags_RoundCornersRight;
         list->AddRectFilled(ImVec2(x0, t0.y), ImVec2(x1, t1.y), color, radius, flags);
     };
-    // Spans not reached yet show their colour faintly, so the once-only
-    // parts are visible before they play.
+    // Spans not reached yet show their colour faintly, so the lap blocks
+    // are visible before they play.
     const auto faint = [](const ImU32 color) {
         const ImU32 alpha = ((color >> IM_COL32_A_SHIFT) & 0xFFU) * 70U / 255U;
         return ImGui::GetColorU32((color & ~IM_COL32_A_MASK) | (alpha << IM_COL32_A_SHIFT));
@@ -601,18 +588,10 @@ void App::draw_transport_card() {
         return p0.x + static_cast<float>(static_cast<double>(ns) * inverse_total) * bar_w;
     };
     const float filled_x = p0.x + bar_w * shown_fraction;
-    for (const aoap::Timeline::Run& run : timeline.first_runs) {
-        const ImU32 tone = run.once ? theme::accent : theme::success;
-        fill_span(x_at(run.start), x_at(run.end), faint(tone));
-        fill_span(x_at(run.start), std::min(x_at(run.end), filled_x), ImGui::GetColorU32(tone));
-    }
-    if (two_laps) {
-        const float boundary_x = p0.x + bar_w * boundary_fraction;
-        fill_span(boundary_x, t1.x, faint(theme::success));
-        fill_span(boundary_x, filled_x, ImGui::GetColorU32(theme::success));
-        list->AddRectFilled(ImVec2(boundary_x - px(0.75f), t0.y),
-                            ImVec2(boundary_x + px(0.75f), t1.y),
-                            ImGui::GetColorU32(theme::background));
+    for (const aoap::LapSpan& span : lap_spans_) {
+        const ImU32 tone = span.conditional ? theme::accent : theme::success;
+        fill_span(x_at(span.start), x_at(span.end), faint(tone));
+        fill_span(x_at(span.start), std::min(x_at(span.end), filled_x), ImGui::GetColorU32(tone));
     }
     if (hovered && !active && have_script) {
         const float x = p0.x + bar_w * mouse_fraction;
@@ -635,14 +614,8 @@ void App::draw_transport_card() {
     ImGui::TextDisabled("%s", format_time(total_ns).c_str());
     ImGui::SetCursorPosY(row_top + bar_row + px(2));
 
-    if (released && have_script) {
-        const int64_t absolute_ns =
-            static_cast<int64_t>(static_cast<double>(total_ns) * scrub_timeline_);
-        if (two_laps && absolute_ns > first_ns)
-            seek({aoap::Lap::repeat, std::clamp<int64_t>(absolute_ns - first_ns, 0, repeat_ns)});
-        else // one lap is drawn: stay in the lap that is playing so the loop count is kept
-            seek({two_laps ? aoap::Lap::first : position.lap, absolute_ns});
-    }
+    if (released && have_script)
+        seek({lap, static_cast<int64_t>(static_cast<double>(total_ns) * scrub_timeline_)});
 
     const auto key_hint = [this](const PlayerAction action) -> std::string {
         const int configured = player_keys_[static_cast<int>(action)];
@@ -710,8 +683,8 @@ void App::draw_transport_card() {
         thin_rule(2.0f, 2.0f);
     }
 
-    // Speed, loop limit, live offset.
-    if (ImGui::BeginTable("##settings", playlist_view ? 2 : 3,
+    // Speed, loop limit, lap, live offset.
+    if (ImGui::BeginTable("##settings", playlist_view ? 3 : 4,
                           ImGuiTableFlags_SizingStretchSame)) {
         ImGui::TableNextColumn();
         ui::caption("Speed");
@@ -747,6 +720,21 @@ void App::draw_transport_card() {
             }
             small_dim(loop_limit_ == 0 ? "Repeats until stopped" : "Stops after this many loops");
         }
+
+        ImGui::TableNextColumn();
+        ui::caption("Lap");
+        ImGui::BeginDisabled(!have_script);
+        ImGui::SetNextItemWidth(-FLT_MIN);
+        uint64_t lap_input = lap;
+        const uint64_t lap_step = 1;
+        // To the start of that lap, held as it would be after playing up to it.
+        // Only on Enter or a step button: a seek sends reports, so it must
+        // not fire for every digit typed.
+        if (ImGui::InputScalar("##lap", ImGuiDataType_U64, &lap_input, &lap_step, nullptr, "%llu",
+                               ImGuiInputTextFlags_EnterReturnsTrue))
+            seek({std::max<uint64_t>(lap_input, 1), 0});
+        ImGui::EndDisabled();
+        small_dim("Jumps to the start of that lap");
 
         ImGui::TableNextColumn();
         ui::caption("Offset");

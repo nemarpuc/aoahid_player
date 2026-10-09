@@ -17,8 +17,8 @@ namespace {
 
 std::vector<aoap::EventRecord> sample_rows() {
     return {
-        {aoap::TouchEvent{0, true, 540, 1200}, false, 16'000'000},
-        {aoap::KeyEvent{0x04, true}, false, 8'000'000},
+        {aoap::TouchEvent{0, true, 540, 1200}, 16'000'000},
+        {aoap::KeyEvent{0x04, true}, 8'000'000},
     };
 }
 
@@ -47,13 +47,13 @@ TEST_CASE("A recording writes coordinates in the chosen mode") {
     std::string text;
 
     aoap::RecordFormat raw{aoap::CoordMode::raw, 1080, 2400};
-    CHECK(aoap::record_header(raw) == "# screen 1080x2400\n");
+    CHECK(aoap::record_header(raw) == "@screen 1080x2400\n");
     aoap::append_recorded_rows(text, rows, raw);
     CHECK(text == "t,0,1,540,1200,16.000\nk,0x04,1,8.000\n");
 
     text.clear();
     aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400};
-    CHECK(aoap::record_header(normalized) == "@format 2\n@coords normalized\n");
+    CHECK(aoap::record_header(normalized) == "@format 3\n@coords normalized\n");
     aoap::append_recorded_rows(text, rows, normalized);
     CHECK(text == "t,0,1,0.500463,0.500208,16.000\nk,0x04,1,8.000\n");
 
@@ -101,7 +101,7 @@ TEST_CASE("Recordings in both modes play back at the same place") {
 
 TEST_CASE("A position slightly past the panel range is kept inside the file's range") {
     const std::vector<aoap::EventRecord> rows = {
-        {aoap::TouchEvent{0, true, 1085, -3}, false, 1'000'000},
+        {aoap::TouchEvent{0, true, 1085, -3}, 1'000'000},
     };
     aoap::RecordFormat normalized{aoap::CoordMode::normalized, 1080, 2400};
     std::string text = aoap::record_header(normalized);

@@ -1,5 +1,5 @@
 # Unit tests for the parsing-, bit-math- and state-heavy pieces of the core:
-# CSV scripts and timelines, HID descriptor bit widths, `adb shell getevent`
+# CSV scripts and laps, HID descriptor bit widths, `adb shell getevent`
 # parsing, and the input-state transitions used for stop, pause, and seek.
 #
 # doctest is vendored as a single header (third_party/doctest.h) rather than
@@ -7,6 +7,7 @@
 add_executable(aoahid_player_tests
   test_main.cpp
   test_event_script.cpp
+  test_laps.cpp
   test_recorder.cpp
   test_spec_builder.cpp
   test_getevent_parser.cpp
@@ -16,6 +17,8 @@ add_executable(aoahid_player_tests
 target_include_directories(aoahid_player_tests PRIVATE third_party
   "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy")
 target_link_libraries(aoahid_player_tests PRIVATE aoahid_player_core)
+target_compile_definitions(aoahid_player_tests PRIVATE
+  AOAHID_PLAYER_CSV_DIR="${PROJECT_SOURCE_DIR}/csv")
 target_compile_features(aoahid_player_tests PRIVATE cxx_std_20)
 
 add_test(NAME aoahid_player_tests COMMAND aoahid_player_tests)

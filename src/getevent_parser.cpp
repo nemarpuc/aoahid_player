@@ -146,7 +146,7 @@ GeteventParser::DeviceState& GeteventParser::state_for(const std::string& device
 }
 
 void GeteventParser::stage(const EventPayload& payload) {
-    frame_rows_.push_back(EventRecord{payload, false, 0});
+    frame_rows_.push_back(EventRecord{payload, 0});
 }
 
 void GeteventParser::release_pending(const int64_t timestamp_ns, std::vector<EventRecord>& out) {

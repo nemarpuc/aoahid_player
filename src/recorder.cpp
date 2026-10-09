@@ -58,10 +58,10 @@ std::string record_header(const RecordFormat& format) {
         return {};
     switch (format.mode) {
     case CoordMode::normalized:
-        return "@format 2\n@coords normalized\n";
+        return "@format 3\n@coords normalized\n";
     case CoordMode::raw:
     default:
-        return "# screen " + std::to_string(format.panel_width) + 'x' +
+        return "@screen " + std::to_string(format.panel_width) + 'x' +
                std::to_string(format.panel_height) + '\n';
     }
 }

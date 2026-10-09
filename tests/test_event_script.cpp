@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Covers EventScript::load() (CSV row parsing, wait_ms -> wait_ns
-// conversion, once flags, comment/BOM handling) and batch_key().
+// conversion, comment/BOM handling) and batch_key().
 #include "doctest.h"
 
 #include "aoahid_player/event_script.hpp"
@@ -44,8 +44,6 @@ TEST_CASE("EventScript::load parses one row of every profile") {
     REQUIRE(script.load(path, error));
     CHECK(error.empty());
     CHECK(script.rows.size() == 8);
-    for (const aoap::EventRecord& row : script.rows)
-        CHECK(row.once == false);
 
     const auto& touch = std::get<aoap::TouchEvent>(script.rows[0].payload);
     CHECK(touch.finger_id == 1);
@@ -63,37 +61,6 @@ TEST_CASE("EventScript::load parses one row of every profile") {
     CHECK(pen.in_range == true);
     CHECK(pen.tip == true);
     CHECK(pen.pressure == 2000);
-
-    std::filesystem::remove(path);
-}
-
-TEST_CASE("EventScript::load marks uppercase prefixes as once") {
-    const std::string path =
-        write_temp_csv("once_vs_loop", "T,1,1,0,0,0\nt,2,1,0,0,10\n");
-
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(path, error));
-    REQUIRE(script.rows.size() == 2);
-    CHECK(script.rows[0].once == true);
-    CHECK(script.rows[1].once == false);
-
-    std::filesystem::remove(path);
-}
-
-TEST_CASE("EventScript::load keeps uppercase rows where they are written") {
-    const std::string path = write_temp_csv(
-        "once_in_place", "t,1,1,0,0,10\nT,2,1,0,0,20\nt,1,0,0,0,30\nK,0x04,1,40\n");
-
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(path, error));
-    REQUIRE(script.rows.size() == 4);
-    CHECK(script.rows[0].once == false);
-    CHECK(script.rows[1].once == true);
-    CHECK(script.rows[2].once == false);
-    CHECK(script.rows[3].once == true);
-    CHECK(script.rows[1].wait_ns == 20'000'000);
 
     std::filesystem::remove(path);
 }
@@ -176,102 +143,14 @@ TEST_CASE("batch_key distinguishes controls and merges mouse moves") {
     CHECK(batch_key(aoap::KeyEvent{0x04, true}) != batch_key(aoap::MouseButton{1, true}));
 }
 
-TEST_CASE("Timeline gives the first lap every row and the repeat lap only the repeated rows") {
-    aoap::EventScript script;
-    script.rows.push_back({aoap::KeyEvent{0x04, true}, false, 10'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x05, true}, true, 20'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x06, true}, false, 30'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x07, true}, true, 40'000'000});
-
-    const aoap::Timeline timeline = aoap::build_timeline(script);
-    CHECK(timeline.first ==
-          std::vector<int64_t>{0, 10'000'000, 30'000'000, 60'000'000, 100'000'000});
-    CHECK(timeline.repeat == std::vector<int64_t>{0, 10'000'000, 40'000'000});
-    CHECK(timeline.repeat_row == std::vector<uint32_t>{0, 2});
-    CHECK(timeline.rows(aoap::Lap::first) == 4);
-    CHECK(timeline.rows(aoap::Lap::repeat) == 2);
-    CHECK(timeline.once_rows() == 2);
-    CHECK(timeline.duration(aoap::Lap::first) == 100'000'000);
-    CHECK(timeline.duration(aoap::Lap::repeat) == 40'000'000);
-    CHECK(timeline.script_row(aoap::Lap::first, 3) == 3);
-    CHECK(timeline.script_row(aoap::Lap::repeat, 1) == 2);
-
-    REQUIRE(timeline.first_runs.size() == 4);
-    CHECK(timeline.first_runs[1].once == true);
-    CHECK(timeline.first_runs[1].start == 10'000'000);
-    CHECK(timeline.first_runs[1].end == 30'000'000);
-}
-
-TEST_CASE("Timeline merges neighbouring rows of one kind into one run") {
-    aoap::EventScript script;
-    script.rows.push_back({aoap::KeyEvent{0x04, true}, true, 1'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x05, true}, true, 2'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x06, true}, false, 3'000'000});
-
-    const aoap::Timeline timeline = aoap::build_timeline(script);
-    REQUIRE(timeline.first_runs.size() == 2);
-    CHECK(timeline.first_runs[0].once == true);
-    CHECK(timeline.first_runs[0].start == 0);
-    CHECK(timeline.first_runs[0].end == 3'000'000);
-    CHECK(timeline.first_runs[1].once == false);
-    CHECK(timeline.first_runs[1].end == 6'000'000);
-}
-
-TEST_CASE("Timeline without once rows has the same two laps") {
-    aoap::EventScript script;
-    script.rows.push_back({aoap::KeyEvent{0x04, true}, false, 5'000'000});
-    script.rows.push_back({aoap::KeyEvent{0x04, false}, false, 7'000'000});
-
-    const aoap::Timeline timeline = aoap::build_timeline(script);
-    CHECK(timeline.once_rows() == 0);
-    CHECK(timeline.first == timeline.repeat);
-    REQUIRE(timeline.first_runs.size() == 1);
-    CHECK(timeline.first_runs[0].once == false);
-}
-
-TEST_CASE("Timeline row_at finds seek rows") {
-    aoap::EventScript script;
-    script.rows.push_back({aoap::TouchEvent{0, true, 1, 1}, false, 0});
-    script.rows.push_back({aoap::TouchEvent{1, true, 2, 2}, false, 10'000'000});
-    script.rows.push_back({aoap::TouchEvent{0, false, 1, 1}, false, 5'000'000});
-
-    const aoap::Timeline timeline = aoap::build_timeline(script);
-    // Rows 0 and 1 share t=0 (a zero-wait batch); row 2 starts at 10 ms.
-    CHECK(timeline.row_at(aoap::Lap::repeat, 0) == 0);
-    CHECK(timeline.row_at(aoap::Lap::repeat, 1) == 2);
-    CHECK(timeline.row_at(aoap::Lap::repeat, 10'000'000) == 2);
-    CHECK(timeline.row_at(aoap::Lap::repeat, 10'000'001) == 3);
-    CHECK(timeline.row_at(aoap::Lap::repeat, 99'000'000) == 3);
-    CHECK(timeline.row_at(aoap::Lap::first, 10'000'001) == 3);
-}
-
-TEST_CASE("A '# screen WxH' comment names the coordinate space") {
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(write_temp_csv("screen_directive.csv",
-                                       "# recorded by something\n"
-                                       "#   Screen 4096X4096  \n"
-                                       "# screen 1x1\n" // only the first one counts
-                                       "t,0,1,2048,1024,0\n"),
-                        error));
-    CHECK(script.screen_width == 4096);
-    CHECK(script.screen_height == 4096);
-
-    aoap::EventScript plain;
-    REQUIRE(plain.load(write_temp_csv("screen_none.csv", "# screensaver 2x3\nt,0,1,5,5,0\n"),
-                       error));
-    CHECK(plain.screen_width == 0);
-    CHECK(plain.screen_height == 0);
-}
-
 TEST_CASE("scale_script maps touch and pen rows onto the connected surfaces") {
     aoap::EventScript script;
     script.screen_width = 4096;
     script.screen_height = 4096;
-    script.rows.push_back({aoap::TouchEvent{0, true, 0, 0}, true, 0});
-    script.rows.push_back({aoap::TouchEvent{1, true, 2048, 4095}, false, 1'000'000});
-    script.rows.push_back({aoap::PenSample{true, true, 4095, 1024, 100}, false, 0});
-    script.rows.push_back({aoap::KeyEvent{0x04, true}, false, 0});
+    script.rows.push_back({aoap::TouchEvent{0, true, 0, 0}, 0});
+    script.rows.push_back({aoap::TouchEvent{1, true, 2048, 4095}, 1'000'000});
+    script.rows.push_back({aoap::PenSample{true, true, 4095, 1024, 100}, 0});
+    script.rows.push_back({aoap::KeyEvent{0x04, true}, 0});
 
     aoap::EventScript scaled;
     REQUIRE(aoap::scale_script(script, 1080, 2400, 32768, 32768, scaled));
@@ -293,97 +172,6 @@ TEST_CASE("scale_script maps touch and pen rows onto the connected surfaces") {
     aoap::EventScript undeclared;
     undeclared.rows = script.rows;
     CHECK_FALSE(aoap::scale_script(undeclared, 1080, 2400, 0, 0, untouched)); // no space
-}
-
-TEST_CASE("@once ... @end marks the rows inside as once, whatever their case") {
-    const std::string path = write_temp_csv("once_block",
-        "t,0,1,10,10,5\n"
-        "@once\n"
-        "t,0,0,10,10,5\n" // lowercase inside the block is still once
-        "k,A,1,5\n"
-        "@end\n"
-        "t,0,1,20,20,5\n");
-
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(path, error));
-    REQUIRE(script.rows.size() == 4);
-    CHECK(script.rows[0].once == false);
-    CHECK(script.rows[1].once == true);
-    CHECK(script.rows[2].once == true);
-    CHECK(script.rows[3].once == false);
-    for (const aoap::EventRecord& row : script.rows)
-        CHECK(row.keep_time == false);
-
-    std::filesystem::remove(path);
-}
-
-TEST_CASE("@once keep-time keeps the waits of the skipped rows in later laps") {
-    const std::string path = write_temp_csv("keep_time",
-        "t,0,1,1,1,10\n"
-        "@once keep-time\n"
-        "k,A,1,20\n"
-        "k,A,0,30\n"
-        "@end\n"
-        "t,0,0,1,1,40\n");
-
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(path, error));
-    REQUIRE(script.rows.size() == 4);
-    CHECK(script.rows[1].keep_time == true);
-    CHECK(script.rows[2].keep_time == true);
-    CHECK(script.rows[3].keep_time == false);
-
-    const aoap::Timeline timeline = aoap::build_timeline(script);
-    CHECK(timeline.first == std::vector<int64_t>{0, 10'000'000, 30'000'000, 60'000'000, 100'000'000});
-    // The once rows are skipped but their 50 ms still passes before row 3.
-    CHECK(timeline.repeat == std::vector<int64_t>{0, 60'000'000, 100'000'000});
-    CHECK(timeline.repeat_row == std::vector<uint32_t>{0, 3});
-
-    std::filesystem::remove(path);
-}
-
-TEST_CASE("@format and @screen directives") {
-    aoap::EventScript script;
-    std::string error;
-
-    REQUIRE(script.load(write_temp_csv("dir_ok", "@format 2\n@screen 1080x2400\nt,0,1,5,5,0\n"),
-                        error));
-    CHECK(script.screen_width == 1080);
-    CHECK(script.screen_height == 2400);
-
-    // @screen wins over the older comment form.
-    REQUIRE(script.load(write_temp_csv("dir_over", "# screen 100x200\n@screen 1080x2400\nt,0,1,5,5,0\n"),
-                        error));
-    CHECK(script.screen_width == 1080);
-
-    // Version 1 and 2 are the same language; anything newer is refused.
-    REQUIRE(script.load(write_temp_csv("dir_v1", "@format 1\nt,0,1,5,5,0\n"), error));
-    CHECK_FALSE(script.load(write_temp_csv("dir_v3", "@format 3\nt,0,1,5,5,0\n"), error));
-    CHECK(error.find("format") != std::string::npos);
-
-    CHECK_FALSE(script.load(write_temp_csv("dir_late", "t,0,1,5,5,0\n@screen 1080x2400\n"), error));
-    CHECK(error.find("before the first row") != std::string::npos);
-    CHECK_FALSE(script.load(write_temp_csv("dir_bad_size", "@screen 10x\nt,0,1,5,5,0\n"), error));
-    CHECK_FALSE(script.load(write_temp_csv("dir_twice", "@screen 1x1\n@screen 2x2\nt,0,1,5,5,0\n"),
-                            error));
-}
-
-TEST_CASE("Block and directive mistakes are reported") {
-    aoap::EventScript script;
-    std::string error;
-
-    CHECK_FALSE(script.load(write_temp_csv("blk_nested", "@once\n@once\nt,0,1,1,1,0\n@end\n"), error));
-    CHECK(error.find("nested") != std::string::npos);
-    CHECK_FALSE(script.load(write_temp_csv("blk_stray_end", "t,0,1,1,1,0\n@end\n"), error));
-    CHECK(error.find("@end") != std::string::npos);
-    CHECK_FALSE(script.load(write_temp_csv("blk_open", "@once\nt,0,1,1,1,0\n"), error));
-    CHECK(error.find("not closed") != std::string::npos);
-    CHECK_FALSE(script.load(write_temp_csv("blk_unknown", "@wat\nt,0,1,1,1,0\n"), error));
-    CHECK(error.find("unknown directive") != std::string::npos);
-    CHECK_FALSE(script.load(write_temp_csv("blk_option", "@once fast\nt,0,1,1,1,0\n@end\n"), error));
-    CHECK(error.find("keep-time") != std::string::npos);
 }
 
 TEST_CASE("EventScript::load reports every bad row, not only the first") {
@@ -454,7 +242,7 @@ TEST_CASE("Key rows accept names as well as usage numbers") {
 
 TEST_CASE("@coords normalized reads touch and pen positions as fractions") {
     const std::string path = write_temp_csv("normalized",
-        "@format 2\n"
+        "@format 3\n"
         "@coords normalized\n"
         "t,0,1,0.5,0.25,0\n"
         "p,1,1,1,0,100,0\n"
@@ -509,23 +297,11 @@ TEST_CASE("@coords mistakes are reported") {
     CHECK(std::get<aoap::TouchEvent>(script.rows[0].payload).x == 5);
 }
 
-TEST_CASE("Directive words and options ignore case") {
-    aoap::EventScript script;
-    std::string error;
-    REQUIRE(script.load(write_temp_csv("case_dir",
-                                       "@FORMAT 2\n@Coords Normalized\n@Once KEEP-TIME\n"
-                                       "k,a,1,5\n@END\nt,0,1,0.5,0.5,0\n"),
-                        error));
-    CHECK(script.coords_normalized);
-    REQUIRE(script.rows.size() == 2);
-    CHECK(script.rows[0].keep_time);
-}
-
 TEST_CASE("EventScript::load parses media key rows by name or usage") {
     const std::string path = write_temp_csv("media",
         "c,VolumeUp,1,5\n"
         "c,volumeup,0,5\n"
-        "C,0xcd,1,0\n"
+        "c,0xcd,1,0\n"
         "c,PlayPause,0,5\n"
         "c,Prev,1,5\n");
 
@@ -538,7 +314,6 @@ TEST_CASE("EventScript::load parses media key rows by name or usage") {
     CHECK(up.down == true);
     CHECK(std::get<aoap::MediaKey>(script.rows[1].payload).down == false);
     CHECK(std::get<aoap::MediaKey>(script.rows[2].payload).usage == 0x00CD);
-    CHECK(script.rows[2].once == true);
     CHECK(std::get<aoap::MediaKey>(script.rows[4].payload).usage == 0x00B6);
     // One Consumer field: every media row conflicts with every other.
     CHECK(aoap::batch_key(script.rows[0].payload) == aoap::batch_key(script.rows[2].payload));
@@ -571,7 +346,7 @@ TEST_CASE("EventScript::load parses the brightness keys by name or usage") {
 
 TEST_CASE("EventScript::load rejects media keys the toggle profile does not declare") {
     for (const char* row : {"c,Louder,1,5\n", "c,0x00E8,1,5\n", "c,VolumeUp,2,5\n",
-                            "c,VolumeUp,1\n", "c,FastForward,1,5\n", "c,0x00B3,1,5\n",
+                            "c,VolumeUp\n", "c,FastForward,1,5\n", "c,0x00B3,1,5\n",
                             "c,Rewind,1,5\n", "c,0x00B4,1,5\n"}) {
         const std::string path = write_temp_csv("media_bad", row);
         aoap::EventScript script;
@@ -580,4 +355,217 @@ TEST_CASE("EventScript::load rejects media keys the toggle profile does not decl
         CHECK_FALSE(error.empty());
         std::filesystem::remove(path);
     }
+}
+
+TEST_CASE("Rows outside a block form one segment that runs every lap") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(write_temp_csv("seg_plain", "k,A,1,10\nk,A,0,20\n"), error));
+    REQUIRE(script.segments.size() == 1);
+    const aoap::Segment& all = script.segments[0];
+    CHECK(all.begin == 0);
+    CHECK(all.end == 2);
+    CHECK(all.lead_ns == 0);
+    CHECK(all.duration == 30'000'000);
+    CHECK(all.when.first == 1);
+    CHECK(all.when.last == UINT64_MAX);
+    CHECK(all.when.every == 1);
+    CHECK_FALSE(all.when.negate);
+    CHECK(script.lap_blocks == 0);
+}
+
+TEST_CASE("@lap and @every blocks become segments with their selector") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(write_temp_csv("seg_blocks",
+                                       "k,A,1,1\n"
+                                       "@lap 1\n"
+                                       "k,B,1,2\n"
+                                       "@end\n"
+                                       "@lap 3..5 keep-time\n"
+                                       "k,C,1,3\n"
+                                       "@end\n"
+                                       "@lap 7..\n"
+                                       "k,D,1,4\n"
+                                       "@end\n"
+                                       "@every 10\n"
+                                       "k,E,1,5\n"
+                                       "@else\n"
+                                       "k,F,1,6\n"
+                                       "@end\n"
+                                       "@every 4 from 2 to 14\n"
+                                       "k,G,1,7\n"
+                                       "@end\n"
+                                       "k,A,0,8\n"),
+                        error));
+    REQUIRE(script.rows.size() == 8);
+    REQUIRE(script.segments.size() == 8);
+    CHECK(script.lap_blocks == 5);
+
+    const auto same = [&](const size_t index, const uint64_t first, const uint64_t last,
+                          const uint64_t every, const bool negate, const bool keep) {
+        const aoap::LapSelector& when = script.segments[index].when;
+        return when.first == first && when.last == last && when.every == every &&
+               when.negate == negate && when.keep_time == keep;
+    };
+    CHECK(same(0, 1, UINT64_MAX, 1, false, false));
+    CHECK(same(1, 1, 1, 1, false, false));
+    CHECK(same(2, 3, 5, 1, false, true));
+    CHECK(same(3, 7, UINT64_MAX, 1, false, false));
+    CHECK(same(4, 10, UINT64_MAX, 10, false, false));
+    CHECK(same(5, 10, UINT64_MAX, 10, true, false));
+    CHECK(same(6, 2, 14, 4, false, false));
+    CHECK(same(7, 1, UINT64_MAX, 1, false, false));
+    for (uint32_t index = 0; index < 8; ++index) {
+        CHECK(script.segments[index].begin == index);
+        CHECK(script.segments[index].end == index + 1);
+    }
+}
+
+TEST_CASE("A wait row adds to the row before it, or leads its segment") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(write_temp_csv("wait_rows",
+                                       "w,5\n"       // leads the first segment
+                                       "k,A,1\n"     // no wait_ms: 0
+                                       "w,10\n"      // onto k,A,1
+                                       "w,2.5\n"     // and again
+                                       "@every 2\n"
+                                       "w,7\n"       // leads the block
+                                       "k,B,1,1\n"
+                                       "@else\n"
+                                       "w,30\n"      // a part with no rows at all
+                                       "@end\n"
+                                       "k,A,0\n"),   // last row, no wait
+                        error));
+    REQUIRE(script.rows.size() == 3);
+    CHECK(script.rows[0].wait_ns == 12'500'000);
+    CHECK(script.rows[2].wait_ns == 0);
+    REQUIRE(script.segments.size() == 4);
+    CHECK(script.segments[0].lead_ns == 5'000'000);
+    CHECK(script.segments[0].duration == 17'500'000);
+    CHECK(script.segments[1].lead_ns == 7'000'000);
+    CHECK(script.segments[1].duration == 8'000'000);
+    CHECK(script.segments[2].begin == script.segments[2].end);
+    CHECK(script.segments[2].lead_ns == 30'000'000);
+    CHECK(script.segments[2].duration == 30'000'000);
+    CHECK(script.segments[2].when.negate);
+    CHECK(script.segments[3].duration == 0);
+}
+
+TEST_CASE("Every row type takes its wait_ms or leaves it out") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(write_temp_csv("no_wait",
+                                       "t,0,1,10,20\nm,1,2\nb,1,1\nk,A,1\ng,1,1\na,0,5\n"
+                                       "h,1,0,0,0\np,1,1,5,6,7\nc,VolumeUp,1\n"),
+                        error));
+    REQUIRE(script.rows.size() == 9);
+    for (const aoap::EventRecord& row : script.rows)
+        CHECK(row.wait_ns == 0);
+    CHECK(std::get<aoap::TouchEvent>(script.rows[0].payload).y == 20);
+
+    CHECK_FALSE(script.load(write_temp_csv("short_row", "t,0,1,10\n"), error));
+    CHECK_FALSE(script.load(write_temp_csv("long_row", "k,A,1,5,5\n"), error));
+    CHECK_FALSE(script.load(write_temp_csv("wait_cols", "k,A,1,1\nw,5,5\n"), error));
+    CHECK_FALSE(script.load(write_temp_csv("wait_bad", "k,A,1,1\nw,-1\n"), error));
+    // Waits alone are not a script.
+    CHECK_FALSE(script.load(write_temp_csv("wait_only", "w,100\n"), error));
+    CHECK(error.find("no event rows") != std::string::npos);
+}
+
+TEST_CASE("Old-format files are refused with what to write instead") {
+    aoap::EventScript script;
+    std::string error;
+
+    CHECK_FALSE(script.load(write_temp_csv("old_upper", "K,A,1,8\n"), error));
+    CHECK(error.find(":1:") != std::string::npos);
+    CHECK(error.find("@lap 1") != std::string::npos);
+
+    CHECK_FALSE(script.load(write_temp_csv("old_once", "@once\nk,A,1,8\n@end\n"), error));
+    CHECK(error.find("@lap 1") != std::string::npos);
+
+    CHECK_FALSE(script.load(write_temp_csv("old_screen", "# screen 1080x2400\nt,0,1,5,5,0\n"),
+                            error));
+    CHECK(error.find("@screen") != std::string::npos);
+    // An ordinary comment that merely starts with the word is still a comment.
+    REQUIRE(script.load(write_temp_csv("screensaver", "# screensaver 2x3\nt,0,1,5,5,0\n"), error));
+    CHECK(script.screen_width == 0);
+
+    for (const char* version : {"1", "2", "4"}) {
+        CHECK_FALSE(script.load(write_temp_csv("old_format", std::string("@format ") + version +
+                                                                 "\nt,0,1,5,5,0\n"),
+                                error));
+        CHECK(error.find("@format 3") != std::string::npos);
+    }
+}
+
+TEST_CASE("@format 3 and @screen directives") {
+    aoap::EventScript script;
+    std::string error;
+
+    REQUIRE(script.load(write_temp_csv("dir_ok", "@format 3\n@screen 1080x2400\nt,0,1,5,5,0\n"),
+                        error));
+    CHECK(script.screen_width == 1080);
+    CHECK(script.screen_height == 2400);
+
+    CHECK_FALSE(script.load(write_temp_csv("dir_late", "t,0,1,5,5,0\n@screen 1080x2400\n"), error));
+    CHECK(error.find("before the first row") != std::string::npos);
+    CHECK_FALSE(script.load(write_temp_csv("dir_bad_size", "@screen 10x\nt,0,1,5,5,0\n"), error));
+    CHECK_FALSE(script.load(write_temp_csv("dir_twice", "@screen 1x1\n@screen 2x2\nt,0,1,5,5,0\n"),
+                            error));
+    // A wait row counts as the first row too.
+    CHECK_FALSE(script.load(write_temp_csv("dir_after_wait", "w,5\n@screen 1x1\nt,0,1,5,5,0\n"),
+                            error));
+}
+
+TEST_CASE("Block mistakes are reported") {
+    aoap::EventScript script;
+    std::string error;
+    const auto refused = [&](const char* name, const char* text, const char* said) {
+        CAPTURE(name);
+        CHECK_FALSE(script.load(write_temp_csv(name, text), error));
+        CHECK(error.find(said) != std::string::npos);
+    };
+    refused("blk_nested", "@lap 1\n@every 2\nt,0,1,1,1,0\n@end\n", "nested");
+    refused("blk_stray_end", "t,0,1,1,1,0\n@end\n", "@end");
+    refused("blk_stray_else", "t,0,1,1,1,0\n@else\n", "@else");
+    refused("blk_two_else", "@lap 1\nk,A,1\n@else\nk,B,1\n@else\nk,C,1\n@end\n", "@else");
+    refused("blk_else_keep", "@lap 1 keep-time\nk,A,1\n@else\nk,B,1\n@end\n", "keep-time");
+    refused("blk_else_arg", "@lap 1\nk,A,1\n@else 2\nk,B,1\n@end\n", "@else");
+    refused("blk_open", "@lap 1\nt,0,1,1,1,0\n", "not closed");
+    refused("blk_unknown", "@wat\nt,0,1,1,1,0\n", "unknown directive");
+    refused("lap_none", "@lap\nk,A,1\n@end\n", "@lap");
+    refused("lap_zero", "@lap 0\nk,A,1\n@end\n", "@lap");
+    refused("lap_back", "@lap 5..3\nk,A,1\n@end\n", "@lap");
+    refused("lap_option", "@lap 1 fast\nk,A,1\n@end\n", "@lap");
+    refused("lap_text", "@lap x..\nk,A,1\n@end\n", "@lap");
+    refused("every_none", "@every\nk,A,1\n@end\n", "@every");
+    refused("every_zero", "@every 0\nk,A,1\n@end\n", "@every");
+    refused("every_from", "@every 3 from\nk,A,1\n@end\n", "@every");
+    refused("every_order", "@every 3 to 9 from 2\nk,A,1\n@end\n", "@every");
+    refused("every_back", "@every 3 to 2\nk,A,1\n@end\n", "@every");
+    refused("every_extra", "@every 3 from 1 to 9 keep-time now\nk,A,1\n@end\n", "@every");
+}
+
+TEST_CASE("Directive words and options ignore case") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(write_temp_csv("case_dir",
+                                       "@FORMAT 3\n@Coords Normalized\n@Every 2 FROM 1 KEEP-TIME\n"
+                                       "k,a,1,5\n@END\nt,0,1,0.5,0.5,0\n"),
+                        error));
+    CHECK(script.coords_normalized);
+    REQUIRE(script.segments.size() == 2);
+    CHECK(script.segments[0].when.every == 2);
+    CHECK(script.segments[0].when.first == 1);
+    CHECK(script.segments[0].when.keep_time);
+}
+
+TEST_CASE("The example script that ships with the program loads") {
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE_MESSAGE(script.load(AOAHID_PLAYER_CSV_DIR "/example.csv", error), error);
+    CHECK(script.rows.size() == 19);
+    CHECK(script.lap_blocks == 2);
 }

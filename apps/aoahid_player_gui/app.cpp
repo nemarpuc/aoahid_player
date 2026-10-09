@@ -577,8 +577,6 @@ void App::delete_script(const std::string& path) {
         script_.reset();
         script_path_.clear();
         script_reference_.clear();
-        script_warnings_.clear();
-        timeline_ = {};
         cursor_ = {};
     }
     if (path == last_record_path_)
@@ -594,10 +592,6 @@ void App::load_script(const std::string& path) {
         log_.message(aoap::Severity::error, error);
         return;
     }
-    timeline_ = aoap::build_timeline(*script);
-    script_warnings_ = aoap::lap_warnings(*script, timeline_);
-    for (const std::string& warning : script_warnings_)
-        log_.message(aoap::Severity::warning, aoap::display_name(path) + ": " + warning);
     script_ = std::move(script);
     script_path_ = path;
     script_reference_ = script_reference(path);
@@ -780,7 +774,7 @@ void App::save_current_playlist() {
 
 void App::play_playlist() {
     std::vector<PlaylistStep> steps;
-    std::vector<RunStep> run;
+    std::vector<std::shared_ptr<const aoap::EventScript>> run;
     steps.reserve(playlist_.entries.size());
     run.reserve(playlist_.entries.size());
     for (const Playlist::Entry& entry : playlist_.entries) {
@@ -792,7 +786,7 @@ void App::play_playlist() {
             log_.message(aoap::Severity::error, error);
             return;
         }
-        run.push_back(RunStep{script, aoap::build_timeline(*script)});
+        run.push_back(script);
         steps.push_back(PlaylistStep{std::move(script), aoap::display_name(path), entry.loops});
     }
     run_steps_ = std::move(run);

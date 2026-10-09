@@ -15,7 +15,6 @@
 #include "aoahid_player/session.hpp"
 #include "aoahid_player/timing.hpp"
 
-#include <algorithm>
 #include <atomic>
 #include <cmath>
 #include <csignal>
@@ -228,13 +227,8 @@ bool load_script(const aoap::cli::Options& options, std::string& path,
             fail(problem);
         return false;
     }
-    const auto once_rows = static_cast<size_t>(
-        std::count_if(loaded->rows.begin(), loaded->rows.end(),
-                      [](const aoap::EventRecord& row) { return row.once; }));
-    std::printf("[INFO] %s: %zu once rows, %zu every-lap rows\n", aoap::display_name(path).c_str(),
-                once_rows, loaded->rows.size() - once_rows);
-    for (const std::string& warning : aoap::lap_warnings(*loaded, aoap::build_timeline(*loaded)))
-        std::fprintf(stderr, "[WARN] %s: %s\n", aoap::display_name(path).c_str(), warning.c_str());
+    std::printf("[INFO] %s: %zu rows, %u lap blocks\n", aoap::display_name(path).c_str(),
+                loaded->rows.size(), static_cast<unsigned>(loaded->lap_blocks));
     script = std::move(loaded);
     return true;
 }

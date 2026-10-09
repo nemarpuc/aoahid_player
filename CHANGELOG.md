@@ -5,6 +5,27 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [2.0.0] - 2026-10-10
+
+- **Script format 3 (breaking).** Rows can be put in lap blocks that choose
+  the laps they run on: `@lap A`, `@lap A..B`, `@lap A..`, `@every N [from A]
+  [to B]`, with `@else` for the other laps and `keep-time` as before. A `w`
+  row only waits, and the trailing `wait_ms` of every row can be left out.
+- Removed from the format: uppercase row prefixes, `@once` (write `@lap 1`),
+  the `# screen WxH` comment (write `@screen WxH`), and `@format 1` / `2`.
+  Each is refused with the line number and what to write instead; see
+  "Migrating from format 1 and 2" in the README. Files made only of
+  lowercase rows play as before.
+- Playback ends when no later lap has a row left, and a seek rebuilds the
+  exact input state on any lap. The lap warning is gone with the
+  approximation it covered.
+- GUI: the Player tab's bar shows the lap being played, the label reads
+  *Lap k of N*, and a *Lap* field jumps to any lap.
+- Control API (breaking): `lap` is a number counted from 1 in `/status` and
+  `/seek` (was `first` / `repeat`); `/seek` without `lap` stays in the lap
+  being played.
+- `aoa_record` writes `@screen WxH` (raw) and `@format 3` (normalized).
+
 ## [1.1.3] - 2026-10-09
 
 - Builds against libaoahid 4.2.0 (the minimum is now 4.2.0, and CI and release

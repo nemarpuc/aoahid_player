@@ -29,7 +29,7 @@ void print_usage(const char* program) {
                 "                       device getevent reports\n"
                 "      --coords MODE   How touch coordinates are written (default: raw)\n"
                 "                       raw         the touch panel's own values, with\n"
-                "                                   \"# screen WxH\" naming its range\n"
+                "                                   \"@screen WxH\" naming its range\n"
                 "                       normalized  fractions 0..1 of the panel, written with\n"
                 "                                   \"@coords normalized\"\n"
                 "      --echo          Print each captured row while recording\n"

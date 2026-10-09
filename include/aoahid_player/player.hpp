@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <mutex>
 #include <vector>
 
 #include "device_group.hpp"
@@ -19,8 +20,8 @@ enum class PlaybackState : uint8_t { stopped, playing, paused };
 
 // A point on the script timeline, in script time (speed 1.0).
 struct PlaybackPosition {
-    Lap lap{Lap::first};
-    int64_t time_ns{};
+    uint64_t lap{1};   // counted from 1
+    int64_t time_ns{}; // from the start of that lap
 };
 
 struct PlaybackStatus {
@@ -40,9 +41,10 @@ class PlaybackObserver {
 };
 
 // Drives an EventScript against a DeviceGroup.
-//   - The first lap runs every row in the order written; each later lap skips
-//     the uppercase (once-only) rows. Laps repeat until the loop limit,
-//     stop(), or the loss of every device. The loop limit counts laps.
+//   - Laps count from 1. Each lap runs, in the order written, the rows whose
+//     lap block includes it (rows outside a block run every lap). Laps
+//     repeat until the loop limit, stop(), the loss of every device, or the
+//     point where no later lap has a row left. The loop limit counts laps.
 //   - Every row runs at an absolute deadline measured from one anchor, so a
 //     slow send never makes the script drift.
 //   - Rows with wait_ms 0 are batched into the next report. A row that would
@@ -150,6 +152,7 @@ class Player {
     [[nodiscard]] int64_t deadline_for(int64_t script_time) const noexcept;
     [[nodiscard]] int64_t script_time_at(int64_t now) const noexcept;
     [[nodiscard]] PlaybackPosition clamp(PlaybackPosition position) const noexcept;
+    [[nodiscard]] PlaybackPosition take_seek();
     [[nodiscard]] bool conflicts(uint64_t key) const noexcept;
     void report_skip(aoahid_result result, const EventPayload& payload);
     void publish(PlaybackState state, PlaybackPosition position) noexcept;
@@ -161,14 +164,13 @@ class Player {
 
     // Playback thread only.
     std::shared_ptr<const EventScript> script_;
-    Timeline timeline_;
     InputState live_;   // what the devices currently hold
     InputState target_; // scratch for seeks
+    std::vector<uint32_t> order_; // scratch for state_at()
+    LapWalk walk_;                // the row playback is on
     std::vector<EventPayload> releases_;
     std::vector<EventPayload> presses_;
     std::vector<uint64_t> staged_keys_;
-    Lap lap_{Lap::first};
-    size_t index_{};
     int64_t cursor_{}; // script time of the batch being staged
     uint64_t loops_{};
     int64_t anchor_real_{};
@@ -184,19 +186,22 @@ class Player {
     WakeSignal wake_;
     std::atomic<uint32_t> requests_{};
     std::atomic<bool> want_paused_{};
-    std::atomic<uint64_t> seek_word_{};
     std::atomic<double> speed_{1.0};
     std::atomic<int64_t> offset_ns_{};
     std::atomic<int64_t> loop_limit_{};
     std::atomic<uint64_t> reports_{};
     std::atomic<int64_t> stop_at_ns_{};
     std::atomic<bool> timed_out_{};
+    // Taken by seek() and by the playback thread when it picks a seek up,
+    // never per row.
+    std::mutex seek_mutex_;
+    PlaybackPosition seek_target_;
 
     // Seqlock-published timeline anchor, so status() can interpolate the
     // position without the playback thread writing anything per row.
     std::atomic<uint32_t> seq_{};
     std::atomic<uint8_t> pub_state_{};
-    std::atomic<uint8_t> pub_lap_{};
+    std::atomic<uint64_t> pub_lap_{1};
     std::atomic<int64_t> pub_anchor_real_{};
     std::atomic<int64_t> pub_anchor_script_{};
     std::atomic<int64_t> pub_offset_anchor_{};

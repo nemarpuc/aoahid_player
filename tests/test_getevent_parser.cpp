@@ -53,7 +53,6 @@ TEST_CASE("GeteventParser turns one tap into a down row then an up row") {
     CHECK(down.state == true);
     CHECK(down.x == 0x64);
     CHECK(down.y == 0xc8);
-    CHECK(out[0].once == false);
     // The down row carries the wait to the frame that follows it (~100ms).
     CHECK(out[0].wait_ns == doctest::Approx(100'000'000).epsilon(0.01));
 

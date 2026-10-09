@@ -115,19 +115,18 @@ without stopping playback for the others.
   (**Home** or **Backspace**) buttons. Each key can be remapped with the
   *Set...* buttons in the folded *Keys* row under the transport; a remapped
   action answers to that one
-  key only, and *Reset* restores the defaults. One bar shows
-  the whole cycle: the first lap (rows that run only once in purple, repeated
-  rows in green, in the order the file writes them), a gap, then the repeat
-  lap (green). Click or drag it to seek across both, while playing, paused, or
-  stopped. A script with no once-only rows shows a single lap. The label reads
-  *Loop k of N*, or *Once* for a script with nothing to repeat.
+  key only, and *Reset* restores the defaults. The bar shows the lap being
+  played: rows that run every lap in green, the lap blocks that run on this
+  lap in purple. Click or drag it to seek within the lap, while playing,
+  paused, or stopped. The label reads *Lap k of N*, or *Once* for a script
+  that ends after its first lap.
 - A script with problems shows every one of them (six lines here, all of them
-  in `aoa_touch`). A script whose repeat lap ends in a different input state
-  than it began in gets a warning, in the card and in the Activity log; see
-  [Checks](#checks).
+  in `aoa_touch`).
 - *Speed* is typed in directly (0.01×–1000×, with 0.5× / 1× / 2× / 4×
   buttons) and *Loops* counts laps, the first included (0 repeats until
-  stopped); both apply immediately, even in the middle of a wait. *Offset* shifts every later event by ±1 or ±10 ms;
+  stopped); both apply immediately, even in the middle of a wait. *Lap* jumps
+  to the start of any lap, with everything held as it would be after playing
+  up to it. *Offset* shifts every later event by ±1 or ±10 ms;
   it starts at zero on every run and can only be changed while playing.
 - Pause and stop release everything the script was holding. A seek rebuilds
   exactly what would be held at the new position (fingers down, keys,
@@ -403,14 +402,14 @@ finishes in the background: poll until `phase` is `connected` (or back to
 
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | `phase`, `connected`, `devices` (connected devices, dropped ones included, in the order `/bridge` numbers them), `active` (those still responding), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state/lap/time/loops/reports. |
+| `GET /status` | — | `phase`, `connected`, `devices` (connected devices, dropped ones included, in the order `/bridge` numbers them), `active` (those still responding), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state, `lap` (the lap being played, counted from 1), time, loops, and reports. |
 | `POST /refresh` | — | The Devices card's refresh: stops the adb server (unless recording), then rescans; `busy` is `true` until the new list is in `available`. 409 unless idle and not already busy. |
 | `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects with the profiles the window has set; `devices` also becomes the window's selection. 409 unless idle and not `busy`; 400 for an unknown device number or invalid profile settings. |
 | `POST /disconnect` | — | 409 if not connected. |
 | `POST /play` | `script`, `loop` (laps, the first included; 0 or omitted = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing); 400 for a `loop` that is not a non-negative number. |
 | `POST /stop` | — | |
 | `POST /pause` | `paused` (`true`/`false`, default `true`) | 409 if nothing is playing. |
-| `POST /seek` | `lap` (`first`/`repeat`, default `first`), `time_ms` | 409 if nothing is playing. |
+| `POST /seek` | `lap` (a lap number, counted from 1; default: the lap being played), `time_ms` | 409 if nothing is playing; 400 for a `lap` below 1 or a missing `time_ms`. |
 | `POST /live/start` | — | 409 if not connected. |
 | `POST /live/stop` | — | |
 | `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Device coordinates, not a fraction. |
@@ -495,7 +494,7 @@ aoa_record [options]
                        device getevent reports
       --coords MODE   How touch coordinates are written (default: raw)
                        raw         the touch panel's own values, with
-                                   "# screen WxH" naming its range
+                                   "@screen WxH" naming its range
                        normalized  fractions 0..1 of the panel, written with
                                    "@coords normalized"
       --echo          Print each captured row while recording
@@ -510,9 +509,9 @@ touch panel's own coordinate range is read with
 resolution is connected:
 
 - `raw` (the default) writes the panel's own values and names its range with
-  `# screen WxH`.
+  `@screen WxH`.
 - `normalized` writes fractions of the panel (`0.500000` is the middle) under
-  `@format 2` and `@coords normalized`.
+  `@format 3` and `@coords normalized`.
 
 If the panel's range cannot be read, the recording is written raw and a
 warning says so. Ctrl+C stops; the file is flushed and closed first. A
@@ -536,12 +535,16 @@ lines and a UTF-8 byte-order mark are ignored. Lines starting with `@` are
 | `h`    | gamepad dpad   | `up,down,right,left,wait_ms`                |
 | `p`    | pen            | `in_range,tip,x,y,pressure,wait_ms`         |
 | `c`    | media key (toggle) | `usage_or_name,down,wait_ms` (a Consumer usage number, or a [media key name](#media-key-names)) |
+| `w`    | —              | `wait_ms` (only waits)                      |
 
 `state`, `down`, `pressed`, `in_range`, `tip`, and the four dpad directions
 are `0` or `1`. Mouse and gamepad `button_no` are 1-based. A pen row with
 `tip` 1 needs `in_range` 1. `axis_index` is the position of the axis in the gamepad axis
-list (0-based). `wait_ms` is the delay after the row; rows with `0` are sent
-in the same report as the next row. Every row runs at an absolute time
+list (0-based). `wait_ms` is the delay after the row and can be left out,
+which means `0`: rows with `0` are sent in the same report as the next row. A
+`w` row sends nothing and only waits; it adds to the row before it, so `k,A,1`
+followed by `w,50` is the same as `k,A,1,50`. Row prefixes are lowercase.
+Every row runs at an absolute time
 measured from the start of its lap, so a slow USB transfer never makes the
 script drift. Keyboard modifiers (usages `0xE0`–`0xE7`) are always available,
 whatever the usage range. libaoahid's keyboard profile is full N-Key
@@ -553,41 +556,56 @@ releases whichever media key is held. See `csv/example.csv`.
 
 ### Laps: which rows run when
 
-Rows keep the order they are written in, and the script plays in laps:
+The script plays in laps, counted from 1. Rows keep the order they are
+written in. A row outside a block runs on every lap; a row inside a block runs
+on the laps the block names:
 
-- The **first lap** runs every row.
-- Each **later lap** skips the *once-only* rows, together with their
-  `wait_ms`, so it is shorter by the time those rows took (`keep-time`, below,
-  keeps that time).
+| block | runs on |
+|-------|---------|
+| `@lap A` | lap A (`@lap 1` is the first lap only) |
+| `@lap A..B` | laps A to B |
+| `@lap A..` | lap A and every later one |
+| `@every N` | laps N, 2N, 3N, ... |
+| `@every N from A` | laps A, A+N, A+2N, ... |
+| `@every N from A to B` | the same, up to lap B |
 
-A row is once-only when its prefix is uppercase (`T,M,B,K,G,A,H,P,C`) or when it
-sits between `@once` and `@end`; lowercase rows outside a block run on every
-lap. A once-only row can be anywhere in the file: first, in the middle, or
-last. A script whose rows are all once-only plays one lap and ends. *Loops*
-(`--loop N` in `aoa_touch`) count laps, the first included; 0 repeats until
-stopped.
+A block ends with `@end`. Before it, `@else` starts the rows for the laps the
+block does not run on:
 
-Earlier versions moved every uppercase row to the front. An uppercase row
-written after lowercase rows now runs where it is written; files that keep
-their uppercase rows at the top play as before.
+```csv
+@every 10
+t,0,1,100,100,30
+t,0,0,100,100,500
+@else
+w,530
+@end
+```
+
+A lap is as long as the waits of what runs on it, so a lap that skips a block
+is shorter by that block's time. `keep-time` after the block's laps (`@lap 1
+keep-time`, `@every 10 keep-time`) makes the laps that skip the block wait its
+time anyway; it cannot be combined with `@else`. Blocks do not nest.
+
+Playback ends when no later lap has a row left: a script whose rows all sit in
+`@lap 1..5` plays five laps. A lap with no row and no wait takes no time and is
+passed over. *Loops* (`--loop N` in `aoa_touch`) count laps, the first
+included; 0 repeats until stopped.
 
 ### Directives
 
-A directive is a line starting with `@`. Names and options ignore case. Files
-without directives are read as before.
+A directive is a line starting with `@`. Names and options ignore case.
 
 | directive | meaning |
 |-----------|---------|
-| `@format 1` / `@format 2` | Optional. The format version; 1 and 2 are the same language, and anything newer is refused. Before the first row. |
-| `@screen WxH` | The size of the coordinate space the touch and pen `x,y` are written in (each from 1 to 65536). The older `# screen WxH` comment still works; `@screen` wins when both are present. Before the first row, once. |
+| `@format 3` | Optional. The format version; any other number is refused. Before the first row. |
+| `@screen WxH` | The size of the coordinate space the touch and pen `x,y` are written in (each from 1 to 65536). Before the first row, once. |
 | `@coords normalized` / `@coords integer` | With `normalized`, touch and pen `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen pressure stays an integer. Before the first row, once; `normalized` cannot be combined with `@screen`. |
-| `@once` … `@end` | Every row inside is once-only, whatever its case. Blocks do not nest. |
-| `@once keep-time` … `@end` | The same, and later laps still wait the rows' `wait_ms`, so every lap has the same length. |
+| `@lap`, `@every`, `@else`, `@end` | Lap blocks; see [Laps](#laps-which-rows-run-when). |
 
 ### Coordinates
 
 While playing, touch and pen positions are scaled from the space the file
-names (`@screen`, `# screen WxH`, or `@coords normalized`) onto the connected
+names (`@screen` or `@coords normalized`) onto the connected
 touchscreen and pen surface; without a named space they are used as they are.
 A file written in a large square such as `@screen 32768x32768` therefore lands
 in the same place on any phone. Each axis is scaled on its own, so a square
@@ -631,11 +649,18 @@ c,PlayPause,0,0
 
 - Every problem in a file is reported with its file and line, up to 50 (then
   reading stops). A file with any problem is not played.
-- **Lap warning:** laps from the third on start where the second ended. When
-  the repeat lap leaves a control in a different state than it found it (usually
-  a once-only row releases what the repeated rows press, or the reverse), the
-  laps start differently from the second, and the control is named in a
-  warning. Scripts with no once-only rows never warn.
+
+### Migrating from format 1 and 2
+
+Version 2.0.0 reads format 3 only. A file made only of lowercase rows plays as
+before. The rest is refused with the line number and what to write instead:
+
+| before | now |
+|--------|-----|
+| an uppercase prefix (`K,A,1,8`) | the same row in lowercase inside `@lap 1` … `@end` |
+| `@once` / `@once keep-time` | `@lap 1` / `@lap 1 keep-time` |
+| `# screen 1080x2400` | `@screen 1080x2400` |
+| `@format 1`, `@format 2` | `@format 3`, or no `@format` line |
 
 ## Linux permissions (udev)
 
@@ -750,10 +775,10 @@ ctest --test-dir build --output-on-failure -C Release
 ```
 
 Unit tests cover CSV parsing (rows, directives, key names, error reports), the
-two-lap script timeline and coordinate scaling, how recordings write
+script laps and coordinate scaling, how recordings write
 coordinates, `adb shell getevent` parsing, HID descriptor bit widths, and the
-input-state transitions used for stop, pause, and seek, including the lap
-warnings. They use [doctest](https://github.com/doctest/doctest),
+input-state transitions used for stop, pause, and seek, including the state
+on any lap. They use [doctest](https://github.com/doctest/doctest),
 vendored under `tests/third_party/`. They are built only when this is the
 top-level project; pass `-DBUILD_TESTING=OFF` to skip them.
 
@@ -792,7 +817,7 @@ The main headers in `include/aoahid_player/`:
 - `recorder.hpp` — `adb getevent` recording into a CSV file, with the raw and
   normalized coordinate modes.
 - `event_script.hpp` — CSV loading (rows in file order, directives, key names)
-  and the two-lap script timeline.
+  and the script laps.
 - `adb.hpp`, `paths.hpp`, `events.hpp` — adb helpers, UTF-8 paths and the
   `csv/` folder, and the `EventSink` interface.
 
@@ -872,8 +897,8 @@ checked. To undo, repeat steps 1-3, or reinstall the manufacturer's USB driver.
 
 ## Known limitations
 
-- A script has two kinds of rows, once-only and repeated; there is no
-  per-row condition such as "on lap 3" or "every fifth lap".
+- Lap blocks do not nest, and a block's laps are fixed numbers: there is no
+  random or conditional choice.
 - Recording captures touches and keyboard keys only, not mouse, gamepad, or
   pen input.
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
