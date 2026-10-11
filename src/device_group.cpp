@@ -75,13 +75,13 @@ aoahid_result mutate(const Device& device, const EventPayload& payload, const Sp
                 // Both the CSV column and aoahid_mouse_button are one-based.
                 return aoahid::mouse_button(device.node(Profile::mouse), value.button, value.pressed);
             } else if constexpr (std::is_same_v<T, KeyEvent>) {
-                return aoahid::kbd(device.node(Profile::key), value.usage, value.down);
+                return aoahid::keyboard_key(device.node(Profile::key), value.usage, value.down);
             } else if constexpr (std::is_same_v<T, GamepadButton>) {
                 return aoahid::gamepad_button(device.node(Profile::gamepad), value.button, value.pressed);
             } else if constexpr (std::is_same_v<T, GamepadAxis>) {
                 return aoahid::gamepad_set_axis(device.node(Profile::gamepad), value.axis_index, value.value);
             } else if constexpr (std::is_same_v<T, GamepadDpad>) {
-                return aoahid::dpad(device.node(Profile::gamepad), value.up, value.down, value.right, value.left);
+                return aoahid::gamepad_dpad(device.node(Profile::gamepad), value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, MediaKey>) {
                 // Usage 0 releases whichever key is held. Live control, the
                 // Live tab's buttons, and a script share the one field, so

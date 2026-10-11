@@ -34,7 +34,7 @@ struct DeviceStatus {
 
 // Holds every connected Device and sends one script event to each device
 // that has a Node for it. Per device:
-//   1. mutate in-memory state (aoahid_touchscreen_contact / aoahid_kbd / ... - cheap)
+//   1. mutate in-memory state (aoahid_touchscreen_contact / aoahid_keyboard_key / ... - cheap)
 //   2. submit (non-blocking)
 // Every device is submitted before any completion is awaited, so the total
 // wait is bounded by the slowest device rather than the sum of all of them.

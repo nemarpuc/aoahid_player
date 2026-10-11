@@ -226,7 +226,7 @@ std::optional<Options> parse(const int argc, char** argv) {
             unsigned long low = 0;
             unsigned long high = 0;
             // The NKRO keyboard profile reserves 0xE0..0xE7 for modifiers,
-            // which aoahid_kbd routes separately.
+            // which aoahid_keyboard_key routes separately.
             if (!parse_usage(pieces[0], low) || !parse_usage(pieces[1], high) || low < 0x04 ||
                 high < low || high >= 0xE0) {
                 std::fprintf(stderr, "[ERROR] --key-usage-range must be ordered, start at 0x04 "
