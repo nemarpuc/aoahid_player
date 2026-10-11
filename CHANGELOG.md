@@ -18,7 +18,8 @@ were reconstructed from the commit history.
   reports one.
 - Builds against libaoahid 1.0.0 as re-released on 2026-10-11 (the battery is
   an option of each profile there, and the profile numbers changed). A build
-  of 3.0.1 does not load that library: the options structures differ in size.
+  of 3.0.1 cannot open its HIDs with that library, nor this build with the
+  earlier one: the options structures differ in size.
 - Fixed: the Devices tab kept the Toggle row's "settings shown" flag one past
   the end of its array.
 
