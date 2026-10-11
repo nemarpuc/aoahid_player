@@ -31,7 +31,7 @@ libaoahid          C++20 library, stable C ABI (aoahid.h): AOA 2.0 HID over libu
 | Apply | `aoahid_player/src/device_group.cpp#L60` | One `aoahid::` call per device, for example `touch(node, id, state, x, y, nullptr)`. |
 | State | libaoahid `src/profiles/state.cpp` | The Node's state changes; nothing is sent. |
 | Submit | `aoahid_player/src/device_group.cpp#L274` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
-| Serialize | `libaoahid/src/profiles/state.cpp#L319` | The input report, straight into a transfer pool slot. |
+| Serialize | `libaoahid/src/profiles/state.cpp#L318` | The input report, straight into a transfer pool slot. |
 | Transfer | `libaoahid/src/transport/transport.cpp#L286` | AOA request 57 on endpoint 0. |
 
 The ADB path is separate: adb's TCP connection to

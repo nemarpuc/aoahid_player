@@ -33,11 +33,11 @@ Profile profile_of(const EventPayload& payload) noexcept {
 
 namespace {
 
-// The pen and the digitizer take the same sample; `surface` is the one of the
-// profile the sample is for.
-template <typename Sample>
-aoahid_pen_sample stylus_sample(const Sample& value, const Space space, const Space surface) {
-    aoahid_pen_sample sample{};
+// The pen and the digitizer take samples with the same fields (`Out` is the
+// one of the profile); `surface` is the one of the profile the sample is for.
+template <typename Out, typename Sample>
+Out stylus_sample(const Sample& value, const Space space, const Space surface) {
+    Out sample{};
     sample.in_range = value.in_range ? 1U : 0U;
     sample.tip = value.tip ? 1U : 0U;
     sample.x = value.x;
@@ -66,9 +66,9 @@ aoahid_result mutate(const Device& device, const EventPayload& payload, const Sp
                     x = scale_coordinate(x, space.width, touch.width);
                     y = scale_coordinate(y, space.height, touch.height);
                 }
-                return aoahid::touch(device.node(Profile::touch),
-                                     static_cast<uint32_t>(value.finger_id), value.state, x, y,
-                                     nullptr);
+                return aoahid::touchscreen_contact(device.node(Profile::touch),
+                                                   static_cast<uint32_t>(value.finger_id),
+                                                   value.state, x, y, nullptr);
             } else if constexpr (std::is_same_v<T, MouseMove>) {
                 return aoahid::mouse_move(device.node(Profile::mouse), value.dx, value.dy);
             } else if constexpr (std::is_same_v<T, MouseButton>) {
@@ -88,11 +88,11 @@ aoahid_result mutate(const Device& device, const EventPayload& payload, const Sp
                 // the key this row names may already have been replaced.
                 return aoahid::toggle(device.node(Profile::toggle), value.down ? value.usage : uint16_t{0}, value.down);
             } else if constexpr (std::is_same_v<T, PenSample>) {
-                const aoahid_pen_sample sample = stylus_sample(value, space, pen);
+                const auto sample = stylus_sample<aoahid_pen_sample>(value, space, pen);
                 return aoahid::pen_update(device.node(Profile::pen), &sample);
             } else {
-                const aoahid_pen_sample sample = stylus_sample(value, space, digitizer);
-                return aoahid::pen_update(device.node(Profile::digitizer), &sample);
+                const auto sample = stylus_sample<aoahid_digitizer_sample>(value, space, digitizer);
+                return aoahid::digitizer_update(device.node(Profile::digitizer), &sample);
             }
         },
         payload);
