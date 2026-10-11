@@ -56,7 +56,7 @@ class InputState {
     GamepadDpad dpad_{};
     PenSample pen_{};
     DigitizerSample digitizer_{};
-    uint16_t media_{}; // the Consumer usage held down, 0 for none
+    std::vector<uint32_t> media_; // the Consumer usages held down, sorted
 };
 
 // The state uninterrupted playback holds just before `row` of `lap`

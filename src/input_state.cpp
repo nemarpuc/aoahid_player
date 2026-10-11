@@ -46,6 +46,7 @@ template <typename Sample> bool same_stylus(const Sample& a, const Sample& b) no
 InputState::InputState() {
     // Reserved so tracking a press during playback never allocates.
     mouse_buttons_.reserve(16);
+    media_.reserve(16);
     pad_buttons_.reserve(32);
 }
 
@@ -74,10 +75,7 @@ void InputState::apply(const EventPayload& payload) {
             } else if constexpr (std::is_same_v<T, DigitizerSample>) {
                 digitizer_ = value;
             } else if constexpr (std::is_same_v<T, MediaKey>) {
-                // The toggle profile has one Consumer field: a press replaces
-                // whatever was held, and any release clears it (see mutate()
-                // in device_group.cpp).
-                media_ = value.down ? value.usage : uint16_t{0};
+                set_member(media_, value.usage, value.down);
             }
             // MouseMove is relative and leaves no state behind.
         },
@@ -93,7 +91,7 @@ void InputState::clear() noexcept {
     dpad_ = {};
     pen_ = {};
     digitizer_ = {};
-    media_ = 0U;
+    media_.clear();
 }
 
 bool InputState::neutral() const noexcept {
@@ -106,7 +104,7 @@ bool InputState::neutral() const noexcept {
             return false;
     }
     return keys_.none() && mouse_buttons_.empty() && pad_buttons_.empty() && dpad_neutral(dpad_) &&
-           !pen_.in_range && !digitizer_.in_range && media_ == 0U;
+           !pen_.in_range && !digitizer_.in_range && media_.empty();
 }
 
 void InputState::transition(const InputState& from, const InputState& to,
@@ -146,11 +144,13 @@ void InputState::transition(const InputState& from, const InputState& to,
     if (!same_dpad(from.dpad_, to.dpad_))
         (dpad_neutral(to.dpad_) ? releases : presses).push_back(to.dpad_);
 
-    if (from.media_ != to.media_) {
-        if (from.media_ != 0U)
-            releases.push_back(MediaKey{from.media_, false});
-        if (to.media_ != 0U)
-            presses.push_back(MediaKey{to.media_, true});
+    for (const uint32_t usage : from.media_) {
+        if (!std::binary_search(to.media_.begin(), to.media_.end(), usage))
+            releases.push_back(MediaKey{static_cast<uint16_t>(usage), false});
+    }
+    for (const uint32_t usage : to.media_) {
+        if (!std::binary_search(from.media_.begin(), from.media_.end(), usage))
+            presses.push_back(MediaKey{static_cast<uint16_t>(usage), true});
     }
 
     if (!same_stylus(from.pen_, to.pen_)) {

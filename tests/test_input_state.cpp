@@ -94,24 +94,28 @@ TEST_CASE("Out-of-range controls are ignored rather than tracked") {
     CHECK(state.neutral());
 }
 
-TEST_CASE("A held media key is released on stop, and a press replaces it") {
+TEST_CASE("Held media keys are released on stop, each by its own usage") {
     InputState held;
     held.apply(aoap::MediaKey{0x00E9, true});
     CHECK_FALSE(held.neutral());
-    held.apply(aoap::MediaKey{0x00EA, true}); // one Consumer field: replaces Vol Up
+    held.apply(aoap::MediaKey{0x00EA, true}); // a second key held at the same time
 
     std::vector<EventPayload> releases;
     std::vector<EventPayload> presses;
     InputState::transition(held, InputState{}, releases, presses);
     CHECK(presses.empty());
-    REQUIRE(releases.size() == 1);
-    const auto* release = std::get_if<aoap::MediaKey>(&releases.front());
-    REQUIRE(release != nullptr);
-    CHECK(release->usage == 0x00EA);
-    CHECK_FALSE(release->down);
+    REQUIRE(releases.size() == 2);
+    for (const EventPayload& row : releases) {
+        const auto* release = std::get_if<aoap::MediaKey>(&row);
+        REQUIRE(release != nullptr);
+        CHECK((release->usage == 0x00E9 || release->usage == 0x00EA));
+        CHECK_FALSE(release->down);
+    }
 
-    // Any release clears the one field, whichever key it names.
+    // A release names its key: one key letting go leaves the other held.
     held.apply(aoap::MediaKey{0x00E9, false});
+    CHECK_FALSE(held.neutral());
+    held.apply(aoap::MediaKey{0x00EA, false});
     CHECK(held.neutral());
 }
 

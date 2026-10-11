@@ -7,6 +7,11 @@ were reconstructed from the commit history.
 
 ## [3.0.0] - 2026-10-11
 
+- **Media keys can be held together.** libaoahid's toggle profile now keeps one
+  bit per Usage, so two `c` rows (or a script row and a Live button) can hold
+  two keys at once; each release names its own key. Before, a press replaced
+  the key held and any release cleared it. Seeking and stopping release every
+  held key.
 - **Digitizer profile (breaking).** libaoahid 1.0.0 split the stylus in two,
   so the player has a *Digitizer* HID next to *Pen*: a `d` CSV row (the
   columns of `p`), `POST /digitizer`, the `digitizer` name for `POST /hid`,

@@ -83,10 +83,9 @@ aoahid_result mutate(const Device& device, const EventPayload& payload, const Sp
             } else if constexpr (std::is_same_v<T, GamepadDpad>) {
                 return aoahid::gamepad_dpad(device.node(Profile::gamepad), value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, MediaKey>) {
-                // Usage 0 releases whichever key is held. Live control, the
-                // Live tab's buttons, and a script share the one field, so
-                // the key this row names may already have been replaced.
-                return aoahid::toggle(device.node(Profile::toggle), value.down ? value.usage : uint16_t{0}, value.down);
+                // Each Consumer usage has its own bit; a release of a usage
+                // that is not held changes nothing.
+                return aoahid::toggle(device.node(Profile::toggle), value.usage, value.down);
             } else if constexpr (std::is_same_v<T, PenSample>) {
                 const auto sample = stylus_sample<aoahid_pen_sample>(value, space, pen);
                 return aoahid::pen_update(device.node(Profile::pen), &sample);

@@ -30,7 +30,7 @@ libaoahid          C++20 library, stable C ABI (aoahid.h): AOA 2.0 HID over libu
 | Schedule | `aoahid_player/src/player.cpp#L265` | The row's absolute deadline on the playback thread. |
 | Apply | `aoahid_player/src/device_group.cpp#L60` | One `aoahid::` call per device, for example `touch(node, id, state, x, y, nullptr)`. |
 | State | libaoahid `src/profiles/state.cpp` | The Node's state changes; nothing is sent. |
-| Submit | `aoahid_player/src/device_group.cpp#L274` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
+| Submit | `aoahid_player/src/device_group.cpp#L273` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
 | Serialize | `libaoahid/src/profiles/state.cpp#L318` | The input report, straight into a transfer pool slot. |
 | Transfer | `libaoahid/src/transport/transport.cpp#L286` | AOA request 57 on endpoint 0. |
 
@@ -70,7 +70,7 @@ one side has to be made on the other.
 | Input starts no sooner than about 100 ms after `aoahid_node_open`. | Android registers the HID device asynchronously; an earlier report is refused. | `aoahid_player/src/session.cpp#L18` |
 | `aoahid_device_close` consumes the Device and its Nodes even when it returns `AOAHID_CLOSE_PENDING`. | The player drops its pointers after one call. | libaoahid's header contract for `aoahid_device_close`. |
 | After `AOAHID_ADB_PROXY_ERR_INTERFACE`, the calling thread's `aoahid_last_error()` is the failed `aoahid_channel_open`. | `aoahid_player/src/device.cpp#L142` reads `libusb_status` to tell a driver problem (-12, `LIBUSB_ERROR_NOT_SUPPORTED`) from an adb server holding the interface. | The proxy makes no libaoahid call after a failed open. |
-| A context destroy that timed out and kept ownership reports the field name `context.destroy`. | `aoahid_player/src/context.cpp#L116` compares that string to decide whether to retry. | `libaoahid/src/api/c_api.cpp#L2238`. Renaming the string in libaoahid breaks the retry without a build error. |
+| A context destroy that timed out and kept ownership reports the field name `context.destroy`. | `aoahid_player/src/context.cpp#L116` compares that string to decide whether to retry. | `libaoahid/src/api/c_api.cpp#L2247`. Renaming the string in libaoahid breaks the retry without a build error. |
 | The Linux HID parser limits the player passes are the ones in libaoahid's `docs/LIMITS.md`. | `aoahid_player/src/device.cpp#L42` | libaoahid has no default for them. |
 | The media-key Usages, their semantics, and their expected Linux codes are parallel arrays in one order. | `aoahid_player/include/aoahid_player/spec_builder.hpp#L485` and the CSV parser share `media_usages`. | A `static_assert` checks the lengths, not the order. |
 | An ADB packet is at most 1 MiB and its header is 24 bytes. | The proxy's buffers and Channel options. | AOSP `adb.h` (`MAX_PAYLOAD`). |

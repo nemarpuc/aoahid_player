@@ -33,10 +33,10 @@ to show. `aoa_record` links the core but never calls libaoahid, which is why
 | `Session` | `src/session.cpp#L153` | Owns the Context, the discovery snapshot, and the `DeviceGroup`. |
 | `build_spec` | `include/aoahid_player/spec_builder.hpp#L534` | Builds the immutable Spec of one profile from a device's `ProfileSetup`. It is built when a Node is opened and released right after; the Node keeps its own reference. |
 | `Device` | `src/device.cpp#L211` | One phone: its libaoahid Device, one Node per profile, and an optional ADB Bridge. |
-| `DeviceGroup` | `src/device_group.cpp#L105` | Holds each device with its own setup and Nodes, applies one event to every device that has a Node for it, and submits the dirty profiles. |
+| `DeviceGroup` | `src/device_group.cpp#L104` | Holds each device with its own setup and Nodes, applies one event to every device that has a Node for it, and submits the dirty profiles. |
 | `EventScript`, `LapWalk` | `src/event_script.cpp#L533` | The parsed CSV, its rows grouped by the laps they run on, and the walk over one lap's rows. |
 | `Player` | `src/player.cpp#L418` | Runs a script on the calling thread against a `DeviceGroup`. |
-| `InputState` | `src/input_state.cpp#L112` | What is currently held, so stop, pause, and seek can release or restore it. libaoahid has no release-all call. |
+| `InputState` | `src/input_state.cpp#L110` | What is currently held, so stop, pause, and seek can release or restore it. libaoahid has no release-all call. |
 | `Recorder`, `GeteventParser` | `src/recorder.cpp#L138` | Turn `adb shell getevent -lt` output into script rows. |
 | `ChildProcess` | `src/process.cpp#L98` | Runs `adb` without a shell and reads its output with a timeout. |
 
@@ -87,7 +87,7 @@ Only devices that answered AOA request 51 with version 2 or more are listed.
 
 ## Changing a connected device
 
-`src/device_group.cpp#L344` (`DeviceGroup::reconfigure`) brings one device to a
+`src/device_group.cpp#L343` (`DeviceGroup::reconfigure`) brings one device to a
 new `ProfileSetup`. It flushes, closes the Nodes that are no longer wanted or
 whose settings changed (`aoahid_node_close` sends the Node's neutral report
 and unregisters it), opens the missing ones, and stores the setup the device
@@ -100,7 +100,7 @@ now has.
 - It must not run under a playing script. The GUI's Engine serves these
   requests on its worker thread while stopped, in Live control, or from the
   Player's live pump while the Player is holding a pause, and refuses them
-  otherwise (`apps/aoahid_player_gui/engine.cpp#L803`). Whatever Live control
+  otherwise (`apps/aoahid_player_gui/engine.cpp#L798`). Whatever Live control
   holds is released first, so its record of what is pressed stays true.
 - libaoahid numbers HID IDs per Context and never reuses one. The Context
   lives as long as the `Session`, so about 65000 Nodes can be opened in one
@@ -108,11 +108,11 @@ now has.
 
 ## Applying and sending
 
-`src/device_group.cpp#L188` changes the Node
+`src/device_group.cpp#L187` changes the Node
 state on every active device that has a Node for the row's profile, with
 touch and pen positions scaled from the row's `Space` onto that device's own
 surface. It sends nothing.
-`src/device_group.cpp#L274` then submits every dirty
+`src/device_group.cpp#L273` then submits every dirty
 profile on every device, and only after that waits for each completion
 (`aoahid_node_submit_blocking`, 500 ms). The wait is as long as the slowest
 device, not the sum.
@@ -125,7 +125,7 @@ What `apply` does with a libaoahid result:
 | `AOAHID_ERR_BUSY`, nothing applied yet | The opposite edge of the same control is not reported yet. | The caller flushes and tries once more. |
 | `AOAHID_ERR_BUSY`, already applied elsewhere | One device is behind. | The event is dropped for that device only. |
 | `AOAHID_ERR_PARAM`, `AOAHID_ERR_OVERFLOW` | The row does not fit what that device's Spec declares (a value out of range, more contacts than slots). | That device skips the row and counts it (`DeviceStatus::skipped`); it is not dropped. `apply` returns `AOAHID_ERR_PARAM` only when every device that has the profile refused. |
-| Anything else | The device failed. | That device is closed and marked inactive (`src/device_group.cpp#L154`). |
+| Anything else | The device failed. | That device is closed and marked inactive (`src/device_group.cpp#L153`). |
 
 The group's profile mask is the union of the active devices' profiles; it is
 recomputed when a device is added, changed, or dropped. A dropped device is
