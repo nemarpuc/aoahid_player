@@ -136,7 +136,41 @@ std::string one_line(const std::string& value) {
 }
 
 // One `key = value` line of a "[device ...]" section.
+// The name each HID has in the file, indexed by aoap::Profile.
+constexpr std::array<const char*, aoap::profile_count> hid_keys{
+    "touch", "mouse", "keyboard", "gamepad", "pen", "digitizer", "toggle"};
+
+// "<hid>.battery", ".battery.min", ".battery.max", ".battery.level".
+bool read_battery_key(const std::string& key, const std::string& value, DeviceConfig& config) {
+    const size_t at = key.find(".battery");
+    if (at == std::string::npos)
+        return false;
+    for (size_t index = 0; index < hid_keys.size(); ++index) {
+        if (key.compare(0, at, hid_keys[index]) != 0)
+            continue;
+        BatteryConfig& battery = config.battery[index];
+        const std::string rest = key.substr(at + 8);
+        if (rest.empty())
+            read_bool(value, battery.on);
+        else if (rest == ".min")
+            read_int(value, 0, 65534, battery.minimum);
+        else if (rest == ".max")
+            read_int(value, 1, 65535, battery.maximum);
+        else if (rest == ".level")
+            read_int(value, 0, 65535, battery.level);
+        else
+            return false;
+        if (battery.maximum <= battery.minimum)
+            battery.maximum = battery.minimum + 1;
+        battery.level = std::clamp(battery.level, battery.minimum, battery.maximum);
+        return true;
+    }
+    return false;
+}
+
 void read_device_key(const std::string& key, const std::string& value, DeviceConfig& config) {
+    if (read_battery_key(key, value, config))
+        return;
     if (key == "touch")
         read_bool(value, config.use_touch);
     else if (key == "touch.width")
@@ -508,6 +542,13 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
         out << "pen = " << (config.use_pen ? 1 : 0) << '\n';
         out << "digitizer = " << (config.use_digitizer ? 1 : 0) << '\n';
         out << "toggle = " << (config.use_toggle ? 1 : 0) << '\n';
+        for (size_t index = 0; index < hid_keys.size(); ++index) {
+            const BatteryConfig& battery = config.battery[index];
+            out << hid_keys[index] << ".battery = " << (battery.on ? 1 : 0) << '\n';
+            out << hid_keys[index] << ".battery.min = " << battery.minimum << '\n';
+            out << hid_keys[index] << ".battery.max = " << battery.maximum << '\n';
+            out << hid_keys[index] << ".battery.level = " << battery.level << '\n';
+        }
     };
     // The sections come last: every line after one belongs to it.
     write_device("default", settings.device_default);

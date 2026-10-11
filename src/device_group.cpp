@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/device_group.hpp"
 
+#include "aoahid_player/timing.hpp"
+
 #include <aoahid.hpp>
 
 #include <iterator>
@@ -106,6 +108,7 @@ void DeviceGroup::add_device(Device&& device, std::string key, const ProfileSetu
     slot->label = device.label();
     slot->key = std::move(key);
     slot->setup = setup;
+    slot->battery_sent.fill(INT32_MIN);
     set_surfaces(*slot);
     slot->adb_port.store(device.adb_port(), std::memory_order_relaxed);
     slot->profiles.store(device.profile_mask(), std::memory_order_relaxed);
@@ -359,15 +362,16 @@ uint32_t DeviceGroup::reconfigure(const size_t index, ProfileSetup wanted, std::
     for (size_t profile = 0; profile < profile_count; ++profile) {
         const Profile kind = static_cast<Profile>(profile);
         if (profile_enabled(wanted, kind) &&
-            !(slot.device.has(kind) && same_profile(slot.setup, wanted, kind)) &&
+            !(slot.device.has(kind) && same_node(slot.setup, wanted, kind)) &&
             !validate_profile(wanted, kind, error))
             return 0U;
     }
     for (size_t profile = 0; profile < profile_count; ++profile) {
         const Profile kind = static_cast<Profile>(profile);
         if (!slot.device.has(kind) ||
-            (profile_enabled(wanted, kind) && same_profile(slot.setup, wanted, kind)))
+            (profile_enabled(wanted, kind) && same_node(slot.setup, wanted, kind)))
             continue;
+        slot.battery_sent[profile] = INT32_MIN;
         const aoahid_result closed = slot.device.close_node(kind);
         if (closed != AOAHID_OK) {
             // The Node is still registered in a state nobody knows.
@@ -386,6 +390,38 @@ uint32_t DeviceGroup::reconfigure(const size_t index, ProfileSetup wanted, std::
     slot.profiles.store(slot.device.profile_mask(), std::memory_order_relaxed);
     refresh_mask();
     return opened;
+}
+
+void DeviceGroup::send_battery_levels(const size_t index) {
+    flush();
+    for (size_t at = 0; at < slots_.size(); ++at) {
+        Slot& slot = *slots_[at];
+        if ((index != SIZE_MAX && at != index) || !slot.active.load(std::memory_order_relaxed))
+            continue;
+        for (size_t profile = 0; profile < profile_count; ++profile) {
+            const Profile kind = static_cast<Profile>(profile);
+            aoahid_node* node = slot.device.node(kind);
+            const BatterySetup& battery = battery_of(slot.setup, kind);
+            if (node == nullptr || !battery.enabled || slot.battery_sent[profile] == battery.level)
+                continue;
+            aoahid_result result = aoahid_battery_update(node, battery.level);
+            // Android may still be registering a HID that was just opened; a
+            // refused report stays pending in the Node, so it is sent again.
+            for (int attempt = 0; result == AOAHID_OK; ++attempt) {
+                result = aoahid_node_submit_blocking(node, drain_deadline_ms);
+                if (result != AOAHID_ERR_STALL || attempt == 19)
+                    break;
+                Timing::sleep_ms(10);
+                result = AOAHID_OK;
+            }
+            if (result != AOAHID_OK) {
+                fail(slot, result);
+                break;
+            }
+            slot.battery_sent[profile] = battery.level;
+            bump(slot.reports);
+        }
+    }
 }
 
 std::vector<DeviceStatus> DeviceGroup::snapshot() const {

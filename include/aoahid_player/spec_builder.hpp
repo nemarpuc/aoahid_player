@@ -21,11 +21,24 @@
 
 namespace aoap {
 
+// A battery level one HID reports as a second report of its own. Linux shows
+// a battery only on a device that also has input, so it belongs to a HID.
+// `level` is what is sent; changing only it never re-registers the HID.
+struct BatterySetup {
+    bool enabled{};
+    int32_t minimum{1};
+    int32_t maximum{100};
+    int32_t level{100};
+
+    bool operator==(const BatterySetup&) const = default;
+};
+
 struct TouchSetup {
     bool enabled{};
     int32_t width{};
     int32_t height{};
     uint32_t max_contacts{};
+    BatterySetup battery;
 
     bool operator==(const TouchSetup&) const = default;
 };
@@ -33,6 +46,7 @@ struct TouchSetup {
 struct MouseSetup {
     bool enabled{};
     uint32_t buttons{};
+    BatterySetup battery;
 
     bool operator==(const MouseSetup&) const = default;
 };
@@ -41,6 +55,7 @@ struct KeySetup {
     bool enabled{};
     uint16_t usage_minimum{0x04};
     uint16_t usage_maximum{0x65};
+    BatterySetup battery;
 
     bool operator==(const KeySetup&) const = default;
 };
@@ -51,6 +66,7 @@ struct GamepadSetup {
     uint32_t axis_bits{};
     aoahid_dpad_representation dpad{AOAHID_DPAD_NONE};
     std::vector<aoahid_axis_role> axes;
+    BatterySetup battery;
 
     bool operator==(const GamepadSetup&) const = default;
 };
@@ -60,6 +76,7 @@ struct PenSetup {
     int32_t width{};
     int32_t height{};
     int32_t pressure_maximum{4095};
+    BatterySetup battery;
 
     bool operator==(const PenSetup&) const = default;
 };
@@ -71,12 +88,14 @@ struct DigitizerSetup {
     int32_t width{};
     int32_t height{};
     int32_t pressure_maximum{4095};
+    BatterySetup battery;
 
     bool operator==(const DigitizerSetup&) const = default;
 };
 
 struct ToggleSetup {
     bool enabled{};
+    BatterySetup battery;
 
     bool operator==(const ToggleSetup&) const = default;
 };
@@ -240,6 +259,42 @@ inline bool same_profile(const ProfileSetup& a, const ProfileSetup& b,
     }
 }
 
+// The battery of one profile. `profile` must be a real profile.
+inline BatterySetup& battery_of(ProfileSetup& setup, const Profile profile) noexcept {
+    switch (profile) {
+    case Profile::touch:
+        return setup.touch.battery;
+    case Profile::mouse:
+        return setup.mouse.battery;
+    case Profile::key:
+        return setup.key.battery;
+    case Profile::gamepad:
+        return setup.gamepad.battery;
+    case Profile::pen:
+        return setup.pen.battery;
+    case Profile::digitizer:
+        return setup.digitizer.battery;
+    default:
+        return setup.toggle.battery;
+    }
+}
+inline const BatterySetup& battery_of(const ProfileSetup& setup, const Profile profile) noexcept {
+    return battery_of(const_cast<ProfileSetup&>(setup), profile);
+}
+
+// Whether one profile would register the same HID in both: same_profile()
+// without the battery level, and without the battery's numbers while it is
+// off in both.
+inline bool same_node(ProfileSetup a, const ProfileSetup& b, const Profile profile) noexcept {
+    BatterySetup& mine = battery_of(a, profile);
+    const BatterySetup& theirs = battery_of(b, profile);
+    if (!mine.enabled && !theirs.enabled)
+        mine = theirs;
+    else
+        mine.level = theirs.level;
+    return same_profile(a, b, profile);
+}
+
 inline uint32_t enabled_profiles(const ProfileSetup& setup) noexcept {
     uint32_t mask = 0;
     for (size_t index = 0; index < profile_count; ++index) {
@@ -264,8 +319,22 @@ inline void resolve_pen_surface(ProfileSetup& setup) noexcept {
 // Checks one profile's settings, whether or not it is switched on. Returns
 // false with a message a user can act on; libaoahid still performs its own
 // full checks.
-inline bool validate_profile(const ProfileSetup& setup, const Profile profile,
-                             std::string& error) {
+inline bool validate_battery(const BatterySetup& battery, std::string& error) {
+    if (!battery.enabled)
+        return true;
+    if (battery.minimum < 0 || battery.maximum <= battery.minimum || battery.maximum > 65535) {
+        error = "The battery range must be 0-65535 with the maximum above the minimum.";
+        return false;
+    }
+    if (battery.level < battery.minimum || battery.level > battery.maximum) {
+        error = "The battery level must be inside its range.";
+        return false;
+    }
+    return true;
+}
+
+inline bool validate_profile_fields(const ProfileSetup& setup, const Profile profile,
+                                    std::string& error) {
     // The int32_t width/height already tops out at INT32_MAX (2147483647), not
     // 2^32: a HID Logical Maximum item is always signed (HID 1.11 6.2.2.7),
     // matching both aoahid_integer_field.logical_maximum (int32_t) and the
@@ -343,6 +412,14 @@ inline bool validate_profile(const ProfileSetup& setup, const Profile profile,
     }
 }
 
+// Checks one profile's settings, its battery included, whether or not it is
+// switched on.
+inline bool validate_profile(const ProfileSetup& setup, const Profile profile,
+                             std::string& error) {
+    return validate_profile_fields(setup, profile, error) &&
+           validate_battery(battery_of(setup, profile), error);
+}
+
 // Checks every enabled profile before any USB work. A setup with no profile
 // is valid: the device is connected and receives nothing.
 inline bool validate_setup(const ProfileSetup& setup, std::string& error) {
@@ -355,6 +432,19 @@ inline bool validate_setup(const ProfileSetup& setup, std::string& error) {
 }
 
 namespace spec_detail {
+
+// Adds the battery report. Both reports then need a Report ID: 1 for the
+// HID's own report, 2 for the battery.
+template <typename Options>
+void apply_battery(Options& options, const BatterySetup& battery) noexcept {
+    if (!battery.enabled)
+        return;
+    options.report_id = {1U, 1U, {0U, 0U, 0U}};
+    options.enable_battery = 1U;
+    options.battery.report_id = {1U, 2U, {0U, 0U, 0U}};
+    options.battery.strength =
+        field(battery.minimum, battery.maximum, unsigned_bits(battery.maximum));
+}
 
 inline aoahid_result create_touch(const TouchSetup& setup, aoahid_spec** spec) {
     aoahid_touchscreen_options options{};
@@ -372,6 +462,7 @@ inline aoahid_result create_touch(const TouchSetup& setup, aoahid_spec** spec) {
                                   unsigned_bits(static_cast<int64_t>(setup.max_contacts)));
     // The CSV touch row carries no pressure, geometry, or scan time, so
     // those optional fields stay out of the descriptor entirely.
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_touchscreen(&options, spec);
 }
 
@@ -386,6 +477,7 @@ inline aoahid_result create_mouse(const MouseSetup& setup, aoahid_spec** spec) {
     options.y = field(-32767, 32767, 16);
     options.enable_wheel = 1U;
     options.wheel = field(-127, 127, 8);
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_mouse(&options, spec);
 }
 
@@ -397,6 +489,7 @@ inline aoahid_result create_key(const KeySetup& setup, aoahid_spec** spec) {
     // count or ErrorRollOver encoding left to configure.
     options.usage_minimum = setup.usage_minimum;
     options.usage_maximum = setup.usage_maximum;
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_keyboard(&options, spec);
 }
 
@@ -444,6 +537,7 @@ inline aoahid_result create_gamepad(const GamepadSetup& setup, aoahid_spec** spe
         options.hat_logical_maximum = 7;
         options.hat_bit_width = 4U;
     }
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_gamepad(&options, spec);
 }
 
@@ -458,6 +552,7 @@ inline aoahid_result create_pen(const PenSetup& setup, aoahid_spec** spec) {
     // Hover must be declared, or libaoahid rejects the in_range=1, tip=0
     // sample the CSV pen row is able to express.
     options.enable_hover = 1U;
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_pen(&options, spec);
 }
 
@@ -472,10 +567,11 @@ inline aoahid_result create_digitizer(const DigitizerSetup& setup, aoahid_spec**
     // Hover must be declared, or libaoahid rejects the in_range=1, tip=0
     // sample the CSV digitizer row is able to express.
     options.enable_hover = 1U;
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_digitizer(&options, spec);
 }
 
-inline aoahid_result create_toggle(aoahid_spec** spec) {
+inline aoahid_result create_toggle(const ToggleSetup& setup, aoahid_spec** spec) {
     aoahid_toggle_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
     options.application_page = 0x0CU; // Consumer
@@ -524,6 +620,7 @@ inline aoahid_result create_toggle(aoahid_spec** spec) {
     options.expected_linux_event_types = expected_types;
     options.expected_linux_codes = expected_codes;
 
+    apply_battery(options, setup.battery);
     return aoahid_spec_create_toggle(&options, spec);
 }
 
@@ -555,7 +652,7 @@ inline bool build_spec(const Profile profile, const ProfileSetup& setup, aoahid_
         result = spec_detail::create_digitizer(setup.digitizer, &spec);
         break;
     case Profile::toggle:
-        result = spec_detail::create_toggle(&spec);
+        result = spec_detail::create_toggle(setup.toggle, &spec);
         break;
     default:
         break;

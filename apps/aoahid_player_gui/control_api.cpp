@@ -419,6 +419,15 @@ void ControlApi::register_routes() {
                     .num("contacts", device.setup.touch.max_contacts);
                 entry.raw("touch", touch.done());
             }
+            // The level each HID reports, for the HIDs that have a battery.
+            JsonWriter batteries;
+            for (size_t index = 0; index < aoap::profile_count; ++index) {
+                const auto profile = static_cast<aoap::Profile>(index);
+                const aoap::BatterySetup& battery = aoap::battery_of(device.setup, profile);
+                if ((device.profiles & aoap::profile_bit(profile)) != 0U && battery.enabled)
+                    batteries.num(aoap::profile_name(profile), battery.level);
+            }
+            entry.raw("battery", batteries.done());
             devices += entry.done();
         }
         devices += ']';
@@ -518,6 +527,41 @@ void ControlApi::register_routes() {
         }
         request.device = static_cast<size_t>(device - 1);
         if (!read_flag(req, res, "on", true, request.on))
+            return;
+        run_ui(request, res);
+    });
+
+    svr.Post("/battery", [run_ui](const Req& req, Res& res) {
+        UiRequest request = ui_request(UiRequest::Kind::battery);
+        int64_t device = 0;
+        if (!parse_int(req.get_param_value("device"), device) || device < 1 ||
+            !parse_profile(req.get_param_value("profile"), request.profile)) {
+            res.status = 400;
+            res.set_content(json_error("Missing or invalid \"device\" (1-based) or \"profile\" "
+                                       "(touch, mouse, key, gamepad, pen, digitizer, toggle)."),
+                            "application/json");
+            return;
+        }
+        request.device = static_cast<size_t>(device - 1);
+        if (!read_flag(req, res, "on", true, request.on))
+            return;
+        const auto number = [&](const char* name, bool& given, int& out) {
+            if (!req.has_param(name))
+                return true;
+            int64_t value = 0;
+            if (!parse_int(req.get_param_value(name), value) || value < 0 || value > 65535) {
+                res.status = 400;
+                res.set_content(json_error(std::string("\"") + name + "\" must be 0-65535."),
+                                "application/json");
+                return false;
+            }
+            given = true;
+            out = static_cast<int>(value);
+            return true;
+        };
+        if (!number("level", request.has_level, request.level) ||
+            !number("min", request.has_minimum, request.minimum) ||
+            !number("max", request.has_maximum, request.maximum))
             return;
         run_ui(request, res);
     });

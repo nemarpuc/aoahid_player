@@ -19,8 +19,8 @@ namespace aoap {
 constexpr uint16_t default_adb_bridge_port = 6555U;
 
 // The profile families this player drives. The CSV prefixes in README.md map
-// one-to-one onto touch/mouse/key/gamepad/pen/digitizer. libaoahid's
-// battery/raw profiles remain out of scope for this project.
+// one-to-one onto touch/mouse/key/gamepad/pen/digitizer. Each can also report
+// a battery level (BatterySetup). libaoahid's raw profile stays out of scope.
 enum class Profile : size_t { touch = 0, mouse, key, gamepad, pen, digitizer, toggle, count };
 
 constexpr size_t profile_count = static_cast<size_t>(Profile::count);

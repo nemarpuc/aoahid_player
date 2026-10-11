@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <array>
 #include <aoahid.h>
 
 #include "aoahid_player/device.hpp"
@@ -19,6 +20,16 @@ inline constexpr float ui_scales[] = {0.85f, 1.0f, 1.15f, 1.3f};
 
 // The control API's port until the user picks another.
 inline constexpr int default_api_port = 47821;
+
+// The battery level one HID reports (see aoap::BatterySetup).
+struct BatteryConfig {
+    bool on{};
+    int minimum{1};
+    int maximum{100};
+    int level{100};
+
+    bool operator==(const BatteryConfig&) const = default;
+};
 
 // One device's HIDs and their settings.
 struct DeviceConfig {
@@ -44,6 +55,8 @@ struct DeviceConfig {
     bool use_pen{};
     bool use_digitizer{};
     bool use_toggle{};
+    // One per HID, indexed by aoap::Profile.
+    std::array<BatteryConfig, aoap::profile_count> battery{};
 
     bool operator==(const DeviceConfig&) const = default;
 };

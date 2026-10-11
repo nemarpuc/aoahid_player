@@ -426,6 +426,7 @@ void App::draw_device_detail() {
                 draw_toggle_settings();
                 break;
             }
+            draw_battery_settings(config.battery[static_cast<size_t>(entry.profile)]);
             ImGui::PopID();
             ImGui::Unindent(px(4));
         }
@@ -577,6 +578,36 @@ void App::draw_stylus_settings(DeviceConfig& config) {
 
 void App::draw_toggle_settings() {
     small_dim("Enables media controls and system buttons (Home, Back, Volume, Play, etc.).");
+}
+
+void App::draw_battery_settings(BatteryConfig& battery) {
+    field("Battery");
+    ui::toggle("##battery", &battery.on);
+    ImGui::SetItemTooltip("Reports a battery level as this HID's own. Android apps read it as "
+                          "the input device's battery; the status bar does not show it.");
+    if (!battery.on)
+        return;
+    field("Level");
+    ui::slider_int("##battery_level", &battery.level, battery.minimum, battery.maximum, "");
+    ImGui::SetItemTooltip("Sent when applied, and again only when it changes. Changing it "
+                          "does not register the HID again.");
+    field("Range");
+    const float number = px(62);
+    ImGui::SetNextItemWidth(number);
+    if (ImGui::InputInt("##battery_min", &battery.minimum, 0, 0))
+        battery.minimum = std::clamp(battery.minimum, 0, 65534);
+    ImGui::SameLine(0, px(6));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled("to");
+    ImGui::SameLine(0, px(6));
+    ImGui::SetNextItemWidth(number);
+    if (ImGui::InputInt("##battery_max", &battery.maximum, 0, 0))
+        battery.maximum = std::clamp(battery.maximum, 1, 65535);
+    ImGui::SetItemTooltip("The lowest and highest level, shown as 0%% and 100%%. Start at 1: "
+                          "Android's kernel ignores a level of 0.");
+    if (battery.maximum <= battery.minimum)
+        battery.maximum = battery.minimum + 1;
+    battery.level = std::clamp(battery.level, battery.minimum, battery.maximum);
 }
 
 } // namespace gui

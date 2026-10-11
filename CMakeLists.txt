@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 3.0.1 LANGUAGES C CXX)
+project(aoahid-player VERSION 3.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -19,7 +19,8 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
   "Install libaoahid, libusb and, with MSVC, the C++ runtime next to the executables" ON)
 
 # 1.0.0 is the first libaoahid this source builds against (the media key call
-# is aoahid::toggle_usage). The Pen and the
+# is aoahid::toggle_usage; each profile's options end with enable_battery and
+# battery, which spec_builder.hpp fills in, as 1.0.0 was re-released with). The Pen and the
 # Digitizer are separate profiles from it on (aoahid_spec_create_digitizer; the
 # pen options carry no mode), the aoahid:: forwarders exist (device_group.cpp
 # calls them on the Nodes), and the vendored aoahid_adb_proxy (the ADB Bridge)

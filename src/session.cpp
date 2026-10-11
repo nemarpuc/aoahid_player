@@ -224,12 +224,15 @@ bool Session::connect(const std::vector<size_t>& selection,
         return false;
     }
     Timing::sleep_ms(registration_settle_ms);
+    group_.send_battery_levels();
     return true;
 }
 
 bool Session::reconfigure(const size_t device, const ProfileSetup& setup, std::string& error) {
     if (group_.reconfigure(device, setup, error) != 0U)
         Timing::sleep_ms(registration_settle_ms);
+    // Also when nothing was opened: the level alone may have changed.
+    group_.send_battery_levels(device);
     return error.empty();
 }
 

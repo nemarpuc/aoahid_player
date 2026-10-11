@@ -110,6 +110,16 @@ Recorder, ADB, and Settings. The app opens on Devices.
    accessory mode without taking the connection; to leave this mode
    afterwards, physically unplug and replug the USB cable.
 
+Every HID has a **Battery** switch in its settings. With it on, that HID
+reports a battery level as its own: set the **Level** and the **Range** it is
+counted in (1 to 100 unless you change it; the lowest value is shown as 0% and
+the highest as 100%, and Android's kernel ignores a level of 0, so start the
+range at 1). Android apps read it as the input device's battery
+(`InputDevice.getBatteryState()`); the status bar does not show it. The level
+is sent when the HID is connected and again whenever you apply a new one.
+Changing only the level does not register the HID again; turning the battery
+on or off, or changing its range, does.
+
 While connected, a device's HIDs can still be changed. A switch adds or
 removes that HID on the phone at once; changed settings (a resolution, a
 button count) wait for *Apply*, which registers the HID again with the new
@@ -422,7 +432,7 @@ declares — one below the Live tab's own (see *Contacts* under *Profiles*,
 above) — so a program using the API and a person using the Live tab can
 both touch the screen at once without colliding.
 
-`/refresh`, `/connect`, `/hid`, `/record/*`, and `/bridge` are carried out by
+`/refresh`, `/connect`, `/hid`, `/battery`, `/record/*`, and `/bridge` are carried out by
 the window on its next frame, exactly as its buttons are, with the settings
 the window shows (each device's HIDs, Recorder device, bridge port). The request waits for
 that frame and answers `503` if the window does not respond within 5 seconds;
@@ -433,7 +443,7 @@ finishes in the background: poll until `phase` is `connected` (or back to
 
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | `phase`, `connected`, `device_count`, `active` (the connected devices still responding), `devices` (one object per connected device, dropped ones included, in the order `/hid` and `/bridge` number them: `label`, `active`, `bridge` (its bridge port, 0 = off), `reports`, `skipped` (rows it refused as outside its settings), `profiles` (the HIDs it has now), and `touch` (`width`, `height`, `contacts`) when it has a touchscreen), `space` (the `width` and `height` `/touch` positions are given in, 0 when no device has a touchscreen), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), `live_active`, `recording`, and the playback state, `lap` (the lap being played, counted from 1), time, loops, and reports. |
+| `GET /status` | — | `phase`, `connected`, `device_count`, `active` (the connected devices still responding), `devices` (one object per connected device, dropped ones included, in the order `/hid` and `/bridge` number them: `label`, `active`, `bridge` (its bridge port, 0 = off), `reports`, `skipped` (rows it refused as outside its settings), `profiles` (the HIDs it has now), `touch` (`width`, `height`, `contacts`) when it has a touchscreen, and `battery` (the level of each HID that reports one, such as `{"key":80}`)), `space` (the `width` and `height` `/touch` positions are given in, 0 when no device has a touchscreen), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), `live_active`, `recording`, and the playback state, `lap` (the lap being played, counted from 1), time, loops, and reports. |
 | `POST /refresh` | — | The Devices tab's refresh: stops the adb server (unless recording), then rescans; `busy` is `true` until the new list is in `available`. 409 unless idle and not already busy. |
 | `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects each device with its own saved HIDs and settings; `devices` also becomes the window's selection. 409 unless idle and not `busy`; 400 for an unknown device number, invalid settings, or when no chosen device has a HID on. |
 | `POST /disconnect` | — | 409 if not connected. |
@@ -458,6 +468,7 @@ finishes in the background: poll until `phase` is `connected` (or back to
 | `POST /record/stop` | — | Stops and saves (nothing is saved if nothing was captured). 409 if not recording. |
 | `POST /bridge` | `device` (1-based, connected order), `on` (default `true`), `port` (1024-65535; default: the ADB tab's) | Same as the ADB tab's switch, including `adb connect` / the adb server restart. 409 while a script plays, for a dropped device, or a port another phone uses. |
 | `POST /hid` | `device` (1-based, connected order), `profile` (`touch`, `mouse`, `key`, `gamepad`, `pen`, `digitizer`, `toggle`), `on` (default `true`) | Adds or removes one HID on one connected device, as its switch on the Devices tab does, with that device's saved settings. The change is made in the background: read `profiles` in `/status`. 409 while a script plays (pause or stop first), for a dropped device, or an unknown device number; 400 for an unknown profile. |
+| `POST /battery` | `device` (1-based, connected order), `profile` (as for `/hid`), `on` (default `true`), `level`, `min`, `max` (each 0-65535; the ones left out stay as saved) | Sets the battery one HID of one connected device reports, as its Battery settings on the Devices tab do. A new level alone is sent without registering the HID again. The change is made in the background: read `battery` in `/status`. 409 while a script plays (pause or stop first), for a dropped device, an unknown device number, or a level outside the range; 400 for an unknown profile or a number that is not 0-65535. |
 
 ## aoa_touch — usage
 

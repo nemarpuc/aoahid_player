@@ -232,6 +232,7 @@ class App {
     void draw_gamepad_settings(DeviceConfig& config);
     void draw_stylus_settings(DeviceConfig& config);
     void draw_toggle_settings();
+    void draw_battery_settings(BatteryConfig& battery);
     // The local HTTP control API's on/off toggle and port; see
     // control_api.hpp.
     void draw_control_api_card();
@@ -336,6 +337,8 @@ class App {
     // Switches one HID of connected device `index` on or off, as its switch
     // does; an explanation when that is not possible now.
     [[nodiscard]] std::string request_hid(size_t index, aoap::Profile profile, bool on);
+    // The control API's /battery: one HID's battery on one connected device.
+    std::string request_battery(const UiRequest& request);
     // Applies Engine setup results; every frame.
     void update_device_setups();
     void restart_adb_server();
@@ -514,7 +517,7 @@ class App {
     std::set<std::string> size_read_;
     bool sizes_checked_{};
     // Which profile rows have their settings unfolded (same order as the card).
-    bool profile_open_[6]{};
+    bool profile_open_[aoap::profile_count]{};
 
     // Scripts.
     std::vector<ScriptFile> scripts_;

@@ -1,7 +1,9 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <array>
 #include <atomic>
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <mutex>
@@ -99,6 +101,11 @@ class DeviceGroup {
     // register them. Not while a script is playing.
     uint32_t reconfigure(size_t index, ProfileSetup wanted, std::string& error);
 
+    // Sends the battery level of every HID that has one and has not sent this
+    // level yet, on one device or (SIZE_MAX) on all. Call it once Android has
+    // registered the HIDs: a report sent earlier is refused.
+    void send_battery_levels(size_t index = SIZE_MAX);
+
     // Adds wheel detents on every active mouse; results as for apply().
     aoahid_result scroll(int32_t wheel);
 
@@ -133,6 +140,8 @@ class DeviceGroup {
         Space pen;
         Space digitizer;
         std::atomic<uint32_t> profiles{};
+        // The level each HID last sent; INT32_MIN before the first. Worker thread.
+        std::array<int32_t, profile_count> battery_sent{};
         std::atomic<uint64_t> skipped{};
         std::atomic<uint16_t> adb_port{};
         std::string last_error; // guarded by mutex_

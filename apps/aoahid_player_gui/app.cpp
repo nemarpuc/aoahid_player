@@ -290,10 +290,10 @@ void App::persist_settings() {
 aoap::ProfileSetup App::build_setup(const DeviceConfig& config) const {
     aoap::ProfileSetup setup;
     setup.touch = {config.use_touch, config.touch_width, config.touch_height,
-                   static_cast<uint32_t>(config.touch_contacts)};
-    setup.mouse = {config.use_mouse, static_cast<uint32_t>(config.mouse_buttons)};
+                   static_cast<uint32_t>(config.touch_contacts), {}};
+    setup.mouse = {config.use_mouse, static_cast<uint32_t>(config.mouse_buttons), {}};
     setup.key = {config.use_key, static_cast<uint16_t>(config.key_min),
-                 static_cast<uint16_t>(config.key_max)};
+                 static_cast<uint16_t>(config.key_max), {}};
     setup.gamepad.enabled = config.use_gamepad;
     setup.gamepad.buttons = static_cast<uint32_t>(config.pad_buttons);
     setup.gamepad.axis_bits = static_cast<uint32_t>(config.pad_bits);
@@ -305,6 +305,14 @@ aoap::ProfileSetup App::build_setup(const DeviceConfig& config) const {
     setup.digitizer.enabled = config.use_digitizer;
     aoap::resolve_pen_surface(setup);
     setup.toggle.enabled = config.use_toggle;
+    // A battery that is off keeps the core's own numbers, so its saved range
+    // never counts as a change to apply.
+    for (size_t index = 0; index < aoap::profile_count; ++index) {
+        const BatteryConfig& battery = config.battery[index];
+        if (battery.on)
+            aoap::battery_of(setup, static_cast<aoap::Profile>(index)) = {
+                true, battery.minimum, battery.maximum, battery.level};
+    }
     return setup;
 }
 
@@ -434,6 +442,12 @@ UiReply App::run_ui_request(const UiRequest& request) {
             return UiReply{409, error};
         return {};
     }
+    case UiRequest::Kind::battery: {
+        const std::string error = request_battery(request);
+        if (!error.empty())
+            return UiReply{409, error};
+        return {};
+    }
     }
     return UiReply{400, "Unknown request."};
 }
@@ -455,6 +469,36 @@ std::string App::request_hid(const size_t index, const aoap::Profile profile, co
         return "Stop or pause playback to change HIDs.";
     }
     setup_busy_.insert(index);
+    return {};
+}
+
+std::string App::request_battery(const UiRequest& request) {
+    const std::vector<aoap::DeviceStatus> status = engine_.device_status();
+    if (!engine_.connected() || request.device >= status.size())
+        return "No connected device " + std::to_string(request.device + 1) + ".";
+    if (!status[request.device].active)
+        return "That device was dropped.";
+    DeviceConfig& config = config_for(status[request.device].key);
+    BatteryConfig& battery = config.battery[static_cast<size_t>(request.profile)];
+    const BatteryConfig before = battery;
+    battery.on = request.on;
+    if (request.has_minimum)
+        battery.minimum = request.minimum;
+    if (request.has_maximum)
+        battery.maximum = request.maximum;
+    if (request.has_level)
+        battery.level = request.level;
+    std::string error;
+    const aoap::ProfileSetup setup = build_setup(config);
+    if (!aoap::validate_battery(aoap::battery_of(setup, request.profile), error)) {
+        battery = before;
+        return error;
+    }
+    if (!engine_.set_device_setup(request.device, setup)) {
+        battery = before;
+        return "Stop or pause playback to change a battery.";
+    }
+    setup_busy_.insert(request.device);
     return {};
 }
 

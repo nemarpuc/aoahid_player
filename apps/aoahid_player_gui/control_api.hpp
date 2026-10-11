@@ -20,14 +20,29 @@ namespace gui {
 // A request only the UI thread can carry out, because it owns the device
 // selection, the profile settings, the recorder, and the ADB Bridge rows.
 struct UiRequest {
-    enum class Kind : uint8_t { refresh, connect, record_start, record_stop, bridge, hid };
+    enum class Kind : uint8_t {
+        refresh,
+        connect,
+        record_start,
+        record_stop,
+        bridge,
+        hid,
+        battery
+    };
     Kind kind{Kind::refresh};
     std::vector<size_t> devices; // connect: indices into the device list; empty = keep
     bool all_devices{};          // connect: every listed device
     std::string name;            // record_start: file name, empty = timestamped
     size_t device{};             // bridge, hid: index into the connected devices
-    bool on{};                   // bridge, hid
-    aoap::Profile profile{};     // hid
+    bool on{};                   // bridge, hid, battery
+    aoap::Profile profile{};     // hid, battery
+    // battery: the numbers that were given; the others stay as saved.
+    bool has_level{};
+    bool has_minimum{};
+    bool has_maximum{};
+    int level{};
+    int minimum{};
+    int maximum{};
     int port{};                  // bridge: 0 = the port the ADB tab shows
 };
 

@@ -155,3 +155,59 @@ TEST_CASE("same_profile compares one profile's settings, the pen surface include
     CHECK_FALSE(aoap::profile_enabled(b, aoap::Profile::mouse));
     CHECK_FALSE(aoap::same_profile(a, b, aoap::Profile::mouse));
 }
+
+TEST_CASE("a battery makes every profile's Spec carry a second report") {
+    aoap::ProfileSetup setup = full_setup();
+    for (size_t index = 0; index < aoap::profile_count; ++index) {
+        const auto profile = static_cast<aoap::Profile>(index);
+        CAPTURE(aoap::profile_name(profile));
+        aoap::battery_of(setup, profile) = {true, 1, 100, 80};
+        aoahid_spec* spec = nullptr;
+        std::string error;
+        REQUIRE(aoap::validate_profile(setup, profile, error));
+        REQUIRE(aoap::build_spec(profile, setup, spec, error));
+        aoahid_capability_manifest manifest{};
+        manifest.struct_size = static_cast<uint32_t>(sizeof(manifest));
+        REQUIRE(aoahid_spec_manifest(spec, &manifest) == AOAHID_OK);
+        REQUIRE(manifest.report_count == 2);
+        CHECK(manifest.reports[0].report_id.value == 1);
+        CHECK(manifest.reports[1].report_id.value == 2);
+        CHECK(manifest.reports[1].wire_length == 2);
+        aoahid_spec_release(spec);
+    }
+}
+
+TEST_CASE("a battery's range and level are checked with its profile") {
+    aoap::ProfileSetup setup = full_setup();
+    std::string error;
+    setup.key.battery = {true, 100, 1, 50};
+    CHECK_FALSE(aoap::validate_profile(setup, aoap::Profile::key, error));
+    setup.key.battery = {true, 1, 100, 0};
+    CHECK_FALSE(aoap::validate_profile(setup, aoap::Profile::key, error));
+    setup.key.battery = {true, 1, 100, 101};
+    CHECK_FALSE(aoap::validate_profile(setup, aoap::Profile::key, error));
+    setup.key.battery = {true, 0, 255, 0};
+    CHECK(aoap::validate_profile(setup, aoap::Profile::key, error));
+    // A battery that is off is not looked at.
+    setup.key.battery = {false, 100, 1, 500};
+    CHECK(aoap::validate_profile(setup, aoap::Profile::key, error));
+    CHECK(aoap::validate_profile(setup, aoap::Profile::mouse, error));
+}
+
+TEST_CASE("same_node ignores the battery level, and an unused battery's numbers") {
+    aoap::ProfileSetup a = full_setup();
+    a.key.battery = {true, 1, 100, 80};
+    aoap::ProfileSetup b = a;
+    b.key.battery.level = 20;
+    CHECK_FALSE(aoap::same_profile(a, b, aoap::Profile::key));
+    CHECK(aoap::same_node(a, b, aoap::Profile::key));
+    b.key.battery.maximum = 200;
+    CHECK_FALSE(aoap::same_node(a, b, aoap::Profile::key));
+    b.key.battery = {false, 1, 100, 80};
+    CHECK_FALSE(aoap::same_node(a, b, aoap::Profile::key));
+    a.mouse.battery = {false, 1, 100, 100};
+    b.mouse.battery = {false, 5, 50, 7};
+    CHECK(aoap::same_node(a, b, aoap::Profile::mouse));
+    b.mouse.buttons = 3;
+    CHECK_FALSE(aoap::same_node(a, b, aoap::Profile::mouse));
+}

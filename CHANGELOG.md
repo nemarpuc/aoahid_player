@@ -5,6 +5,23 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.1.0] - 2026-10-11
+
+- **A HID can report a battery level.** Every HID on the Devices tab has a
+  Battery switch with a Level and a Range; the level is sent as a second
+  report of that HID, which is how Android shows a battery for an input
+  device. Each device keeps its own (`<hid>.battery`, `.battery.min`,
+  `.battery.max`, `.battery.level` in its section of the ini). Changing only
+  the level never registers the HID again.
+- Control API: `POST /battery` sets one HID's battery on a connected device,
+  and each device in `GET /status` has `battery`, the level of every HID that
+  reports one.
+- Builds against libaoahid 1.0.0 as re-released on 2026-10-11 (the battery is
+  an option of each profile there, and the profile numbers changed). A build
+  of 3.0.1 does not load that library: the options structures differ in size.
+- Fixed: the Devices tab kept the Toggle row's "settings shown" flag one past
+  the end of its array.
+
 ## [3.0.1] - 2026-10-11
 
 - Builds against libaoahid 1.0.0 as it is released. Only names changed: the
