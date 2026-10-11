@@ -36,8 +36,8 @@ struct AdbBridgeOptions {
 
 // Owns the libaoahid Context, the device list, and the connected DeviceGroup.
 //
-// Connecting builds one Spec per enabled profile and opens a Node for each on
-// every selected device; the profiles stay fixed until disconnect(). Every
+// Connecting opens, on every selected device, a Node for each profile of that
+// device's own setup; reconfigure() changes them while connected. Every
 // method belongs to the single thread that owns the Context.
 class Session {
   public:
@@ -52,13 +52,19 @@ class Session {
     // Lists AOA-capable devices. Not allowed while connected.
     bool refresh(std::vector<DeviceEntry>& devices, std::string& error);
 
-    // Opens the given entries of the last refresh. A device that fails is
+    // Opens the given entries of the last refresh, with one ProfileSetup per
+    // selected entry, in the same order. A profile that cannot be registered
+    // is left off; a device on which none could be, or that fails to open, is
     // reported through the sink and skipped; false means none could be opened.
     // With `bridge` enabled, each device's ADB Bridge starts after its Nodes;
     // a bridge that cannot start is a warning, not a failed device. Stop the
     // adb server first, or it keeps the ADB interface.
-    bool connect(const std::vector<size_t>& selection, const ProfileSetup& setup,
+    bool connect(const std::vector<size_t>& selection, const std::vector<ProfileSetup>& setups,
                  std::string& error, const AdbBridgeOptions& bridge = {});
+
+    // See DeviceGroup::reconfigure(). Waits for Android to register what was
+    // opened before it returns. False when `error` says what was not done.
+    bool reconfigure(size_t device, const ProfileSetup& setup, std::string& error);
 
     // Closes every device; each Node close sends its neutral report first.
     void disconnect() noexcept;
@@ -67,8 +73,6 @@ class Session {
     bool accessory(const std::vector<size_t>& selection, std::string& error);
 
     [[nodiscard]] bool connected() const noexcept { return !group_.empty(); }
-    // The profiles of the current connection; meaningful while connected.
-    [[nodiscard]] const ProfileSetup& setup() const noexcept { return setup_; }
     [[nodiscard]] DeviceGroup& group() noexcept { return group_; }
     [[nodiscard]] const DeviceGroup& group() const noexcept { return group_; }
     [[nodiscard]] Context& context() noexcept { return context_; }
@@ -80,10 +84,9 @@ class Session {
     EventSink* sink_;
     Context context_;
     aoahid_discovery* discovery_{};
-    // The discovery index of each listed DeviceEntry.
+    // The discovery index and key of each listed DeviceEntry.
     std::vector<size_t> listed_;
-    SpecSet specs_;
-    ProfileSetup setup_;
+    std::vector<std::string> listed_keys_;
     DeviceGroup group_;
 };
 

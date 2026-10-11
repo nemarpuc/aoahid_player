@@ -72,6 +72,9 @@ class Player {
     void load(std::shared_ptr<const EventScript> script);
     void set_observer(PlaybackObserver* observer) noexcept { observer_ = observer; }
     [[nodiscard]] bool loaded() const noexcept { return script_ != nullptr; }
+    // True while run() is holding a pause, with every control released.
+    // Playback thread only (the live pump may ask).
+    [[nodiscard]] bool holding_pause() const noexcept { return paused_; }
 
     // Lets an owner interleave another input source into the same
     // DeviceGroup while a script plays, without this class knowing anything
@@ -164,6 +167,7 @@ class Player {
 
     // Playback thread only.
     std::shared_ptr<const EventScript> script_;
+    Space space_; // of the loaded script
     InputState live_;   // what the devices currently hold
     InputState target_; // scratch for seeks
     std::vector<uint32_t> order_; // scratch for state_at()
@@ -181,6 +185,7 @@ class Player {
     PlaybackPosition pause_position_{};
     uint32_t warned_profiles_{};
     bool rejection_reported_{};
+    std::vector<uint64_t> skipped_before_; // per device, at the start of the run
 
     // Shared with the control threads.
     WakeSignal wake_;

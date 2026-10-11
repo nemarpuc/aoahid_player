@@ -3,6 +3,7 @@
 
 #include <aoahid.hpp>
 
+#include <iterator>
 #include <type_traits>
 #include <utility>
 
@@ -20,6 +21,8 @@ Profile profile_of(const EventPayload& payload) noexcept {
                 return Profile::key;
             else if constexpr (std::is_same_v<T, PenSample>)
                 return Profile::pen;
+            else if constexpr (std::is_same_v<T, DigitizerSample>)
+                return Profile::digitizer;
             else if constexpr (std::is_same_v<T, MediaKey>)
                 return Profile::toggle;
             else
@@ -30,16 +33,42 @@ Profile profile_of(const EventPayload& payload) noexcept {
 
 namespace {
 
-// Applies one payload to one device. Every mutation is in-memory only and the
-// caller has already checked that the profile is present.
-aoahid_result mutate(const Device& device, const EventPayload& payload) {
+// The pen and the digitizer take the same sample; `surface` is the one of the
+// profile the sample is for.
+template <typename Sample>
+aoahid_pen_sample stylus_sample(const Sample& value, const Space space, const Space surface) {
+    aoahid_pen_sample sample{};
+    sample.in_range = value.in_range ? 1U : 0U;
+    sample.tip = value.tip ? 1U : 0U;
+    sample.x = value.x;
+    sample.y = value.y;
+    if (space.width > 0 && space != surface) {
+        sample.x = scale_coordinate(sample.x, space.width, surface.width);
+        sample.y = scale_coordinate(sample.y, space.height, surface.height);
+    }
+    sample.pressure = value.pressure;
+    return sample;
+}
+
+// Applies one payload to one device, with its touch, pen, and digitizer
+// positions scaled from `space` onto the device's own surfaces. Every
+// mutation is in-memory only and the caller has already checked that the
+// profile is present.
+aoahid_result mutate(const Device& device, const EventPayload& payload, const Space space,
+                     const Space touch, const Space pen, const Space digitizer) {
     return std::visit(
         [&](const auto& value) -> aoahid_result {
             using T = std::decay_t<decltype(value)>;
             if constexpr (std::is_same_v<T, TouchEvent>) {
+                int32_t x = value.x;
+                int32_t y = value.y;
+                if (space.width > 0 && space != touch) {
+                    x = scale_coordinate(x, space.width, touch.width);
+                    y = scale_coordinate(y, space.height, touch.height);
+                }
                 return aoahid::touch(device.node(Profile::touch),
-                                     static_cast<uint32_t>(value.finger_id), value.state, value.x,
-                                     value.y, nullptr);
+                                     static_cast<uint32_t>(value.finger_id), value.state, x, y,
+                                     nullptr);
             } else if constexpr (std::is_same_v<T, MouseMove>) {
                 return aoahid::mouse_move(device.node(Profile::mouse), value.dx, value.dy);
             } else if constexpr (std::is_same_v<T, MouseButton>) {
@@ -58,14 +87,12 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
                 // Live tab's buttons, and a script share the one field, so
                 // the key this row names may already have been replaced.
                 return aoahid::toggle(device.node(Profile::toggle), value.down ? value.usage : uint16_t{0}, value.down);
-            } else {
-                aoahid_pen_sample sample{};
-                sample.in_range = value.in_range ? 1U : 0U;
-                sample.tip = value.tip ? 1U : 0U;
-                sample.x = value.x;
-                sample.y = value.y;
-                sample.pressure = value.pressure;
+            } else if constexpr (std::is_same_v<T, PenSample>) {
+                const aoahid_pen_sample sample = stylus_sample(value, space, pen);
                 return aoahid::pen_update(device.node(Profile::pen), &sample);
+            } else {
+                const aoahid_pen_sample sample = stylus_sample(value, space, digitizer);
+                return aoahid::pen_update(device.node(Profile::digitizer), &sample);
             }
         },
         payload);
@@ -75,19 +102,36 @@ aoahid_result mutate(const Device& device, const EventPayload& payload) {
 
 DeviceGroup::~DeviceGroup() { reset(); }
 
-void DeviceGroup::add_device(Device&& device) {
+void DeviceGroup::add_device(Device&& device, std::string key, const ProfileSetup& setup) {
     auto slot = std::make_unique<Slot>();
     slot->label = device.label();
+    slot->key = std::move(key);
+    slot->setup = setup;
+    set_surfaces(*slot);
     slot->adb_port.store(device.adb_port(), std::memory_order_relaxed);
-    const uint32_t mask = device.profile_mask();
+    slot->profiles.store(device.profile_mask(), std::memory_order_relaxed);
     slot->device = std::move(device);
     {
         const std::lock_guard lock(mutex_);
-        const uint32_t current = profile_mask_.load(std::memory_order_relaxed);
-        profile_mask_.store(slots_.empty() ? mask : (current & mask), std::memory_order_relaxed);
         slots_.push_back(std::move(slot));
     }
     active_count_.fetch_add(1, std::memory_order_relaxed);
+    refresh_mask();
+}
+
+void DeviceGroup::set_surfaces(Slot& slot) noexcept {
+    slot.touch = {slot.setup.touch.width, slot.setup.touch.height};
+    slot.pen = {slot.setup.pen.width, slot.setup.pen.height};
+    slot.digitizer = {slot.setup.digitizer.width, slot.setup.digitizer.height};
+}
+
+void DeviceGroup::refresh_mask() noexcept {
+    uint32_t mask = 0;
+    for (const std::unique_ptr<Slot>& slot : slots_) {
+        if (slot->active.load(std::memory_order_relaxed))
+            mask |= slot->profiles.load(std::memory_order_relaxed);
+    }
+    profile_mask_.store(mask, std::memory_order_relaxed);
 }
 
 void DeviceGroup::reset() noexcept {
@@ -120,6 +164,8 @@ void DeviceGroup::fail(Slot& slot, const aoahid_result result) {
     active_count_.fetch_sub(1, std::memory_order_relaxed);
     slot.device.close();
     slot.adb_port.store(0U, std::memory_order_relaxed);
+    slot.profiles.store(0U, std::memory_order_relaxed);
+    refresh_mask();
     if (sink_ == nullptr)
         return;
     if (result == AOAHID_ERR_STALL) {
@@ -136,17 +182,21 @@ void DeviceGroup::fail(Slot& slot, const aoahid_result result) {
     }
 }
 
-aoahid_result DeviceGroup::apply(const EventPayload& payload) {
-    const Profile profile = profile_of(payload);
-    if ((profile_mask() & profile_bit(profile)) == 0U)
-        return AOAHID_ERR_UNSUPPORTED;
-
+// Runs `mutate_one` on every active device that has `profile`. See apply()
+// for the results.
+template <typename Mutate>
+aoahid_result DeviceGroup::broadcast(const Profile profile, Mutate&& mutate_one) {
+    bool present = false;
     bool applied = false;
-    aoahid_result outcome = AOAHID_OK;
+    // Refusals are counted only once the row is known not to be retried.
+    Slot* refused[16];
+    size_t refused_count = 0;
+    aoahid_result refusal = AOAHID_OK;
     for (const std::unique_ptr<Slot>& slot : slots_) {
-        if (!slot->active.load(std::memory_order_relaxed))
+        if (!slot->active.load(std::memory_order_relaxed) || !slot->device.has(profile))
             continue;
-        const aoahid_result result = mutate(slot->device, payload);
+        present = true;
+        const aoahid_result result = mutate_one(*slot);
         if (result == AOAHID_OK) {
             applied = true;
             continue;
@@ -164,70 +214,48 @@ aoahid_result DeviceGroup::apply(const EventPayload& payload) {
             continue;
         }
         if (result == AOAHID_ERR_PARAM || result == AOAHID_ERR_OVERFLOW) {
-            // The row is outside what the Spec declared (OVERFLOW: more
-            // contacts than its slots): identical on every device, so reject
-            // the row instead of dropping hardware.
-            ++rejected_rows_;
-            if (rejection_detail_.empty())
-                rejection_detail_ = explain_error(result);
-            outcome = AOAHID_ERR_PARAM;
-            break;
+            // Outside what this device's Spec declared (OVERFLOW: more
+            // contacts than its slots): a script or settings matter, so the
+            // device is kept and skips the row.
+            if (refused_count < std::size(refused))
+                refused[refused_count++] = slot.get();
+            refusal = result;
+            continue;
         }
         fail(*slot, result);
     }
-    if (applied)
+    for (size_t index = 0; index < refused_count; ++index)
+        bump(refused[index]->skipped);
+    if (refused_count != 0) {
+        ++rejected_rows_;
+        if (rejection_detail_.empty())
+            rejection_detail_ = refused[0]->label + ": " + explain_error(refusal);
+    }
+    if (applied) {
         dirty_mask_ |= profile_bit(profile);
-    return outcome;
+        return AOAHID_OK;
+    }
+    if (!present)
+        return AOAHID_ERR_UNSUPPORTED;
+    return refused_count != 0 ? AOAHID_ERR_PARAM : AOAHID_OK;
+}
+
+aoahid_result DeviceGroup::apply(const EventPayload& payload, const Space space) {
+    return broadcast(profile_of(payload), [&](const Slot& slot) {
+        return mutate(slot.device, payload, space, slot.touch, slot.pen, slot.digitizer);
+    });
 }
 
 aoahid_result DeviceGroup::scroll(const int32_t wheel) {
-    if ((profile_mask() & profile_bit(Profile::mouse)) == 0U)
-        return AOAHID_ERR_UNSUPPORTED;
-    bool applied = false;
-    for (const std::unique_ptr<Slot>& slot : slots_) {
-        if (!slot->active.load(std::memory_order_relaxed))
-            continue;
-        const aoahid_result result = aoahid::mouse_scroll(slot->device.node(Profile::mouse), wheel, 0);
-        if (result == AOAHID_OK) {
-            applied = true;
-            continue;
-        }
-        if (result == AOAHID_ERR_BUSY) {
-            if (!applied)
-                return AOAHID_ERR_BUSY;
-            // See the matching case in apply(): drop it for this device
-            // alone rather than disconnecting one that is merely behind.
-            continue;
-        }
-        fail(*slot, result);
-    }
-    if (applied)
-        dirty_mask_ |= profile_bit(Profile::mouse);
-    return AOAHID_OK;
+    return broadcast(Profile::mouse, [&](const Slot& slot) {
+        return aoahid::mouse_scroll(slot.device.node(Profile::mouse), wheel, 0);
+    });
 }
 
 aoahid_result DeviceGroup::toggle(const uint16_t usage, const uint8_t value) {
-    if ((profile_mask() & profile_bit(Profile::toggle)) == 0U)
-        return AOAHID_ERR_UNSUPPORTED;
-    bool applied = false;
-    for (const std::unique_ptr<Slot>& slot : slots_) {
-        if (!slot->active.load(std::memory_order_relaxed))
-            continue;
-        const aoahid_result result = aoahid::toggle(slot->device.node(Profile::toggle), usage, value != 0);
-        if (result == AOAHID_OK) {
-            applied = true;
-            continue;
-        }
-        if (result == AOAHID_ERR_BUSY) {
-            if (!applied)
-                return AOAHID_ERR_BUSY;
-            continue;
-        }
-        fail(*slot, result);
-    }
-    if (applied)
-        dirty_mask_ |= profile_bit(Profile::toggle);
-    return AOAHID_OK;
+    return broadcast(Profile::toggle, [&](const Slot& slot) {
+        return aoahid::toggle(slot.device.node(Profile::toggle), usage, value != 0);
+    });
 }
 
 bool DeviceGroup::flush() {
@@ -260,6 +288,7 @@ bool DeviceGroup::flush() {
         if (!slot->active.load(std::memory_order_relaxed))
             continue;
         aoahid_result failure = AOAHID_OK;
+        bool sent = false;
         for (size_t profile = 0; profile < profile_count; ++profile) {
             if ((flushed & (uint32_t{1} << profile)) == 0U)
                 continue;
@@ -273,14 +302,91 @@ bool DeviceGroup::flush() {
                 failure = result;
                 break;
             }
+            sent = true;
         }
         if (failure != AOAHID_OK) {
             fail(*slot, failure);
             continue;
         }
-        bump(slot->reports);
+        // A device with none of the flushed profiles was sent nothing.
+        if (sent)
+            bump(slot->reports);
     }
     return true;
+}
+
+uint32_t open_profiles(Device& device, ProfileSetup& setup, std::string& error) {
+    uint32_t opened = 0;
+    for (size_t index = 0; index < profile_count; ++index) {
+        const Profile profile = static_cast<Profile>(index);
+        if (!profile_enabled(setup, profile) || device.has(profile))
+            continue;
+        std::string why;
+        aoahid_spec* spec = nullptr;
+        if (validate_profile(setup, profile, why) && build_spec(profile, setup, spec, why)) {
+            const aoahid_result result = device.open_node(profile, spec);
+            aoahid_spec_release(spec);
+            if (result == AOAHID_OK) {
+                opened |= profile_bit(profile);
+                continue;
+            }
+            why = "Could not register the " + describe_profiles(profile_bit(profile)) + " on " +
+                  device.label() + ". " + explain_error(result);
+        }
+        set_profile_enabled(setup, profile, false);
+        if (!error.empty())
+            error += ' ';
+        error += why;
+    }
+    return opened;
+}
+
+uint32_t DeviceGroup::reconfigure(const size_t index, ProfileSetup wanted, std::string& error) {
+    error.clear();
+    if (index >= slots_.size() || !slots_[index]->active.load(std::memory_order_relaxed)) {
+        error = "That device is not connected.";
+        return 0U;
+    }
+    Slot& slot = *slots_[index];
+    flush();
+    if (!slot.active.load(std::memory_order_relaxed)) {
+        error = "That device was dropped.";
+        return 0U;
+    }
+    resolve_pen_surface(wanted);
+    // This thread is the only writer of slot.setup, so it reads it unlocked.
+    // Settings that cannot be registered are refused before anything is
+    // closed, so a mistake never costs a HID that works.
+    for (size_t profile = 0; profile < profile_count; ++profile) {
+        const Profile kind = static_cast<Profile>(profile);
+        if (profile_enabled(wanted, kind) &&
+            !(slot.device.has(kind) && same_profile(slot.setup, wanted, kind)) &&
+            !validate_profile(wanted, kind, error))
+            return 0U;
+    }
+    for (size_t profile = 0; profile < profile_count; ++profile) {
+        const Profile kind = static_cast<Profile>(profile);
+        if (!slot.device.has(kind) ||
+            (profile_enabled(wanted, kind) && same_profile(slot.setup, wanted, kind)))
+            continue;
+        const aoahid_result closed = slot.device.close_node(kind);
+        if (closed != AOAHID_OK) {
+            // The Node is still registered in a state nobody knows.
+            fail(slot, closed);
+            error = slot.label + " was dropped: its " + describe_profiles(profile_bit(kind)) +
+                    " could not be unregistered. " + explain_error(closed);
+            return 0U;
+        }
+    }
+    const uint32_t opened = open_profiles(slot.device, wanted, error);
+    {
+        const std::lock_guard lock(mutex_);
+        slot.setup = wanted;
+    }
+    set_surfaces(slot);
+    slot.profiles.store(slot.device.profile_mask(), std::memory_order_relaxed);
+    refresh_mask();
+    return opened;
 }
 
 std::vector<DeviceStatus> DeviceGroup::snapshot() const {
@@ -290,6 +396,10 @@ std::vector<DeviceStatus> DeviceGroup::snapshot() const {
     for (const std::unique_ptr<Slot>& slot : slots_) {
         DeviceStatus status;
         status.label = slot->label;
+        status.key = slot->key;
+        status.skipped = slot->skipped.load(std::memory_order_relaxed);
+        status.profiles = slot->profiles.load(std::memory_order_relaxed);
+        status.setup = slot->setup;
         status.reports = slot->reports.load(std::memory_order_relaxed);
         status.errors = slot->errors.load(std::memory_order_relaxed);
         status.active = slot->active.load(std::memory_order_relaxed);

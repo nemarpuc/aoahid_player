@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 //
-// The window's chrome: header, nav rail, sidebar (and its collapsed form),
-// and the activity log panel at the bottom.
+// The window's chrome: header, nav rail, and the activity log panel at the
+// bottom.
 
 #include "app.hpp"
 
@@ -110,7 +110,7 @@ void App::draw_header() {
     ui::align_right(width);
     ui::status_item(adb_label, adb_dot);
     ImGui::SetItemTooltip("Whether the adb server is running. The startup read and the Devices "
-                          "card's refresh button manage it automatically.");
+                          "tab's refresh button manage it automatically.");
     ImGui::SameLine(0, spacing);
     ui::status_divider();
     ImGui::SameLine(0, spacing);
@@ -127,10 +127,10 @@ void App::draw_header() {
     ui::status_item(playback, playback_dot);
 }
 
-// The Live/Player/Recorder/ADB/Settings switch, drawn as a left icon rail
-// instead of a top segmented control: it sits in the window's own chrome
-// (beside the sidebar, spanning the full body height) rather than floating
-// as a pill above each screen's content.
+// The Devices/Live/Player/Recorder/ADB/Settings switch, drawn as a left icon
+// rail instead of a top segmented control: it sits in the window's own chrome
+// (spanning the full body height) rather than floating as a pill above each
+// screen's content.
 void App::draw_nav_rail() {
     struct Item {
         const char* label;
@@ -138,6 +138,7 @@ void App::draw_nav_rail() {
         Tab tab;
     };
     static constexpr Item items[] = {
+        {"Devices", ui::Icon::phone, Tab::devices},
         {"Live", ui::Icon::monitor, Tab::live},
         {"Player", ui::Icon::play, Tab::player},
         {"Recorder", ui::Icon::record, Tab::recorder},
@@ -172,94 +173,6 @@ void App::draw_nav_rail() {
         ImGui::PopID();
         gap(4);
     }
-}
-
-// A thin drag handle between the sidebar and the main pane. Width is stored
-// unscaled (like the profile settings), so it reads the same at any DPI.
-void App::draw_sidebar_splitter(const float height) {
-    constexpr float handle_width = 6.0f;
-    constexpr float min_width = 280.0f;
-    constexpr float max_width = 640.0f;
-    ImGui::InvisibleButton("##sidebar_splitter", ImVec2(px(handle_width), height));
-    const bool hovered = ImGui::IsItemHovered();
-    const bool active = ImGui::IsItemActive();
-    if (hovered || active)
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeEW);
-    if (active) {
-        // Dragging away from the sidebar widens it, on whichever side it is.
-        const float delta = ImGui::GetIO().MouseDelta.x / ImGui::GetStyle().FontScaleDpi;
-        sidebar_width_ =
-            std::clamp(sidebar_width_ + (sidebar_right_ ? -delta : delta), min_width, max_width);
-    }
-    if (hovered || active) {
-        ImDrawList* list = ImGui::GetWindowDrawList();
-        const ImVec2 p0 = ImGui::GetItemRectMin();
-        const ImVec2 p1 = ImGui::GetItemRectMax();
-        const float cx = (p0.x + p1.x) * 0.5f;
-        list->AddRectFilled(ImVec2(cx - px(1), p0.y), ImVec2(cx + px(1), p1.y),
-                            ImGui::GetColorU32(active ? theme::accent : theme::border_strong),
-                            px(1));
-    }
-}
-
-// --- Sidebar ---------------------------------------------------------------
-
-void App::draw_sidebar() {
-    // Puts Devices/Profiles/Connect away once they are not needed for a
-    // while, so Live/Player/Recorder/ADB can use the full width.
-    if (ui::icon_button("##collapse_sidebar",
-                        sidebar_right_ ? ui::Icon::chevron_right : ui::Icon::chevron_left,
-                        ImGui::GetFrameHeight(), ui::Tone::quiet, "Collapse"))
-        sidebar_collapsed_ = true;
-    gap(2);
-
-    // The connect card stays pinned below; its height is last frame's.
-    const float spacing = ImGui::GetStyle().ItemSpacing.y;
-    const float scroll = std::max(ImGui::GetContentRegionAvail().y - connect_height_ - spacing,
-                                  px(80));
-    ImGui::BeginChild("##setup", ImVec2(0, scroll), ImGuiChildFlags_None);
-    draw_devices_card();
-    gap(2);
-    draw_profiles_card();
-    gap(2);
-    draw_control_api_card();
-    ImGui::EndChild();
-    draw_connect_card();
-    connect_height_ = ImGui::GetItemRectSize().y;
-}
-
-// The slim rail Devices/Profiles/Connect collapse to: just the way back and
-// a quiet readout of the connection, since the cards themselves are put
-// away (see draw_sidebar()).
-void App::draw_sidebar_collapsed() {
-    const float button = ImGui::GetFrameHeight();
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                         (ImGui::GetContentRegionAvail().x - button) * 0.5f);
-    if (ui::icon_button("##expand_sidebar",
-                        sidebar_right_ ? ui::Icon::chevron_left : ui::Icon::chevron_right, button,
-                        ui::Tone::quiet, "Devices, profiles, and Connect"))
-        sidebar_collapsed_ = false;
-    gap(3);
-
-    const ConnectionStatus status = connection_status();
-    const float diameter = px(10);
-    ImGui::SetCursorPosX(ImGui::GetCursorPosX() +
-                         (ImGui::GetContentRegionAvail().x - diameter) * 0.5f);
-    ImGui::Dummy(ImVec2(diameter, diameter));
-    ImDrawList* list = ImGui::GetWindowDrawList();
-    const ImVec2 p0 = ImGui::GetItemRectMin();
-    const ImVec2 c(p0.x + diameter * 0.5f, p0.y + diameter * 0.5f);
-    if (status.pulse) {
-        const float phase = static_cast<float>(std::fmod(ImGui::GetTime(), 1.2) / 1.2);
-        const float level = 0.45f + 0.55f * (0.5f + 0.5f * std::cos(phase * 2.0f * 3.14159265f));
-        ImVec4 dot = theme::vec(status.dot);
-        dot.w = level;
-        list->AddCircleFilled(c, diameter * 0.5f, ImGui::GetColorU32(dot), 16);
-    } else {
-        list->AddCircleFilled(c, diameter * 0.5f, ImGui::GetColorU32(status.dot), 16);
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetTooltip("%s", status.text.c_str());
 }
 
 // --- Activity log ----------------------------------------------------------

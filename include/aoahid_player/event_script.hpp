@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
+#include <algorithm>
 #include <cstdint>
 #include <cstddef>
 #include <cstdio>
@@ -23,11 +24,12 @@ struct GamepadButton{ uint32_t button; bool pressed; };
 struct GamepadAxis  { size_t axis_index; int32_t value; };
 struct GamepadDpad  { bool up, down, right, left; };
 struct PenSample    { bool in_range, tip; int32_t x, y, pressure; };
+struct DigitizerSample { bool in_range, tip; int32_t x, y, pressure; };
 struct MediaKey     { uint16_t usage; bool down; }; // Consumer page, toggle profile
 
 using EventPayload = std::variant<TouchEvent, MouseMove, MouseButton, KeyEvent,
                                    GamepadButton, GamepadAxis, GamepadDpad, PenSample,
-                                   MediaKey>;
+                                   DigitizerSample, MediaKey>;
 
 struct EventRecord {
     EventPayload payload;
@@ -149,13 +151,26 @@ struct LapSpan {
 // lap's length.
 int64_t lap_layout(const EventScript& script, uint64_t lap, std::vector<LapSpan>& out);
 
-// Maps a script written for its screen_width x screen_height space onto the
-// connected surfaces: touch rows onto touch_width x touch_height, pen rows
-// onto pen_width x pen_height (0 leaves that profile alone). Returns false,
-// leaving `out` untouched, when the script declares no space or every size
-// already matches. Scaling happens once here, never per row while playing.
-bool scale_script(const EventScript& script, int32_t touch_width, int32_t touch_height,
-                  int32_t pen_width, int32_t pen_height, EventScript& out);
+// The space touch and pen positions are given in; 0 x 0 means they are used
+// as they are.
+struct Space {
+    int32_t width{};
+    int32_t height{};
+    bool operator==(const Space&) const = default;
+};
+
+// Maps `value` from a space of `from` points onto one of `to`. Coordinates
+// are indices (0..count-1), so the highest index in `from`, not `from`
+// itself, lands on the highest index in `to`.
+inline int32_t scale_coordinate(const int32_t value, const int32_t from,
+                                const int32_t to) noexcept {
+    const int64_t from_max = from - 1;
+    const int64_t to_max = to - 1;
+    if (from_max <= 0 || to_max <= 0)
+        return 0;
+    const int64_t scaled = (static_cast<int64_t>(value) * to_max + from_max / 2) / from_max;
+    return static_cast<int32_t>(std::clamp<int64_t>(scaled, 0, to_max));
+}
 
 // Side of the square space "@coords normalized" positions are stored in.
 inline constexpr int32_t normalized_space = 65536;

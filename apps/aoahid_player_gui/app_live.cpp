@@ -118,7 +118,7 @@ ImVec2 App::live_to_preview(const ImVec2 device) const noexcept {
 }
 
 int App::live_finger() const noexcept {
-    const uint32_t contacts = engine_.connected_setup().touch.max_contacts;
+    const uint32_t contacts = engine_.live_setup().touch.max_contacts;
     return contacts > 0 ? static_cast<int>(contacts) - 1 : 0;
 }
 
@@ -126,7 +126,7 @@ float App::live_preview_aspect() const noexcept {
     // Connected: the screen in use. Not yet: the settings that would be used,
     // so the preview already has the right shape while setting up.
     const aoap::ProfileSetup setup =
-        engine_.connected() ? engine_.connected_setup() : build_setup();
+        engine_.connected() ? engine_.live_setup() : build_setup(pending_config());
     float width = static_cast<float>(live_ratio_w_);
     float height = static_cast<float>(live_ratio_h_);
     if (width <= 0.0f || height <= 0.0f) {
@@ -269,7 +269,7 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size, cons
     if (!engine_.live_active() || surface_size.x <= 0.0f || surface_size.y <= 0.0f)
         return;
     const ImGuiIO& io = ImGui::GetIO();
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
 
     if (live_.touch && setup.touch.enabled) {
         // Only the press/release edge is sent from here; while a contact
@@ -339,7 +339,7 @@ void App::live_pointer(const ImVec2 surface_min, const ImVec2 surface_size, cons
 void App::live_keyboard() {
     if (!engine_.live_active() || !live_.key)
         return;
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
     if (!setup.key.enabled)
         return;
     // Every key GLFW reported this frame, mapped to its HID usage; the
@@ -354,7 +354,7 @@ void App::live_keyboard() {
 void App::live_paste_clipboard() {
     if (!engine_.live_active() || !live_.key)
         return;
-    if (!engine_.connected_setup().key.enabled)
+    if (!engine_.live_setup().key.enabled)
         return;
     if (live_paste_active_.load(std::memory_order_relaxed))
         return;
@@ -399,7 +399,7 @@ void App::live_paste_clipboard() {
 void App::live_gamepad() {
     if (!engine_.live_active() || !live_.gamepad)
         return;
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
     if (!setup.gamepad.enabled)
         return;
 
@@ -540,7 +540,7 @@ void App::draw_live() {
 }
 
 void App::draw_live_surface(const ImVec2 size) {
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
     const float aspect = live_preview_aspect();
 
     // Around the phone is the window's own background, with no frame.
@@ -1025,7 +1025,7 @@ void App::draw_live_log(const ImVec2 size) {
     gap(2);
 
     // What is held right now, then what happened, newest at the bottom.
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
     ImGui::PushFont(nullptr, theme::font_small);
     if (setup.touch.enabled)
         draw_touch_contacts();
@@ -1146,7 +1146,7 @@ void App::draw_live_release_key_setting() {
 }
 
 void App::draw_live_controls(const ImVec2 size) {
-    const aoap::ProfileSetup setup = engine_.connected_setup();
+    const aoap::ProfileSetup setup = engine_.live_setup();
     const uint32_t available = engine_.connected_profiles();
     const bool running = engine_.live_active();
 
@@ -1234,7 +1234,8 @@ void App::draw_live_controls(const ImVec2 size) {
     int shown_w = live_ratio_w_;
     int shown_h = live_ratio_h_;
     if (following) {
-        const aoap::ProfileSetup shape = engine_.connected() ? setup : build_setup();
+        const aoap::ProfileSetup shape =
+            engine_.connected() ? setup : build_setup(pending_config());
         shown_w = shape.touch.enabled && shape.touch.width > 0 ? shape.touch.width : 9;
         shown_h = shape.touch.enabled && shape.touch.height > 0 ? shape.touch.height : 16;
     }

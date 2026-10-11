@@ -33,7 +33,7 @@ bool same_dpad(const GamepadDpad& a, const GamepadDpad& b) noexcept {
 
 bool dpad_neutral(const GamepadDpad& d) noexcept { return !d.up && !d.down && !d.right && !d.left; }
 
-bool same_pen(const PenSample& a, const PenSample& b) noexcept {
+template <typename Sample> bool same_stylus(const Sample& a, const Sample& b) noexcept {
     if (a.in_range != b.in_range)
         return false;
     if (!a.in_range)
@@ -71,6 +71,8 @@ void InputState::apply(const EventPayload& payload) {
                 dpad_ = value;
             } else if constexpr (std::is_same_v<T, PenSample>) {
                 pen_ = value;
+            } else if constexpr (std::is_same_v<T, DigitizerSample>) {
+                digitizer_ = value;
             } else if constexpr (std::is_same_v<T, MediaKey>) {
                 // The toggle profile has one Consumer field: a press replaces
                 // whatever was held, and any release clears it (see mutate()
@@ -90,6 +92,7 @@ void InputState::clear() noexcept {
     axes_.fill(0);
     dpad_ = {};
     pen_ = {};
+    digitizer_ = {};
     media_ = 0U;
 }
 
@@ -103,7 +106,7 @@ bool InputState::neutral() const noexcept {
             return false;
     }
     return keys_.none() && mouse_buttons_.empty() && pad_buttons_.empty() && dpad_neutral(dpad_) &&
-           !pen_.in_range && media_ == 0U;
+           !pen_.in_range && !digitizer_.in_range && media_ == 0U;
 }
 
 void InputState::transition(const InputState& from, const InputState& to,
@@ -150,11 +153,19 @@ void InputState::transition(const InputState& from, const InputState& to,
             presses.push_back(MediaKey{to.media_, true});
     }
 
-    if (!same_pen(from.pen_, to.pen_)) {
+    if (!same_stylus(from.pen_, to.pen_)) {
         if (to.pen_.in_range)
             presses.push_back(to.pen_);
         else
             releases.push_back(PenSample{false, false, from.pen_.x, from.pen_.y, 0});
+    }
+
+    if (!same_stylus(from.digitizer_, to.digitizer_)) {
+        if (to.digitizer_.in_range)
+            presses.push_back(to.digitizer_);
+        else
+            releases.push_back(
+                DigitizerSample{false, false, from.digitizer_.x, from.digitizer_.y, 0});
     }
 }
 

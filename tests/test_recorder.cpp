@@ -86,16 +86,11 @@ TEST_CASE("Recordings in both modes play back at the same place") {
         std::filesystem::remove(path);
 
         // Onto a 1080x2400 surface, and onto a different one.
-        aoap::EventScript same;
-        if (!aoap::scale_script(script, 1080, 2400, 0, 0, same))
-            same = script;
-        CHECK(std::get<aoap::TouchEvent>(same.rows[0].payload).x == 540);
-        CHECK(std::get<aoap::TouchEvent>(same.rows[0].payload).y == 1200);
-
-        aoap::EventScript other;
-        REQUIRE(aoap::scale_script(script, 4096, 4096, 0, 0, other));
-        CHECK(std::get<aoap::TouchEvent>(other.rows[0].payload).x == 2049);
-        CHECK(std::get<aoap::TouchEvent>(other.rows[0].payload).y == 2048);
+        const auto& touch = std::get<aoap::TouchEvent>(script.rows[0].payload);
+        CHECK(aoap::scale_coordinate(touch.x, script.screen_width, 1080) == 540);
+        CHECK(aoap::scale_coordinate(touch.y, script.screen_height, 2400) == 1200);
+        CHECK(aoap::scale_coordinate(touch.x, script.screen_width, 4096) == 2049);
+        CHECK(aoap::scale_coordinate(touch.y, script.screen_height, 4096) == 2048);
     }
 }
 

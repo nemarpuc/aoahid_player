@@ -34,21 +34,22 @@ extern std::atomic<int> g_fps_limit;
 
 namespace gui {
 
-// The whole window: device and profile setup on the left, the player and the
-// recorder on the right, the activity log at the bottom. Runs on the UI
-// thread; everything slow happens on the Engine, the recording thread, or a
-// short-lived adb task.
+// The whole window: the nav rail on the left, the tab it picks beside it, the
+// activity log at the bottom. Runs on the UI thread; everything slow happens
+// on the Engine, the recording thread, or a short-lived adb task.
 //
 // One class, split across several .cpp files by what each piece draws or
 // handles — app.cpp keeps only the lifecycle, settings, the frame loop, and
 // the raw input callbacks:
-//   app_shell.cpp     — header, nav rail, sidebar, the activity log panel
-//   app_devices.cpp   — Devices/Profiles cards and their per-profile settings
+//   app_shell.cpp     — header, nav rail, the activity log panel
+//   app_devices.cpp   — the Devices tab: the device list, Connect, and each
+//                       device's HIDs and their settings
 //   app_player.cpp    — the Player tab: script picker, transport, keys
 //   app_live.cpp      — the Live tab
 //   app_playlist.cpp  — the Player tab's Playlist mode
 //   app_recorder.cpp  — the Recorder tab
-//   app_settings.cpp  — the Settings tab: theme, glass, background, Live look
+//   app_settings.cpp  — the Settings tab: theme, glass, background, Live look,
+//                       the control API
 class App {
   public:
     explicit App(std::function<void()> wake);
@@ -105,9 +106,9 @@ class App {
     [[nodiscard]] float ui_scale() const noexcept { return ui_scale_; }
 
   private:
-    // The numbers are what settings.hpp saves; 2 was the Playlist tab, which is
-    // now the Player tab's Playlist mode.
-    enum class Tab : int { player = 0, live = 1, recorder = 3, adb = 4, settings = 5 };
+    // The app always opens on the Devices tab, since it starts with nothing
+    // connected.
+    enum class Tab : uint8_t { devices, live, player, recorder, adb, settings };
     // What the Player tab plays: the one loaded script, or a playlist.
     enum class PlayerMode : int { script = 0, playlist = 1 };
     // The Player tab actions whose key can be remapped; the value indexes
@@ -147,17 +148,21 @@ class App {
         std::vector<aoap::AdbDevice> devices;
         std::string error;
     };
-    // The one-time adb pre-flight run at startup: start the server so `wm
-    // size` answers, read the screen size, then stop it again and give the
-    // OS a moment before the initial device scan.
-    struct StartupPrep {
-        AdbStatus status{AdbStatus::unknown};
-        bool size_ok{};
+    // One phone's screen size, as `adb shell wm size` gave it.
+    struct ScreenSize {
+        std::string serial;
         int32_t width{};
         int32_t height{};
-        std::string size_error;
     };
-    // The Devices card's refresh button: adb kill-server, then a rescan.
+    // The one-time adb pre-flight run at startup: start the server so `wm
+    // size` answers, read every phone's screen size, then stop it again and
+    // give the OS a moment before the initial device scan.
+    struct StartupPrep {
+        AdbStatus status{AdbStatus::unknown};
+        std::vector<ScreenSize> sizes; // every device adb could read
+        std::string size_error;        // why none could be read, when none was
+    };
+    // The Devices tab's refresh button: adb kill-server, then a rescan.
     // `skipped` means a recording was in progress, so adb was left untouched.
     struct RetryPrep {
         bool skipped{};
@@ -192,8 +197,8 @@ class App {
         std::string meta;  // "1.2 KB  ·  2026-09-11 06:20"
     };
 
-    // The connection phase, summarised as one label and dot colour; shared
-    // by the header's pill and the collapsed sidebar's compact readout.
+    // The connection phase, summarised as one label and dot colour, for the
+    // header's pill.
     struct ConnectionStatus {
         std::string text;
         ImU32 dot;
@@ -203,22 +208,30 @@ class App {
 
     // Layout pieces.
     void draw_header();
-    void draw_sidebar();
-    void draw_sidebar_collapsed();
-    void draw_sidebar_splitter(float height);
-    // The Live/Player/Recorder/ADB/Settings switch, as a left icon rail (not a
+    // The Devices/Live/Player/Recorder/ADB/Settings switch, as a left icon rail (not a
     // top segmented control), so it reads as part of the window's chrome
     // rather than a tab bar competing with each screen's own content.
     void draw_nav_rail();
-    void draw_devices_card();
-    void draw_profiles_card();
-    void draw_touch_settings();
-    void draw_mouse_settings();
-    void draw_key_settings();
-    void draw_gamepad_settings();
-    void draw_pen_settings();
+    // The Devices tab: the list on the left, the shown device on the right.
+    void draw_devices();
+    // "Default", the devices found, and Connect below them.
+    void draw_device_list();
+    void draw_connect_row();
+    // The shown device's HID switches and their settings. On a connected
+    // device a switch acts at once and changed settings wait for Apply.
+    void draw_device_detail();
+    // The connected device (snapshot() index) that row `row` of devices_ is,
+    // or SIZE_MAX. Matched by key, and by position among the rows that share
+    // one (two phones can report the same serial).
+    [[nodiscard]] size_t connected_index(size_t row,
+                                         const std::vector<aoap::DeviceStatus>& status) const;
+    // `key` is the device's (DeviceEntry::key), empty for the default.
+    void draw_touch_settings(DeviceConfig& config, const std::string& key);
+    void draw_mouse_settings(DeviceConfig& config);
+    void draw_key_settings(DeviceConfig& config);
+    void draw_gamepad_settings(DeviceConfig& config);
+    void draw_stylus_settings(DeviceConfig& config);
     void draw_toggle_settings();
-    void draw_connect_card();
     // The local HTTP control API's on/off toggle and port; see
     // control_api.hpp.
     void draw_control_api_card();
@@ -307,7 +320,8 @@ class App {
     void delete_script(const std::string& path);
     // The Connect button: the AOA handshake on the current device selection.
     // Touches neither adb nor the device list; both are kept current by the
-    // startup pre-flight and the Devices card's refresh button.
+    // startup pre-flight and the Devices tab's refresh button. Each device is
+    // connected with its own settings.
     void connect();
     // The ADB tab: each connected device's ADB Bridge, turned on and off one
     // by one (see Engine::adb_bridge()).
@@ -319,9 +333,14 @@ class App {
     // on the ADB tab does; an explanation when that is not possible now.
     // `port` (nonzero) replaces the row's port when the bridge is turned on.
     [[nodiscard]] std::string request_bridge(size_t index, bool wanted, int port = 0);
+    // Switches one HID of connected device `index` on or off, as its switch
+    // does; an explanation when that is not possible now.
+    [[nodiscard]] std::string request_hid(size_t index, aoap::Profile profile, bool on);
+    // Applies Engine setup results; every frame.
+    void update_device_setups();
     void restart_adb_server();
     void accessory();
-    // The Devices card's refresh button: adb kill-server, then a rescan. No
+    // The Devices tab's refresh button: adb kill-server, then a rescan. No
     // adb start-server, no screen size, and no handshake — just a cheap way
     // to make USB devices visible again after something else was holding
     // them.
@@ -363,12 +382,17 @@ class App {
     void stop_recording();
     void finish_recording();
     [[nodiscard]] std::string adb_serial() const;
-    [[nodiscard]] aoap::ProfileSetup build_setup() const;
+    [[nodiscard]] aoap::ProfileSetup build_setup(const DeviceConfig& config) const;
+    // The settings of device `key`, starting as a copy of the default.
+    DeviceConfig& config_for(const std::string& key);
+    // The settings the next Connect starts from, for shaping the Live preview
+    // before there is a connection: the first ticked device's, else the
+    // default's.
+    [[nodiscard]] const DeviceConfig& pending_config() const;
     [[nodiscard]] Settings current_settings() const;
     void apply_settings(const Settings& settings);
     // Writes the settings when they differ from what was last saved.
     void persist_settings();
-    [[nodiscard]] bool settings_locked() const;
     [[nodiscard]] bool recording() const;
     // The control API's UiRequests: queued from its thread, carried out by
     // handle_ui_requests() at the start of the next frame.
@@ -398,7 +422,6 @@ class App {
     // whenever draw_control_api_card() changes it.
     bool api_enabled_{};
     int api_port_{default_api_port};
-    bool control_api_open_{}; // the Control API card's folded settings
     // ADB Bridge port per device key (DeviceEntry::key), saved between runs.
     std::map<std::string, int> adb_ports_;
     std::vector<BridgeRow> bridge_rows_;
@@ -406,7 +429,7 @@ class App {
     std::vector<std::future<AdbJob>> adb_jobs_;
     // Selected in the Recorder once the next adb device list contains it.
     std::string prefer_adb_serial_;
-    Tab tab_{Tab::live};
+    Tab tab_{Tab::devices};
     PlayerMode player_mode_{PlayerMode::script};
 
     // Devices.
@@ -414,12 +437,14 @@ class App {
     uint64_t devices_version_{~uint64_t{0}};
     std::set<std::string> selected_;
     std::string connect_error_;
-    float connect_height_{120.0f};
-    float sidebar_width_{392.0f};
-    // Collapses Devices/Profiles/Connect to a slim rail so the Player/Live/
-    // Playlist/Recorder pane can use the full width; meant for once a device
-    // is already connected and the setup cards are not needed for a while.
-    bool sidebar_collapsed_{};
+    // The row of devices_ the Devices tab shows on the right; out of range is
+    // the default. A lone device is shown once, the first time it is found.
+    size_t shown_row_{SIZE_MAX};
+    bool shown_once_{};
+    // The Connect row's height last frame, so the list above it gets the rest.
+    float connect_height_{60.0f};
+    // Connected devices (snapshot() index) with a request on the worker thread.
+    std::set<size_t> setup_busy_;
     bool dark_theme_{true};
     // Set by the Settings tab's theme switch, cleared by consume_theme_change().
     bool theme_dirty_{};
@@ -432,13 +457,12 @@ class App {
     int card_rounding_{12};
     bool motion_{true};
     float ui_scale_{1.0f};
-    bool sidebar_right_{};
     bool log_hidden_{};
     bool toasts_enabled_{true};
     // The tab drawn last frame, and when the tab last changed, for the
     // short fade-in of the new one.
     static constexpr double tab_fade_seconds = 0.15;
-    Tab shown_tab_{Tab::live};
+    Tab shown_tab_{Tab::devices};
     double tab_changed_at_{-1.0};
     // Notices on screen, oldest first; see push_toast().
     struct Toast {
@@ -481,33 +505,16 @@ class App {
     Engine::Phase last_phase_{Engine::Phase::idle};
     AdbStatus adb_status_{AdbStatus::unknown};
 
-    // Profile settings; frozen while connected.
-    bool use_touch_{true};
-    bool use_mouse_{true};
-    bool use_key_{true};
-    bool use_gamepad_{};
-    bool use_pen_{};
-    bool use_toggle_{};
+    // Each device's HIDs and settings by its key; `device_default_` is what a
+    // device seen for the first time starts with.
+    DeviceConfig device_default_;
+    std::map<std::string, DeviceConfig> device_configs_;
+    // Devices whose touchscreen size the startup adb read found this run, and
+    // whether that read has finished.
+    std::set<std::string> size_read_;
+    bool sizes_checked_{};
     // Which profile rows have their settings unfolded (same order as the card).
     bool profile_open_[6]{};
-    // Where the touchscreen size came from: the startup adb read, the user's
-    // own typing, or neither (the saved or built-in value, which may not
-    // match the phone).
-    enum class TouchSize : uint8_t { pending, from_phone, not_read, typed };
-    TouchSize touch_size_{TouchSize::pending};
-    int touch_width_{1440};
-    int touch_height_{2560};
-    // 16 by default (the maximum) so the Live tab's reserved top slot (see
-    // live_finger()) is always available alongside whatever a script uses.
-    int touch_contacts_{16};
-    int mouse_buttons_{5};
-    int key_min_{0x04};
-    int key_max_{0x65};
-    int pad_buttons_{16};
-    int pad_bits_{16};
-    int pad_dpad_{1}; // 0 none, 1 hat, 2 buttons
-    std::vector<aoahid_axis_role> pad_axes_;
-    int pen_mode_{0}; // 0 direct screen, 1 indirect tablet
 
     // Scripts.
     std::vector<ScriptFile> scripts_;

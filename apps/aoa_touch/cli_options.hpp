@@ -22,7 +22,7 @@ struct Options {
     bool all_devices{};
     std::vector<size_t> devices; // one-based indices from the discovery list
 
-    // Profile setup, ready for SpecSet::build().
+    // Profile setup, ready for build_spec().
     ProfileSetup profiles;
     bool auto_resolution{}; // -A: read the size from `adb shell wm size`
 

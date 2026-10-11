@@ -180,12 +180,21 @@ void App::draw_script_card() {
                       aoap::describe_profiles(script_->required_profiles()).c_str());
         small_dim(summary);
 
-        const uint32_t available = engine_.connected() ? engine_.connected_profiles()
-                                                       : aoap::enabled_profiles(build_setup());
-        const uint32_t missing = script_->required_profiles() & ~available;
-        if (missing != 0U) {
-            small_colored(theme::warning, "Rows for the " + aoap::describe_profiles(missing) +
-                                              " are skipped unless that profile is connected.");
+        // Which rows go nowhere, and which only miss some devices. Before
+        // connecting it is not known yet which devices will play it.
+        if (engine_.connected()) {
+            const uint32_t required = script_->required_profiles();
+            const uint32_t missing = required & ~engine_.connected_profiles();
+            if (missing != 0U)
+                small_colored(theme::warning, "Rows for the " + aoap::describe_profiles(missing) +
+                                                  " are skipped: no connected device has it.");
+            for (const aoap::DeviceStatus& device : engine_.device_status()) {
+                const uint32_t lacks = required & ~missing & ~device.profiles;
+                if (device.active && lacks != 0U)
+                    small_colored(theme::warning, device.label + " has no " +
+                                                      aoap::describe_profiles(lacks) +
+                                                      "; those rows are skipped on it.");
+            }
         }
     }
     ui::end_card();
@@ -674,7 +683,7 @@ void App::draw_transport_card() {
     // Active touches: every contact currently down, including Live's own
     // reserved finger (see live_finger()), since playback and Live control
     // can now run at once.
-    if (engine_.connected_setup().touch.enabled && !touch_contacts_active_.empty()) {
+    if (engine_.live_setup().touch.enabled && !touch_contacts_active_.empty()) {
         gap(1);
         ImGui::PushFont(nullptr, theme::font_small);
         draw_touch_contacts();

@@ -55,6 +55,7 @@ class InputState {
     std::array<int32_t, max_axes> axes_{};
     GamepadDpad dpad_{};
     PenSample pen_{};
+    DigitizerSample digitizer_{};
     uint16_t media_{}; // the Consumer usage held down, 0 for none
 };
 

@@ -74,6 +74,7 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
     const size_t count = aoahid_discovery_count(discovery_);
     devices.reserve(count);
     listed_.clear();
+    listed_keys_.clear();
     for (size_t index = 0; index < count; ++index) {
         const aoahid_device_info* info = aoahid_discovery_get(discovery_, index);
         if (info == nullptr || info->protocol_version < 2U)
@@ -97,6 +98,7 @@ bool Session::refresh(std::vector<DeviceEntry>& devices, std::string& error) {
                       static_cast<unsigned>(info->device_address));
         // The serial survives a replug; the bus address is the fallback.
         entry.key = entry.serial.empty() ? std::string(identity) : entry.serial;
+        listed_keys_.push_back(entry.key);
         devices.push_back(std::move(entry));
         listed_.push_back(index);
     }
@@ -145,8 +147,9 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
     return success;
 }
 
-bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& setup,
-                      std::string& error, const AdbBridgeOptions& bridge) {
+bool Session::connect(const std::vector<size_t>& selection,
+                      const std::vector<ProfileSetup>& setups, std::string& error,
+                      const AdbBridgeOptions& bridge) {
     if (connected()) {
         error = "Already connected. Disconnect first.";
         return false;
@@ -159,14 +162,19 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
         error = "Select at least one device.";
         return false;
     }
-    if (!validate_setup(setup, error))
+    if (setups.size() != selection.size()) {
+        error = "Each selected device needs its own profile setup.";
         return false;
+    }
+    for (const ProfileSetup& setup : setups) {
+        if (!validate_setup(setup, error))
+            return false;
+    }
     if (!ensure_context(error))
         return false;
-    if (!specs_.build(setup, error))
-        return false;
 
-    for (const size_t index : selection) {
+    for (size_t chosen = 0; chosen < selection.size(); ++chosen) {
+        const size_t index = selection[chosen];
         const aoahid_device_info* info =
             index < listed_.size() ? aoahid_discovery_get(discovery_, listed_[index]) : nullptr;
         if (info == nullptr) {
@@ -175,27 +183,20 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
         }
         const std::string label = device_label(info);
         Device device;
-        aoahid_result result = device.open(context_, info);
+        const aoahid_result result = device.open(context_, info);
         if (result != AOAHID_OK) {
             note(Severity::warning, "Could not open " + label + ". " + explain_error(result));
             continue;
         }
-        bool ready = true;
-        for (size_t profile = 0; profile < profile_count && ready; ++profile) {
-            aoahid_spec* spec = specs_.get(static_cast<Profile>(profile));
-            if (spec == nullptr)
-                continue;
-            result = device.open_node(static_cast<Profile>(profile), spec);
-            if (result != AOAHID_OK) {
-                note(Severity::warning,
-                     std::string("Could not register the ") +
-                         describe_profiles(profile_bit(static_cast<Profile>(profile))) + " on " +
-                         label + ". " + explain_error(result));
-                ready = false;
-            }
-        }
-        if (!ready)
-            continue; // Device's destructor closes whatever was opened
+        ProfileSetup setup = setups[chosen];
+        resolve_pen_surface(setup);
+        const uint32_t wanted = enabled_profiles(setup);
+        std::string problems;
+        open_profiles(device, setup, problems);
+        if (!problems.empty())
+            note(Severity::warning, problems);
+        if (wanted != 0U && device.profile_mask() == 0U)
+            continue; // nothing could be registered; Device's destructor closes it
         note(Severity::info, "Connected " + label + ".");
         // libaoahid's documented order: the Bulk Channel opens after the Nodes.
         if (bridge.enabled) {
@@ -215,22 +216,23 @@ bool Session::connect(const std::vector<size_t>& selection, const ProfileSetup& 
                                          std::to_string(port) + ".");
             }
         }
-        group_.add_device(std::move(device));
+        group_.add_device(std::move(device), listed_keys_[index], setup);
     }
 
     if (group_.empty()) {
-        specs_.release();
         error = "None of the selected devices could be connected.";
         return false;
     }
-    setup_ = setup;
     Timing::sleep_ms(registration_settle_ms);
     return true;
 }
 
-void Session::disconnect() noexcept {
-    group_.reset();
-    specs_.release();
+bool Session::reconfigure(const size_t device, const ProfileSetup& setup, std::string& error) {
+    if (group_.reconfigure(device, setup, error) != 0U)
+        Timing::sleep_ms(registration_settle_ms);
+    return error.empty();
 }
+
+void Session::disconnect() noexcept { group_.reset(); }
 
 } // namespace aoap

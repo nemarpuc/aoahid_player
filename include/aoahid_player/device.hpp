@@ -19,9 +19,9 @@ namespace aoap {
 constexpr uint16_t default_adb_bridge_port = 6555U;
 
 // The profile families this player drives. The CSV prefixes in README.md map
-// one-to-one onto touch/mouse/key/gamepad/pen. libaoahid's
+// one-to-one onto touch/mouse/key/gamepad/pen/digitizer. libaoahid's
 // battery/raw profiles remain out of scope for this project.
-enum class Profile : size_t { touch = 0, mouse, key, gamepad, pen, toggle, count };
+enum class Profile : size_t { touch = 0, mouse, key, gamepad, pen, digitizer, toggle, count };
 
 constexpr size_t profile_count = static_cast<size_t>(Profile::count);
 constexpr uint32_t profile_bit(Profile profile) noexcept {
@@ -34,8 +34,8 @@ const char* profile_title(Profile profile) noexcept; // "Touchscreen", "Keyboard
 std::string describe_profiles(uint32_t mask);
 
 // RAII wrapper around aoahid_device. Owns Nodes opened against it for the
-// profiles the connection was configured with (touch/mouse/key/gamepad/pen),
-// each built from a Spec constructed once when connecting.
+// profiles the connection was configured with (touch/mouse/key/gamepad/pen/digitizer),
+// each opened from a Spec built for it.
 class Device {
   public:
     Device() noexcept = default;
@@ -53,6 +53,9 @@ class Device {
     // Opens one Node for `spec`. The
     // Spec is retained by the Node, so the caller keeps its own reference.
     aoahid_result open_node(Profile profile, aoahid_spec* spec) noexcept;
+    // Sends the Node's neutral report and unregisters it. On any result but
+    // AOAHID_OK the Node stays open (see libaoahid's docs/API.md).
+    aoahid_result close_node(Profile profile) noexcept;
 
     // Serves the phone's ADB interface on 127.0.0.1:`port` (aoahid_adb_proxy)
     // so `adb connect` works while this program holds the USB device. Call it

@@ -190,6 +190,33 @@ bool parse_usage(const std::string& text, bool (*from_name)(std::string_view, ui
     return !text.empty() && from_name(text, out);
 }
 
+bool parse_profile(const std::string& text, aoap::Profile& out) noexcept {
+    for (size_t index = 0; index < aoap::profile_count; ++index) {
+        const auto profile = static_cast<aoap::Profile>(index);
+        if (text == aoap::profile_name(profile)) {
+            out = profile;
+            return true;
+        }
+    }
+    return false;
+}
+
+std::string profiles_json(const uint32_t mask) {
+    std::string json = "[";
+    for (size_t index = 0; index < aoap::profile_count; ++index) {
+        const auto profile = static_cast<aoap::Profile>(index);
+        if ((mask & aoap::profile_bit(profile)) == 0U)
+            continue;
+        if (json.size() > 1)
+            json += ',';
+        json += '"';
+        json += aoap::profile_name(profile);
+        json += '"';
+    }
+    json += ']';
+    return json;
+}
+
 UiRequest ui_request(const UiRequest::Kind kind) {
     UiRequest request;
     request.kind = kind;
@@ -278,7 +305,7 @@ ControlApi::ControlApi(Engine& engine, UiHandler ui, const UiStatus& status)
 ControlApi::~ControlApi() { stop(); }
 
 int ControlApi::api_finger() const noexcept {
-    const uint32_t contacts = engine_.connected_setup().touch.max_contacts;
+    const uint32_t contacts = engine_.live_setup().touch.max_contacts;
     return contacts > 1 ? static_cast<int>(contacts) - 2 : 0;
 }
 
@@ -356,22 +383,6 @@ void ControlApi::register_routes() {
 
     svr.Get("/status", [this](const Req&, Res& res) {
         const Engine::Phase phase = engine_.phase();
-        const uint32_t profiles = engine_.connected_profiles();
-        std::string profiles_json = "[";
-        bool first = true;
-        for (size_t index = 0; index < aoap::profile_count; ++index) {
-            const auto profile = static_cast<aoap::Profile>(index);
-            if ((profiles & aoap::profile_bit(profile)) == 0U)
-                continue;
-            if (!first)
-                profiles_json += ',';
-            first = false;
-            profiles_json += '"';
-            profiles_json += aoap::profile_name(profile);
-            profiles_json += '"';
-        }
-        profiles_json += ']';
-
         const aoap::PlaybackStatus status = engine_.player().status();
         JsonWriter playback;
         playback.str("state", playback_state_name(status.state))
@@ -389,25 +400,46 @@ void ControlApi::register_routes() {
         available += ']';
         const std::vector<aoap::DeviceStatus> connected = engine_.device_status();
         int64_t active = 0;
-        std::string bridges = "[";
+        std::string devices = "[";
         for (const aoap::DeviceStatus& device : connected) {
             active += device.active ? 1 : 0;
-            if (bridges.size() > 1)
-                bridges += ',';
-            bridges += std::to_string(device.adb_port);
+            if (devices.size() > 1)
+                devices += ',';
+            JsonWriter entry;
+            entry.str("label", device.label)
+                .boolean("active", device.active)
+                .num("bridge", device.adb_port)
+                .num("reports", static_cast<int64_t>(device.reports))
+                .num("skipped", static_cast<int64_t>(device.skipped))
+                .raw("profiles", profiles_json(device.profiles));
+            if ((device.profiles & aoap::profile_bit(aoap::Profile::touch)) != 0U) {
+                JsonWriter touch;
+                touch.num("width", device.setup.touch.width)
+                    .num("height", device.setup.touch.height)
+                    .num("contacts", device.setup.touch.max_contacts);
+                entry.raw("touch", touch.done());
+            }
+            devices += entry.done();
         }
-        bridges += ']';
+        devices += ']';
+
+        // The space /touch, /pen, and /digitizer positions are given in.
+        const aoap::TouchSetup live =
+            engine_.connected() ? engine_.live_setup().touch : aoap::TouchSetup{};
+        JsonWriter space;
+        space.num("width", live.enabled ? live.width : 0)
+            .num("height", live.enabled ? live.height : 0);
 
         JsonWriter writer;
         writer.boolean("ok", true)
             .str("phase", phase_name(phase))
             .boolean("connected", engine_.connected())
-            .num("devices", static_cast<int64_t>(connected.size()))
+            .num("device_count", static_cast<int64_t>(connected.size()))
             .num("active", active)
+            .raw("devices", devices)
+            .raw("space", space.done())
             .boolean("busy", status_.busy.load(std::memory_order_relaxed))
             .raw("available", available)
-            .raw("profiles", profiles_json)
-            .raw("bridges", bridges)
             .boolean("live_active", engine_.live_active())
             .boolean("recording", status_.recording.load(std::memory_order_relaxed))
             .raw("playback", playback.done());
@@ -471,6 +503,22 @@ void ControlApi::register_routes() {
         if (!read_flag(req, res, "on", true, request.on))
             return;
         request.port = static_cast<int>(port);
+        run_ui(request, res);
+    });
+    svr.Post("/hid", [run_ui](const Req& req, Res& res) {
+        UiRequest request = ui_request(UiRequest::Kind::hid);
+        int64_t device = 0;
+        if (!parse_int(req.get_param_value("device"), device) || device < 1 ||
+            !parse_profile(req.get_param_value("profile"), request.profile)) {
+            res.status = 400;
+            res.set_content(json_error("Missing or invalid \"device\" (1-based) or \"profile\" "
+                                       "(touch, mouse, key, gamepad, pen, digitizer, toggle)."),
+                            "application/json");
+            return;
+        }
+        request.device = static_cast<size_t>(device - 1);
+        if (!read_flag(req, res, "on", true, request.on))
+            return;
         run_ui(request, res);
     });
 
@@ -709,32 +757,44 @@ void ControlApi::register_routes() {
         }
         res.set_content(json_ok(), "application/json");
     });
-    svr.Post("/pen", [this](const Req& req, Res& res) {
-        int32_t x = 0;
-        int32_t y = 0;
-        int32_t pressure = 0;
-        if (!parse_int32(req.get_param_value("x"), x) ||
-            !parse_int32(req.get_param_value("y"), y) ||
-            (req.has_param("pressure") &&
-             !parse_int32(req.get_param_value("pressure"), pressure))) {
-            res.status = 400;
-            res.set_content(json_error("Missing or invalid \"x\"/\"y\"/\"pressure\"."),
-                            "application/json");
-            return;
-        }
-        bool in_range = true;
-        bool tip = false;
-        if (!read_flag(req, res, "in_range", true, in_range) ||
-            !read_flag(req, res, "tip", false, tip))
-            return;
-        if (tip && !in_range) {
-            res.status = 400;
-            res.set_content(json_error("\"tip\" needs \"in_range\"."), "application/json");
-            return;
-        }
-        engine_.live_send(aoap::PenSample{in_range, tip, x, y, pressure});
-        res.set_content(json_ok(), "application/json");
-    });
+    // The pen and the digitizer take the same parameters; `sample` builds the
+    // payload of the one the route is for.
+    const auto stylus_route = [this](auto sample) {
+        return [this, sample](const Req& req, Res& res) {
+            int32_t x = 0;
+            int32_t y = 0;
+            int32_t pressure = 0;
+            if (!parse_int32(req.get_param_value("x"), x) ||
+                !parse_int32(req.get_param_value("y"), y) ||
+                (req.has_param("pressure") &&
+                 !parse_int32(req.get_param_value("pressure"), pressure))) {
+                res.status = 400;
+                res.set_content(json_error("Missing or invalid \"x\"/\"y\"/\"pressure\"."),
+                                "application/json");
+                return;
+            }
+            bool in_range = true;
+            bool tip = false;
+            if (!read_flag(req, res, "in_range", true, in_range) ||
+                !read_flag(req, res, "tip", false, tip))
+                return;
+            if (tip && !in_range) {
+                res.status = 400;
+                res.set_content(json_error("\"tip\" needs \"in_range\"."), "application/json");
+                return;
+            }
+            engine_.live_send(sample(in_range, tip, x, y, pressure));
+            res.set_content(json_ok(), "application/json");
+        };
+    };
+    svr.Post("/pen", stylus_route([](bool in_range, bool tip, int32_t x, int32_t y,
+                                     int32_t pressure) {
+        return aoap::PenSample{in_range, tip, x, y, pressure};
+    }));
+    svr.Post("/digitizer", stylus_route([](bool in_range, bool tip, int32_t x, int32_t y,
+                                           int32_t pressure) {
+        return aoap::DigitizerSample{in_range, tip, x, y, pressure};
+    }));
 }
 
 } // namespace gui

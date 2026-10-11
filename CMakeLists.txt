@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.21)
-project(aoahid-player VERSION 2.0.0 LANGUAGES C CXX)
+project(aoahid-player VERSION 3.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -18,25 +18,15 @@ option(AOAHID_PLAYER_BUILD_GUI "Build the Dear ImGui front end (aoahid_player_gu
 option(AOAHID_PLAYER_BUNDLE_RUNTIME
   "Install libaoahid, libusb and, with MSVC, the C++ runtime next to the executables" ON)
 
-# 0.3.0 removed aoahid_gamepad_options.application (see spec_builder.hpp's
-# build_gamepad()); an older libaoahid still compiles against this source but
-# would reject every Gamepad Spec at runtime, so the minimum is pinned here to
-# fail at configure time instead. 0.5.0 renamed aoahid_touch_options to
-# aoahid_touchscreen_options (build_touch() follows), which an older libaoahid
-# would fail to even compile against, so the pin moves with it. 0.5.3 fixed a
-# runtime AOAHID_ERR_PARAM ("HID 1.11 section 8.4 forbids one field from
-# spanning more than four bytes") that an older libaoahid raises for
-# reachable Gamepad settings here: the GUI's D-pad default is Hat and its
-# axis-bits slider (build_gamepad(), 2-32 bits) allows 29-32, a combination
-# an older libaoahid always rejected regardless of any other setting.
-# 3.0.0 added AOAHID_CHANNEL_READ_REQUEST, which the vendored
-# aoahid_adb_proxy (the ADB Bridge) opens its Channel with. 4.0.0 reshaped
-# aoahid_device_info and aoahid_device_options (device.cpp and session.cpp
-# follow) and no longer checks the AOA version at open, so Session::refresh
-# lists only devices whose discovered protocol_version is 2 or later. 4.2.0
-# replaced aoahid.hpp with plain aoahid:: forwarders (device_group.cpp calls them
-# on the Nodes), which an older libaoahid does not have.
-find_package(aoahid 4.2.0 CONFIG REQUIRED)
+# 1.0.0 is the first libaoahid this source builds against. The Pen and the
+# Digitizer are separate profiles from it on (aoahid_spec_create_digitizer; the
+# pen options carry no mode), the aoahid:: forwarders exist (device_group.cpp
+# calls them on the Nodes), and the vendored aoahid_adb_proxy (the ADB Bridge)
+# opens its Channel with AOAHID_CHANNEL_READ_REQUEST. aoahid_device_info and
+# aoahid_device_options have the shape device.cpp and session.cpp follow, and
+# the AOA version is not checked at open, so Session::refresh lists only
+# devices whose discovered protocol_version is 2 or later.
+find_package(aoahid 1.0.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree

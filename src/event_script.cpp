@@ -103,7 +103,7 @@ bool parse_wait_ns(std::string_view text, int64_t& out) noexcept {
 }
 
 // "0.5" -> an index into the 65536-wide normalized space (0..65535); 1.0
-// lands exactly on the highest index, matching scale_coordinate's index
+// lands exactly on the highest index, matching scale_coordinate()'s index
 // convention.
 bool parse_fraction(std::string_view text, int32_t& out) noexcept {
     if (text.empty())
@@ -252,10 +252,12 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count, s
         payload = GamepadDpad{direction[0], direction[1], direction[2], direction[3]};
         return true;
     }
-    case 'p': {
+    case 'p':
+    case 'd': {
+        const std::string name = prefix == 'p' ? "pen" : "digitizer";
         columns = 6;
         if (count != columns && count != columns - 1) {
-            reason = "pen needs in_range,tip,x,y,pressure[,wait_ms]";
+            reason = name + " needs in_range,tip,x,y,pressure[,wait_ms]";
             return false;
         }
         bool in_range = false;
@@ -264,28 +266,31 @@ bool parse_row(const char prefix, std::string_view* field, const size_t count, s
         int32_t y = 0;
         if (!parse_flag(field[0], in_range) || !parse_flag(field[1], tip) ||
             !parse_bounded(field[4], INT32_MIN, INT32_MAX, values[4])) {
-            reason = "pen column is not a valid number";
+            reason = name + " column is not a valid number";
             return false;
         }
         if (normalized) {
             if (!parse_fraction(field[2], x) || !parse_fraction(field[3], y)) {
-                reason = "pen x and y must be a fraction from 0 to 1 under @coords normalized";
+                reason = name + " x and y must be a fraction from 0 to 1 under @coords normalized";
                 return false;
             }
         } else {
             if (!parse_bounded(field[2], INT32_MIN, INT32_MAX, values[2]) ||
                 !parse_bounded(field[3], INT32_MIN, INT32_MAX, values[3])) {
-                reason = "pen column is not a valid number";
+                reason = name + " column is not a valid number";
                 return false;
             }
             x = static_cast<int32_t>(values[2]);
             y = static_cast<int32_t>(values[3]);
         }
         if (tip && !in_range) {
-            reason = "pen tip=1 requires in_range=1";
+            reason = name + " tip=1 requires in_range=1";
             return false;
         }
-        payload = PenSample{in_range, tip, x, y, static_cast<int32_t>(values[4])};
+        if (prefix == 'p')
+            payload = PenSample{in_range, tip, x, y, static_cast<int32_t>(values[4])};
+        else
+            payload = DigitizerSample{in_range, tip, x, y, static_cast<int32_t>(values[4])};
         return true;
     }
     case 'c': {
@@ -343,6 +348,8 @@ uint64_t batch_key(const EventPayload& payload) noexcept {
                 return uint64_t{6} << 56;
             else if constexpr (std::is_same_v<T, PenSample>)
                 return uint64_t{7} << 56;
+            else if constexpr (std::is_same_v<T, DigitizerSample>)
+                return uint64_t{9} << 56;
             else
                 return uint64_t{8} << 56; // one Consumer field: any two rows conflict
         },
@@ -521,52 +528,7 @@ bool parse_every_block(std::string_view argument, LapSelector& out) {
     return true;
 }
 
-// Coordinates are indices (0..count-1), so the highest index in `from`,
-// not `from` itself, must land on the highest index in `to`.
-int32_t scale_coordinate(const int32_t value, const int32_t from, const int32_t to) {
-    const int64_t from_max = from - 1;
-    const int64_t to_max = to - 1;
-    if (from_max <= 0 || to_max <= 0)
-        return 0;
-    const int64_t scaled = (static_cast<int64_t>(value) * to_max + from_max / 2) / from_max;
-    return static_cast<int32_t>(std::clamp<int64_t>(scaled, 0, to_max));
-}
-
 } // namespace
-
-bool scale_script(const EventScript& script, const int32_t touch_width,
-                  const int32_t touch_height, const int32_t pen_width, const int32_t pen_height,
-                  EventScript& out) {
-    const int32_t from_w = script.screen_width;
-    const int32_t from_h = script.screen_height;
-    if (from_w <= 0 || from_h <= 0)
-        return false;
-    const bool touch = touch_width > 0 && touch_height > 0 &&
-                       (touch_width != from_w || touch_height != from_h);
-    const bool pen =
-        pen_width > 0 && pen_height > 0 && (pen_width != from_w || pen_height != from_h);
-    if (!touch && !pen)
-        return false;
-
-    out = script;
-    const auto convert = [&](std::vector<EventRecord>& rows) {
-        for (EventRecord& record : rows) {
-            if (auto* contact = std::get_if<TouchEvent>(&record.payload); contact && touch) {
-                contact->x = scale_coordinate(contact->x, from_w, touch_width);
-                contact->y = scale_coordinate(contact->y, from_h, touch_height);
-            } else if (auto* sample = std::get_if<PenSample>(&record.payload); sample && pen) {
-                sample->x = scale_coordinate(sample->x, from_w, pen_width);
-                sample->y = scale_coordinate(sample->y, from_h, pen_height);
-            }
-        }
-    };
-    convert(out.rows);
-    if (touch) {
-        out.screen_width = touch_width;
-        out.screen_height = touch_height;
-    }
-    return true;
-}
 
 bool EventScript::load(const std::string& path, std::string& error) {
     rows.clear();

@@ -135,64 +135,101 @@ std::string one_line(const std::string& value) {
     return value.find_first_of("\r\n") == std::string::npos ? value : std::string();
 }
 
+// One `key = value` line of a "[device ...]" section.
+void read_device_key(const std::string& key, const std::string& value, DeviceConfig& config) {
+    if (key == "touch")
+        read_bool(value, config.use_touch);
+    else if (key == "touch.width")
+        read_int(value, 1, INT32_MAX, config.touch_width);
+    else if (key == "touch.height")
+        read_int(value, 1, INT32_MAX, config.touch_height);
+    else if (key == "touch.contacts")
+        read_int(value, 1, 16, config.touch_contacts);
+    else if (key == "touch.size_typed")
+        read_bool(value, config.touch_size_typed);
+    else if (key == "mouse")
+        read_bool(value, config.use_mouse);
+    else if (key == "mouse.buttons")
+        read_int(value, 1, 16, config.mouse_buttons);
+    else if (key == "keyboard")
+        read_bool(value, config.use_key);
+    else if (key == "keyboard.usage_min")
+        read_hex(value, 0x04, 0xDF, config.key_min);
+    else if (key == "keyboard.usage_max")
+        read_hex(value, 0x04, 0xDF, config.key_max);
+    else if (key == "gamepad")
+        read_bool(value, config.use_gamepad);
+    else if (key == "gamepad.buttons")
+        read_int(value, 1, 32, config.pad_buttons);
+    else if (key == "gamepad.axis_bits")
+        read_int(value, 2, 32, config.pad_bits);
+    else if (key == "gamepad.dpad") {
+        if (value == "none")
+            config.pad_dpad = 0;
+        else if (value == "hat")
+            config.pad_dpad = 1;
+        else if (value == "buttons")
+            config.pad_dpad = 2;
+    } else if (key == "gamepad.axes")
+        read_axes(value, config.pad_axes);
+    else if (key == "pen")
+        read_bool(value, config.use_pen);
+    else if (key == "digitizer")
+        read_bool(value, config.use_digitizer);
+    else if (key == "pen.mode") {
+        // Older files chose the Digitizer form with a mode on the pen.
+        if (value == "indirect" && config.use_pen) {
+            config.use_pen = false;
+            config.use_digitizer = true;
+        }
+    } else if (key == "toggle")
+        read_bool(value, config.use_toggle);
+    if (config.key_max < config.key_min)
+        config.key_max = config.key_min;
+}
+
 // Reads `key = value` lines over `settings`; lines it does not know, and
-// values it cannot read, leave the setting as it was.
+// values it cannot read, leave the setting as it was. A "[device <key>]" line
+// starts that device's settings, which run to the next section.
 void read_lines(std::istream& file, Settings& settings) {
     std::string line;
+    DeviceConfig* section = nullptr;
+    DeviceConfig discarded;
     while (std::getline(file, line)) {
         const std::string_view view = trim(line);
         if (view.empty() || view.front() == '#')
             continue;
+        if (view.front() == '[') {
+            // "default" is what new devices start with. A device's section
+            // starts from the default read so far. Any other section is read
+            // and dropped.
+            section = &discarded;
+            if (view.back() == ']' && view.rfind("[device ", 0) == 0) {
+                const std::string name(trim(view.substr(8, view.size() - 9)));
+                if (name == "default")
+                    section = &settings.device_default;
+                else if (!name.empty())
+                    section =
+                        &settings.devices.try_emplace(name, settings.device_default).first->second;
+            }
+            continue;
+        }
         const size_t equals = view.find('=');
         if (equals == std::string_view::npos)
             continue;
         const std::string key(trim(view.substr(0, equals)));
         const std::string value(trim(view.substr(equals + 1)));
-
-        if (key == "touch")
-            read_bool(value, settings.use_touch);
-        else if (key == "touch.width")
-            read_int(value, 1, INT32_MAX, settings.touch_width);
-        else if (key == "touch.height")
-            read_int(value, 1, INT32_MAX, settings.touch_height);
-        else if (key == "touch.contacts")
-            read_int(value, 1, 16, settings.touch_contacts);
-        else if (key == "mouse")
-            read_bool(value, settings.use_mouse);
-        else if (key == "mouse.buttons")
-            read_int(value, 1, 16, settings.mouse_buttons);
-        else if (key == "keyboard")
-            read_bool(value, settings.use_key);
-        else if (key == "keyboard.usage_min")
-            read_hex(value, 0x04, 0xDF, settings.key_min);
-        else if (key == "keyboard.usage_max")
-            read_hex(value, 0x04, 0xDF, settings.key_max);
-        else if (key == "gamepad")
-            read_bool(value, settings.use_gamepad);
-        else if (key == "gamepad.buttons")
-            read_int(value, 1, 32, settings.pad_buttons);
-        else if (key == "gamepad.axis_bits")
-            read_int(value, 2, 32, settings.pad_bits);
-        else if (key == "gamepad.dpad") {
-            if (value == "none")
-                settings.pad_dpad = 0;
-            else if (value == "hat")
-                settings.pad_dpad = 1;
-            else if (value == "buttons")
-                settings.pad_dpad = 2;
+        if (section != nullptr) {
+            read_device_key(key, value, *section);
+            continue;
         }
-        else if (key == "gamepad.axes")
-            read_axes(value, settings.pad_axes);
-        else if (key == "record.coords") {
+
+        if (key == "record.coords") {
             if (value == "raw")
                 settings.record_coords = 0;
             else if (value == "normalized")
                 settings.record_coords = 1;
         }
-        else if (key == "pen")
-            read_bool(value, settings.use_pen);
-        else if (key == "toggle")
-            read_bool(value, settings.use_toggle);
         else if (key.rfind("adb_bridge.port.", 0) == 0 && key.size() > 16) {
             int port = 0;
             read_int(value, 1024, 65535, port);
@@ -203,12 +240,6 @@ void read_lines(std::istream& file, Settings& settings) {
             read_bool(value, settings.api_enabled);
         else if (key == "api.port")
             read_int(value, 1024, 65535, settings.api_port);
-        else if (key == "pen.mode") {
-            if (value == "direct")
-                settings.pen_mode = 0;
-            else if (value == "indirect")
-                settings.pen_mode = 1;
-        }
         else if (key == "live.release_key")
             read_int(value, 0, 348, settings.live_release_key);
         else if (key == "player.play_key")
@@ -217,10 +248,6 @@ void read_lines(std::istream& file, Settings& settings) {
             read_int(value, 0, 348, settings.player_stop_key);
         else if (key == "player.restart_key")
             read_int(value, 0, 348, settings.player_restart_key);
-        else if (key == "ui.sidebar_width")
-            read_float(value, 280.0f, 640.0f, settings.sidebar_width);
-        else if (key == "ui.sidebar_collapsed")
-            read_bool(value, settings.sidebar_collapsed);
         else if (key == "ui.dark_theme")
             read_bool(value, settings.dark_theme);
         else if (key == "ui.accent")
@@ -238,8 +265,6 @@ void read_lines(std::istream& file, Settings& settings) {
             read_float(value, ui_scales[0], ui_scales[std::size(ui_scales) - 1], scale);
             settings.ui_scale = nearest_ui_scale(scale);
         }
-        else if (key == "ui.sidebar_right")
-            read_bool(value, settings.sidebar_right);
         else if (key == "ui.log_hidden")
             read_bool(value, settings.log_hidden);
         else if (key == "ui.toasts")
@@ -270,8 +295,6 @@ void read_lines(std::istream& file, Settings& settings) {
             read_int(value, 0, 16384, settings.window_height);
         else if (key == "ui.player_mode")
             read_int(value, 0, 1, settings.player_mode);
-        else if (key == "ui.tab")
-            read_int(value, 0, 5, settings.tab);
         else if (key == "ui.last_script")
             settings.last_script = value;
         else if (key == "ui.log_open")
@@ -318,8 +341,6 @@ void read_lines(std::istream& file, Settings& settings) {
         else if (key == "live_image.locked")
             read_bool(value, settings.live_image_locked);
     }
-    if (settings.key_max < settings.key_min)
-        settings.key_max = settings.key_min;
 }
 
 // Everything about how the window looks: the part of the settings a theme
@@ -343,7 +364,6 @@ void write_look(std::ostream& out, const Settings& settings) {
     out << "live.phone_glass = " << (settings.live_phone_glass ? 1 : 0) << '\n';
     out << "live.phone_clear = " << settings.live_phone_clear << '\n';
     out << "live.phone_rounding = " << settings.live_phone_rounding << '\n';
-    out << "ui.sidebar_right = " << (settings.sidebar_right ? 1 : 0) << '\n';
     out << "ui.log_hidden = " << (settings.log_hidden ? 1 : 0) << '\n';
     out << "ui.toasts = " << (settings.toasts ? 1 : 0) << '\n';
 }
@@ -384,6 +404,25 @@ std::filesystem::path theme_file(const std::string& name) {
 
 } // namespace
 
+bool& device_switch(DeviceConfig& config, const aoap::Profile profile) noexcept {
+    switch (profile) {
+    case aoap::Profile::touch:
+        return config.use_touch;
+    case aoap::Profile::mouse:
+        return config.use_mouse;
+    case aoap::Profile::key:
+        return config.use_key;
+    case aoap::Profile::gamepad:
+        return config.use_gamepad;
+    case aoap::Profile::pen:
+        return config.use_pen;
+    case aoap::Profile::digitizer:
+        return config.use_digitizer;
+    default:
+        return config.use_toggle;
+    }
+}
+
 float nearest_ui_scale(const float scale) {
     float best = ui_scales[0];
     for (const float candidate : ui_scales)
@@ -411,26 +450,6 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     std::ostringstream out;
     char hex[8];
     out << "# AOA HID Player settings, saved automatically. Delete this file to reset.\n";
-    out << "touch = " << (settings.use_touch ? 1 : 0) << '\n';
-    out << "touch.width = " << settings.touch_width << '\n';
-    out << "touch.height = " << settings.touch_height << '\n';
-    out << "touch.contacts = " << settings.touch_contacts << '\n';
-    out << "mouse = " << (settings.use_mouse ? 1 : 0) << '\n';
-    out << "mouse.buttons = " << settings.mouse_buttons << '\n';
-    out << "keyboard = " << (settings.use_key ? 1 : 0) << '\n';
-    std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned>(settings.key_min));
-    out << "keyboard.usage_min = " << hex << '\n';
-    std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned>(settings.key_max));
-    out << "keyboard.usage_max = " << hex << '\n';
-    out << "gamepad = " << (settings.use_gamepad ? 1 : 0) << '\n';
-    out << "gamepad.buttons = " << settings.pad_buttons << '\n';
-    out << "gamepad.axis_bits = " << settings.pad_bits << '\n';
-    out << "gamepad.dpad = "
-        << (settings.pad_dpad == 0 ? "none" : settings.pad_dpad == 2 ? "buttons" : "hat") << '\n';
-    out << "gamepad.axes = " << axes_text(settings.pad_axes) << '\n';
-    out << "pen = " << (settings.use_pen ? 1 : 0) << '\n';
-    out << "pen.mode = " << (settings.pen_mode == 1 ? "indirect" : "direct") << '\n';
-    out << "toggle = " << (settings.use_toggle ? 1 : 0) << '\n';
     for (const auto& [device, port] : settings.adb_ports)
         if (!one_line(device).empty())
             out << "adb_bridge.port." << device << " = " << port << '\n';
@@ -440,13 +459,10 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "player.play_key = " << settings.player_play_key << '\n';
     out << "player.stop_key = " << settings.player_stop_key << '\n';
     out << "player.restart_key = " << settings.player_restart_key << '\n';
-    out << "ui.sidebar_width = " << settings.sidebar_width << '\n';
-    out << "ui.sidebar_collapsed = " << (settings.sidebar_collapsed ? 1 : 0) << '\n';
     out << "window.x = " << settings.window_x << '\n';
     out << "window.y = " << settings.window_y << '\n';
     out << "window.width = " << settings.window_width << '\n';
     out << "window.height = " << settings.window_height << '\n';
-    out << "ui.tab = " << settings.tab << '\n';
     out << "ui.player_mode = " << settings.player_mode << '\n';
     out << "ui.last_script = " << one_line(settings.last_script) << '\n';
     out << "ui.log_open = " << (settings.log_open ? 1 : 0) << '\n';
@@ -469,6 +485,39 @@ bool save_settings(const std::filesystem::path& path, const Settings& settings,
     out << "live_image.opacity = " << settings.live_image_opacity << '\n';
     out << "live_image.locked = " << (settings.live_image_locked ? 1 : 0) << '\n';
     write_look(out, settings);
+    const auto write_device = [&](const std::string& name, const DeviceConfig& config) {
+        out << "\n[device " << name << "]\n";
+        out << "touch = " << (config.use_touch ? 1 : 0) << '\n';
+        out << "touch.width = " << config.touch_width << '\n';
+        out << "touch.height = " << config.touch_height << '\n';
+        out << "touch.contacts = " << config.touch_contacts << '\n';
+        out << "touch.size_typed = " << (config.touch_size_typed ? 1 : 0) << '\n';
+        out << "mouse = " << (config.use_mouse ? 1 : 0) << '\n';
+        out << "mouse.buttons = " << config.mouse_buttons << '\n';
+        out << "keyboard = " << (config.use_key ? 1 : 0) << '\n';
+        std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned>(config.key_min));
+        out << "keyboard.usage_min = " << hex << '\n';
+        std::snprintf(hex, sizeof hex, "0x%02X", static_cast<unsigned>(config.key_max));
+        out << "keyboard.usage_max = " << hex << '\n';
+        out << "gamepad = " << (config.use_gamepad ? 1 : 0) << '\n';
+        out << "gamepad.buttons = " << config.pad_buttons << '\n';
+        out << "gamepad.axis_bits = " << config.pad_bits << '\n';
+        out << "gamepad.dpad = "
+            << (config.pad_dpad == 0 ? "none" : config.pad_dpad == 2 ? "buttons" : "hat") << '\n';
+        out << "gamepad.axes = " << axes_text(config.pad_axes) << '\n';
+        out << "pen = " << (config.use_pen ? 1 : 0) << '\n';
+        out << "digitizer = " << (config.use_digitizer ? 1 : 0) << '\n';
+        out << "toggle = " << (config.use_toggle ? 1 : 0) << '\n';
+    };
+    // The sections come last: every line after one belongs to it.
+    write_device("default", settings.device_default);
+    for (const auto& [key, config] : settings.devices) {
+        // A key that would not read back as this section's name is left out.
+        if (key.empty() || key == "default" || key.find_first_of("]\r\n") != std::string::npos ||
+            trim(key) != key)
+            continue;
+        write_device(key, config);
+    }
     return write_file(path, out.str(), error);
 }
 

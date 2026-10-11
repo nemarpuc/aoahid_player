@@ -3,6 +3,7 @@
 // conversion, comment/BOM handling) and batch_key().
 #include "doctest.h"
 
+#include "aoahid_player/device.hpp"
 #include "aoahid_player/event_script.hpp"
 
 #include <ostream>
@@ -105,6 +106,43 @@ TEST_CASE("EventScript::load rejects pen tip=1 without in_range=1") {
     std::filesystem::remove(path);
 }
 
+TEST_CASE("EventScript::load reads a digitizer row like a pen row, for its own profile") {
+    const std::string path = write_temp_csv("digitizer",
+        "d,1,0,50,60,0,5\n"
+        "d,1,1,50,60,2000,5\n"
+        "p,1,1,50,60,2000,5\n");
+
+    aoap::EventScript script;
+    std::string error;
+    REQUIRE(script.load(path, error));
+    REQUIRE(script.rows.size() == 3);
+
+    const auto& hover = std::get<aoap::DigitizerSample>(script.rows[0].payload);
+    CHECK(hover.in_range == true);
+    CHECK(hover.tip == false);
+    const auto& contact = std::get<aoap::DigitizerSample>(script.rows[1].payload);
+    CHECK(contact.tip == true);
+    CHECK(contact.pressure == 2000);
+    CHECK(std::holds_alternative<aoap::PenSample>(script.rows[2].payload));
+    CHECK(script.required_profiles() ==
+          (aoap::profile_bit(aoap::Profile::pen) | aoap::profile_bit(aoap::Profile::digitizer)));
+    CHECK(aoap::batch_key(script.rows[0].payload) != aoap::batch_key(script.rows[2].payload));
+
+    std::filesystem::remove(path);
+}
+
+TEST_CASE("EventScript::load rejects digitizer tip=1 without in_range=1") {
+    const std::string path = write_temp_csv("digitizer_invariant", "d,0,1,50,60,2000,5\n");
+
+    aoap::EventScript script;
+    std::string error;
+    CHECK_FALSE(script.load(path, error));
+    CHECK(error.find("digitizer") != std::string::npos);
+    CHECK(error.find("in_range") != std::string::npos);
+
+    std::filesystem::remove(path);
+}
+
 TEST_CASE("EventScript::load rejects an unknown row prefix") {
     const std::string path = write_temp_csv("bad_prefix", "z,1,2,3\n");
 
@@ -143,35 +181,16 @@ TEST_CASE("batch_key distinguishes controls and merges mouse moves") {
     CHECK(batch_key(aoap::KeyEvent{0x04, true}) != batch_key(aoap::MouseButton{1, true}));
 }
 
-TEST_CASE("scale_script maps touch and pen rows onto the connected surfaces") {
-    aoap::EventScript script;
-    script.screen_width = 4096;
-    script.screen_height = 4096;
-    script.rows.push_back({aoap::TouchEvent{0, true, 0, 0}, 0});
-    script.rows.push_back({aoap::TouchEvent{1, true, 2048, 4095}, 1'000'000});
-    script.rows.push_back({aoap::PenSample{true, true, 4095, 1024, 100}, 0});
-    script.rows.push_back({aoap::KeyEvent{0x04, true}, 0});
-
-    aoap::EventScript scaled;
-    REQUIRE(aoap::scale_script(script, 1080, 2400, 32768, 32768, scaled));
-    const auto& first = std::get<aoap::TouchEvent>(scaled.rows[0].payload);
-    CHECK(first.x == 0);
-    CHECK(first.y == 0);
-    const auto& moved = std::get<aoap::TouchEvent>(scaled.rows[1].payload);
-    CHECK(moved.x == 540);  // the middle stays the middle
-    CHECK(moved.y == 2399); // the last coordinate stays inside the surface
-    const auto& pen = std::get<aoap::PenSample>(scaled.rows[2].payload);
-    CHECK(pen.x == 32767);
-    CHECK(pen.y == 8194);
-    CHECK(std::get<aoap::KeyEvent>(scaled.rows[3].payload).usage == 0x04);
-    CHECK(scaled.rows[1].wait_ns == 1'000'000); // timing untouched
-    CHECK(scaled.screen_width == 1080);
-
-    aoap::EventScript untouched;
-    CHECK_FALSE(aoap::scale_script(script, 4096, 4096, 0, 0, untouched)); // same size
-    aoap::EventScript undeclared;
-    undeclared.rows = script.rows;
-    CHECK_FALSE(aoap::scale_script(undeclared, 1080, 2400, 0, 0, untouched)); // no space
+TEST_CASE("scale_coordinate maps the last index of one space onto the last of another") {
+    CHECK(aoap::scale_coordinate(0, 4096, 1080) == 0);
+    CHECK(aoap::scale_coordinate(2048, 4096, 1080) == 540);   // the middle stays the middle
+    CHECK(aoap::scale_coordinate(4095, 4096, 2400) == 2399);  // the last stays inside
+    CHECK(aoap::scale_coordinate(4095, 4096, 32768) == 32767);
+    CHECK(aoap::scale_coordinate(1024, 4096, 32768) == 8194);
+    CHECK(aoap::scale_coordinate(500, 1080, 1080) == 500);    // same size: unchanged
+    CHECK(aoap::scale_coordinate(9999, 4096, 1080) == 1079);  // clamped to the surface
+    CHECK(aoap::scale_coordinate(-5, 4096, 1080) == 0);
+    CHECK(aoap::scale_coordinate(10, 1, 1080) == 0);          // a space of one point has no extent
 }
 
 TEST_CASE("EventScript::load reports every bad row, not only the first") {
@@ -266,11 +285,9 @@ TEST_CASE("@coords normalized reads touch and pen positions as fractions") {
     CHECK(corner.x == 0);
     CHECK(corner.y == 65535);
 
-    aoap::EventScript scaled;
-    REQUIRE(aoap::scale_script(script, 1080, 2400, 0, 0, scaled));
-    CHECK(std::get<aoap::TouchEvent>(scaled.rows[0].payload).x == 540);
-    CHECK(std::get<aoap::TouchEvent>(scaled.rows[0].payload).y == 600);
-    CHECK(std::get<aoap::TouchEvent>(scaled.rows[2].payload).y == 2399);
+    CHECK(aoap::scale_coordinate(touch.x, script.screen_width, 1080) == 540);
+    CHECK(aoap::scale_coordinate(touch.y, script.screen_height, 2400) == 600);
+    CHECK(aoap::scale_coordinate(corner.y, script.screen_height, 2400) == 2399);
 
     std::filesystem::remove(path);
 }
@@ -318,7 +335,7 @@ TEST_CASE("EventScript::load parses media key rows by name or usage") {
     // One Consumer field: every media row conflicts with every other.
     CHECK(aoap::batch_key(script.rows[0].payload) == aoap::batch_key(script.rows[2].payload));
     CHECK(aoap::batch_key(script.rows[0].payload) != 0U);
-    CHECK(script.required_profiles() == (uint32_t{1} << 5)); // Profile::toggle
+    CHECK(script.required_profiles() == aoap::profile_bit(aoap::Profile::toggle));
 
     std::filesystem::remove(path);
 }

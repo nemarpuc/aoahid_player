@@ -20,13 +20,14 @@ namespace gui {
 // A request only the UI thread can carry out, because it owns the device
 // selection, the profile settings, the recorder, and the ADB Bridge rows.
 struct UiRequest {
-    enum class Kind : uint8_t { refresh, connect, record_start, record_stop, bridge };
+    enum class Kind : uint8_t { refresh, connect, record_start, record_stop, bridge, hid };
     Kind kind{Kind::refresh};
     std::vector<size_t> devices; // connect: indices into the device list; empty = keep
     bool all_devices{};          // connect: every listed device
     std::string name;            // record_start: file name, empty = timestamped
-    size_t device{};             // bridge: index into the connected devices
-    bool on{};                   // bridge
+    size_t device{};             // bridge, hid: index into the connected devices
+    bool on{};                   // bridge, hid
+    aoap::Profile profile{};     // hid
     int port{};                  // bridge: 0 = the port the ADB tab shows
 };
 
@@ -47,8 +48,8 @@ struct UiStatus {
 
 // A small local HTTP control surface for driving the connected phone from
 // another program: refresh, connect, and disconnect; play/stop/seek a script;
-// forward touch/mouse/keyboard/gamepad/pen/media-key input; record; switch
-// ADB Bridges; and read status. Input and playback routes are thin
+// forward touch/mouse/keyboard/gamepad/pen/digitizer/media-key input; record; switch
+// ADB Bridges and a device's HIDs; and read status. Input and playback routes are thin
 // translations into the same Engine calls the UI itself makes (already safe
 // to call from any thread — see engine.hpp). Routes that need the UI's own
 // state go through `ui` (a UiRequest the UI thread runs on its next frame),

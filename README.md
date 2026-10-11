@@ -3,7 +3,7 @@
 [![ci](https://github.com/nemarpuc/aoahid_player/actions/workflows/ci.yml/badge.svg)](https://github.com/nemarpuc/aoahid_player/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Plays scripted touch, mouse, keyboard, gamepad, and pen input to Android
+Plays scripted touch, mouse, keyboard, gamepad, pen, and digitizer input to Android
 devices over USB with AOA 2.0 HID, and records real touches and key presses
 into the same script format with `adb`. Linux and Windows, x86_64 and ARM64,
 C++20.
@@ -23,8 +23,8 @@ the protocol, descriptor, and transport details.
 
 Tested on real hardware: touchscreen, keyboard, mouse, gamepad, and media keys
 (the *toggle* profile) on a Samsung Galaxy Tab S11 and a POCO F6 Pro, from
-Windows 10 x64 and Arch Linux. The pen profile has not been tested on hardware
-yet.
+Windows 10 x64 and Arch Linux. The pen and digitizer profiles have not been
+tested on hardware yet.
 
 ## Download
 
@@ -57,49 +57,76 @@ every phone; see [Troubleshooting](#troubleshooting).
 
 ## The GUI
 
-Start `aoahid_player_gui`. The profile settings are saved to
+Start `aoahid_player_gui`. The settings are saved to
 `aoahid_player_gui.ini` next to the program whenever you finish changing them,
 and restored at the next start; delete the file to go back to the defaults.
-If the folder is read-only, changes last until the app closes.
+If the folder is read-only, changes last until the app closes. Each device's
+HIDs and their settings are kept in a section of their own, `[device <serial>]`
+(a phone that reports no serial is known by its USB address instead, so its
+settings are not found again once it is plugged in elsewhere, and two phones
+with the same serial share one section). A file written by 2.0.0 or earlier
+keeps its window settings; its profile settings are not read.
 
 On startup, before the first device scan, the app starts the adb server,
-reads the touchscreen resolution with `adb shell wm size`, and stops the
-server again (it can otherwise hold the phone's USB interface and block the
-accessory handshake) — all once, so Connect itself never has to wait on adb.
-An *adb* status pill next to the connection status (top right) shows whether
-the server is running, stopped, not found, or not yet known, and each change
-is logged.
+reads every phone's touchscreen resolution with `adb shell wm size`, and
+stops the server again (it can otherwise hold the phones' USB interfaces and
+block the accessory handshake) — all once, so Connect itself never has to
+wait on adb. An *adb* status pill next to the connection status (top right)
+shows whether the server is running, stopped, not found, or not yet known,
+and each change is logged.
 
-**Left side — connection**
+The icons on the left switch between the tabs: Devices, Live, Player,
+Recorder, ADB, and Settings. The app opens on Devices.
 
-1. *Devices* lists AOA-capable phones; the refresh button stops the adb
-   server (in case something else started it since) and searches again,
-   without touching the screen size or connecting on its own — press Connect
-   once the phone reappears. Tick one or more (a single phone is ticked for
-   you).
-2. *Profiles* chooses which HID devices to present: touchscreen, mouse,
-   keyboard, gamepad, pen, toggle. All of them start off. Each row has a
-   switch, a one-line summary, and an arrow that opens that profile's settings
-   (they start folded); hover a name to see what the profile is for.
+**Devices tab**
+
+1. The list on the left holds *Default* and every AOA-capable phone found.
+   The refresh button stops the adb server (in case something else started
+   it since) and searches again, without touching the screen size or
+   connecting on its own. Clicking a row shows that device on the right;
+   ticking its box chooses it for Connect (a single phone is ticked for you).
+2. The right side shows the HIDs the device presents: touchscreen, mouse,
+   keyboard, gamepad, pen, digitizer, toggle. Touchscreen, mouse, and keyboard
+   start on.
+   Each row has a switch, a one-line summary, and an arrow that opens that
+   HID's settings (they start folded); hover a name to see what it is for.
+   Every device has its own switches and settings. A phone seen for the
+   first time starts with a copy of *Default*; changing *Default* later does
+   not change the phones already listed.
    The touchscreen resolution comes from the startup adb read described above
    (an override size wins, because that is what touches map to); type into
-   the width/height fields to set it by hand instead. When the read failed,
+   the width/height fields to set it by hand instead, and a typed size is
+   kept at the next start. When the read failed,
    the size is shown in the warning colour until it is typed in, because
    touches land in the wrong place if it does not match the phone. *Contacts* (16 by
    default, the maximum) is how many simultaneous fingers the touchscreen
    declares; the Live tab always uses the last one for its own pointer (see
    *Live tab*, below), so a script gets one fewer than this to itself.
-3. *Connect* (available once at least one profile is on) starts the AOA
-   handshake on the ticked devices right away —
+3. *Connect* (below the list, available once a ticked device has at least one
+   HID on) starts the AOA handshake on the ticked devices right away, each
+   with its own settings —
    it does not touch adb or rescan, so it stays fast how ever many devices
    are ticked. *Accessory Mode* switches the ticked devices into AOA
    accessory mode without taking the connection; to leave this mode
    afterwards, physically unplug and replug the USB cable.
 
-While connected, the profile choices are locked; disconnect to change them.
-Each connected phone shows a status dot and its report count (and its ADB
-Bridge port, see *ADB tab*), and a phone that stops responding is dropped
-without stopping playback for the others.
+While connected, a device's HIDs can still be changed. A switch adds or
+removes that HID on the phone at once; changed settings (a resolution, a
+button count) wait for *Apply*, which registers the HID again with the new
+values. Either works while stopped, paused, or in Live control, not while a
+script is playing: pause or stop first. What Live control was holding is
+released before a change, and input waits about 100 ms after a HID is added
+while Android registers it. A device can be left with no HID at all; it stays
+connected and receives nothing. A HID that the phone refuses stays off and the
+reason goes to the Activity panel.
+
+Each connected phone shows a status dot, the HIDs it has, and its report count
+(and its ADB Bridge port, see *ADB tab*), and a phone that stops responding is
+dropped without stopping playback for the others. A script row goes to every
+phone that has its HID; a phone without it skips the row, and so does a phone
+whose settings the row does not fit (a position outside its screen, more
+fingers than it declares). The Activity panel says which rows which phone
+skipped.
 
 **Player tab**
 
@@ -135,9 +162,12 @@ without stopping playback for the others.
 **Live tab**
 
 The phone's shape, black, on the window's background, for using the phone
-from the computer and watching what the scripts do. It is the tab the app opens on the first
-time. Live control starts as soon as the tab is open while a phone is
-connected. In the panel on the right, the *Forward* card's switches choose
+from the computer and watching what the scripts do. Live control starts as
+soon as the tab is open while a phone is connected. With several phones, the
+preview has the shape of the first one that has a touchscreen, and what is
+sent goes to all of them: touches are scaled to each phone's own resolution,
+and the Live finger is the last contact of the touchscreen that declares the
+fewest. In the panel on the right, the *Forward* card's switches choose
 what the preview forwards: *Touch* (drag inside the preview), *Mouse* (motion,
 buttons, and the wheel), *Keyboard*, *Gamepad* (any controller GLFW
 recognises), and *Toggle* (media and system keys); *Touch* and *Keyboard*
@@ -337,11 +367,12 @@ How the window looks, all saved between runs:
   *Clear* (0% solid to 100% clear); *Corners* rounds the phone's corners (0-60 px),
   glass or black. Around the phone, the window's background always shows.
   Also the reference image described under *Live tab*.
-- *Layout*: the sidebar on the *Left* or *Right*; *Show activity panel*;
-  and *Notifications*, which show warnings, errors, connecting, and
-  disconnecting for a few seconds in the bottom corner away from the
-  sidebar (hover keeps one up, a click dismisses it). Startup messages go
+- *Layout*: *Show activity panel*, and *Notifications*, which show warnings,
+  errors, connecting, and disconnecting for a few seconds in the bottom-right
+  corner (hover keeps one up, a click dismisses it). Startup messages go
   only to the Activity panel, unless it is hidden.
+- *Control API*: the switch and the port of the local HTTP server described
+  in the next section.
 
 On a Wayland session with XWayland available, the GUI opens through
 XWayland, because GLFW's native Wayland backend has no input method support;
@@ -357,10 +388,10 @@ compositor's scale on Wayland.
 ## Control API
 
 A local HTTP server another program can use to drive the phone — the same
-things the Devices card, Live control, the Player tab, the Recorder, and the
+things the Devices tab, Live control, the Player tab, the Recorder, and the
 ADB tab do, callable over plain HTTP. Off by default; turn it on with the
-sidebar's *Control API* switch (its arrow opens the *Port* it listens on,
-47821 by default). It binds
+Settings tab's *Control API* switch (the *Port* it listens on, 47821 by
+default, is next to it). It binds
 `127.0.0.1` only, never a public interface, but has no further
 authentication: any program running on this machine can reach it once it is
 on, so turning it on is a deliberate choice, same as opening a debug port.
@@ -383,7 +414,7 @@ with `403`. That keeps a web page open in a browser from driving the phone
 through the API, including through DNS rebinding; programs such as `curl` or a
 script send neither and are unaffected.
 
-Touch, mouse, keyboard, gamepad, pen, and media-key routes all forward through
+Touch, mouse, keyboard, gamepad, pen, digitizer, and media-key routes all forward through
 Live control (see the Live tab, above): call `POST /live/start` once first,
 same as turning the Live tab's own toggle on, or they are silently no-ops.
 The API's own touch contact is the second-to-last one the connection
@@ -391,9 +422,9 @@ declares — one below the Live tab's own (see *Contacts* under *Profiles*,
 above) — so a program using the API and a person using the Live tab can
 both touch the screen at once without colliding.
 
-`/refresh`, `/connect`, `/record/*`, and `/bridge` are carried out by the
-window on its next frame, exactly as its buttons are, with the settings the
-window shows (profiles, Recorder device, bridge port). The request waits for
+`/refresh`, `/connect`, `/hid`, `/record/*`, and `/bridge` are carried out by
+the window on its next frame, exactly as its buttons are, with the settings
+the window shows (each device's HIDs, Recorder device, bridge port). The request waits for
 that frame and answers `503` if the window does not respond within 5 seconds;
 a minimized window still answers. Refreshing finishes in the background: poll
 `GET /status` until `busy` is `false` before connecting. Connecting also
@@ -402,9 +433,9 @@ finishes in the background: poll until `phase` is `connected` (or back to
 
 | Route | Params | Notes |
 |---|---|---|
-| `GET /status` | — | `phase`, `connected`, `devices` (connected devices, dropped ones included, in the order `/bridge` numbers them), `active` (those still responding), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), active `profiles`, `bridges` (each connected device's bridge port, 0 = off), `live_active`, `recording`, and the playback state, `lap` (the lap being played, counted from 1), time, loops, and reports. |
-| `POST /refresh` | — | The Devices card's refresh: stops the adb server (unless recording), then rescans; `busy` is `true` until the new list is in `available`. 409 unless idle and not already busy. |
-| `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects with the profiles the window has set; `devices` also becomes the window's selection. 409 unless idle and not `busy`; 400 for an unknown device number or invalid profile settings. |
+| `GET /status` | — | `phase`, `connected`, `device_count`, `active` (the connected devices still responding), `devices` (one object per connected device, dropped ones included, in the order `/hid` and `/bridge` number them: `label`, `active`, `bridge` (its bridge port, 0 = off), `reports`, `skipped` (rows it refused as outside its settings), `profiles` (the HIDs it has now), and `touch` (`width`, `height`, `contacts`) when it has a touchscreen), `space` (the `width` and `height` `/touch` positions are given in, 0 when no device has a touchscreen), `busy` (the startup adb check or a refresh is running), `available` (the device list's labels, in the order `/connect` numbers them), `live_active`, `recording`, and the playback state, `lap` (the lap being played, counted from 1), time, loops, and reports. |
+| `POST /refresh` | — | The Devices tab's refresh: stops the adb server (unless recording), then rescans; `busy` is `true` until the new list is in `available`. 409 unless idle and not already busy. |
+| `POST /connect` | `devices` (`all`, or 1-based numbers such as `1,3`; default: the current selection) | Connects each device with its own saved HIDs and settings; `devices` also becomes the window's selection. 409 unless idle and not `busy`; 400 for an unknown device number, invalid settings, or when no chosen device has a HID on. |
 | `POST /disconnect` | — | 409 if not connected. |
 | `POST /play` | `script`, `loop` (laps, the first included; 0 or omitted = repeat until stopped) | `script` is a path, or a bare name looked up in `csv/` (`.csv` added if missing), same as the Player tab's picker. 409 if not connected (or already playing); 400 for a `loop` that is not a non-negative number. |
 | `POST /stop` | — | |
@@ -412,7 +443,7 @@ finishes in the background: poll until `phase` is `connected` (or back to
 | `POST /seek` | `lap` (a lap number, counted from 1; default: the lap being played), `time_ms` | 409 if nothing is playing; 400 for a `lap` below 1 or a missing `time_ms`. |
 | `POST /live/start` | — | 409 if not connected. |
 | `POST /live/stop` | — | |
-| `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Device coordinates, not a fraction. |
+| `POST /touch` | `x`, `y`, `state` (`true`/`false`, default `true`) | Coordinates in the `space` `/status` reports (the first touchscreen's resolution), not a fraction; other devices get them scaled to their own. |
 | `POST /mouse/move` | `dx`, `dy` | Relative, like a physical mouse. |
 | `POST /mouse/button` | `button` (1-based), `down` (default `true`) | |
 | `POST /mouse/wheel` | `delta` | |
@@ -420,11 +451,13 @@ finishes in the background: poll until `phase` is `connected` (or back to
 | `POST /gamepad/button` | `index` (1-based), `down` (default `true`) | |
 | `POST /gamepad/axis` | `index` (0-based), `value` | The connection's own logical range (see the Gamepad profile's *Axis bits*). |
 | `POST /gamepad/dpad` | `up`, `down`, `left`, `right` (each `true`/`false`) | |
-| `POST /pen` | `x`, `y`, `pressure` (default 0), `in_range` (default `true`), `tip` (default `false`) | Pen surface coordinates. `tip` needs `in_range`. |
+| `POST /pen` | `x`, `y`, `pressure` (default 0), `in_range` (default `true`), `tip` (default `false`) | Pen surface coordinates, in the same `space` as `/touch`. `tip` needs `in_range`. |
+| `POST /digitizer` | the same as `/pen` | For the Digitizer profile; the same surface and rules as `/pen`. |
 | `POST /media` | `key` (a [media key name](#media-key-names) or usage), `down` | Without `down`, a tap: press, then release in the next report. One media key is held at a time. |
 | `POST /record/start` | `name` (optional file name; default: the Recorder's name field, else a timestamp) | Records from the Recorder's adb device into `csv/`. 409 if already recording or adb was not found; 400 for an invalid name. A failure after it starts (for example no phone on adb) is written to the activity log and `recording` in `/status` turns `false`. |
 | `POST /record/stop` | — | Stops and saves (nothing is saved if nothing was captured). 409 if not recording. |
 | `POST /bridge` | `device` (1-based, connected order), `on` (default `true`), `port` (1024-65535; default: the ADB tab's) | Same as the ADB tab's switch, including `adb connect` / the adb server restart. 409 while a script plays, for a dropped device, or a port another phone uses. |
+| `POST /hid` | `device` (1-based, connected order), `profile` (`touch`, `mouse`, `key`, `gamepad`, `pen`, `digitizer`, `toggle`), `on` (default `true`) | Adds or removes one HID on one connected device, as its switch on the Devices tab does, with that device's saved settings. The change is made in the background: read `profiles` in `/status`. 409 while a script plays (pause or stop first), for a dropped device, or an unknown device number; 400 for an unknown profile. |
 
 ## aoa_touch — usage
 
@@ -448,7 +481,8 @@ Profile setup (all explicit; there are no presets):
   --gamepad-dpad MODE      none|hat|buttons
   --key-usage-range LO,HI  Keyboard HID usage range (default 0x04,0x65)
   --mouse-buttons N        Number of mouse buttons
-  --pen-mode MODE          direct|indirect
+  --pen                    Stylus on the Pen collection (needed by p rows)
+  --digitizer              Stylus on the Digitizer collection (needed by d rows)
   --toggle                 Media keys (Consumer Control; needed by c rows)
 
 Playback:
@@ -534,12 +568,13 @@ lines and a UTF-8 byte-order mark are ignored. Lines starting with `@` are
 | `a`    | gamepad axis   | `axis_index,value,wait_ms`                  |
 | `h`    | gamepad dpad   | `up,down,right,left,wait_ms`                |
 | `p`    | pen            | `in_range,tip,x,y,pressure,wait_ms`         |
+| `d`    | digitizer      | `in_range,tip,x,y,pressure,wait_ms`         |
 | `c`    | media key (toggle) | `usage_or_name,down,wait_ms` (a Consumer usage number, or a [media key name](#media-key-names)) |
 | `w`    | —              | `wait_ms` (only waits)                      |
 
 `state`, `down`, `pressed`, `in_range`, `tip`, and the four dpad directions
-are `0` or `1`. Mouse and gamepad `button_no` are 1-based. A pen row with
-`tip` 1 needs `in_range` 1. `axis_index` is the position of the axis in the gamepad axis
+are `0` or `1`. Mouse and gamepad `button_no` are 1-based. A pen or digitizer
+row with `tip` 1 needs `in_range` 1. `axis_index` is the position of the axis in the gamepad axis
 list (0-based). `wait_ms` is the delay after the row and can be left out,
 which means `0`: rows with `0` are sent in the same report as the next row. A
 `w` row sends nothing and only waits; it adds to the row before it, so `k,A,1`
@@ -598,15 +633,17 @@ A directive is a line starting with `@`. Names and options ignore case.
 | directive | meaning |
 |-----------|---------|
 | `@format 3` | Optional. The format version; any other number is refused. Before the first row. |
-| `@screen WxH` | The size of the coordinate space the touch and pen `x,y` are written in (each from 1 to 65536). Before the first row, once. |
-| `@coords normalized` / `@coords integer` | With `normalized`, touch and pen `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen pressure stays an integer. Before the first row, once; `normalized` cannot be combined with `@screen`. |
+| `@screen WxH` | The size of the coordinate space the touch, pen, and digitizer `x,y` are written in (each from 1 to 65536). Before the first row, once. |
+| `@coords normalized` / `@coords integer` | With `normalized`, touch, pen, and digitizer `x,y` are fractions from 0 to 1 (`0.5` is the middle; a value outside 0–1 is an error). The default is `integer`. Pen and digitizer pressure stays an integer. Before the first row, once; `normalized` cannot be combined with `@screen`. |
 | `@lap`, `@every`, `@else`, `@end` | Lap blocks; see [Laps](#laps-which-rows-run-when). |
 
 ### Coordinates
 
-While playing, touch and pen positions are scaled from the space the file
-names (`@screen` or `@coords normalized`) onto the connected
-touchscreen and pen surface; without a named space they are used as they are.
+As each row is sent, its touch, pen, and digitizer positions are scaled from the
+space the file names (`@screen` or `@coords normalized`) onto each connected
+device's own touchscreen, pen, and digitizer surface, so devices with different resolutions play the
+same file. Without a named space they are sent as they are, and a device they
+do not fit skips the row.
 A file written in a large square such as `@screen 32768x32768` therefore lands
 in the same place on any phone. Each axis is scaled on its own, so a square
 space is stretched to a phone that is not square. `@coords normalized` is
@@ -686,7 +723,7 @@ one phone instead, for systems without logind.
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/libaoahid) 4.2.0 or newer 4.x
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 1.0.0 or newer 1.x
   (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, and D-Bus for the file picker, for example on Debian/Ubuntu:
@@ -806,9 +843,11 @@ target_link_libraries(your_target PRIVATE aoahid_player::aoahid_player_core)
 
 The main headers in `include/aoahid_player/`:
 
-- `session.hpp` — device discovery, connect and disconnect with a
-  `ProfileSetup` and optional `AdbBridgeOptions` (the ADB Bridge, owned by
-  each `Device` in `device.hpp`).
+- `session.hpp` — device discovery, connect and disconnect with one
+  `ProfileSetup` per device and optional `AdbBridgeOptions` (the ADB Bridge,
+  owned by each `Device` in `device.hpp`), and `reconfigure()` to add or
+  remove a connected device's HIDs. `DeviceGroup::apply()` in
+  `device_group.hpp` takes the `Space` a row's positions are in.
 - `player.hpp` — playback with pause, seek, speed, loop limit, live offset,
   and a wall-clock stop time, all callable from any thread; `status()` is
   lock-free, and a `PlaybackObserver` sees every row sent. `set_live_pump()`
@@ -899,11 +938,16 @@ checked. To undo, repeat steps 1-3, or reinstall the manufacturer's USB driver.
 
 - Lap blocks do not nest, and a block's laps are fixed numbers: there is no
   random or conditional choice.
-- Recording captures touches and keyboard keys only, not mouse, gamepad, or
-  pen input.
+- Recording captures touches and keyboard keys only, not mouse, gamepad,
+  pen, or digitizer input.
 - Recording tracks the multi-touch Type B protocol (`ABS_MT_SLOT` plus
   `ABS_MT_TRACKING_ID`); the older Type A `SYN_MT_REPORT` form is not parsed.
 - libaoahid's battery and raw profiles are not exposed.
+- A phone that reports no serial is remembered by its USB address, so its
+  settings do not follow it to another port; phones that report the same
+  serial share their settings.
+- HIDs cannot be added or removed while a script is playing, only while it is
+  paused or stopped.
 
 ## License
 

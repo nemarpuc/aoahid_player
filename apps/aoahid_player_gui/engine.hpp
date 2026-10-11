@@ -45,6 +45,12 @@ struct BridgeEvent {
     bool adb_stopped{}; // a running adb server was stopped to free the interface
 };
 
+// What became of one Engine::set_device_setup() request.
+struct SetupEvent {
+    size_t device{}; // DeviceGroup::snapshot() index
+    std::string error; // empty when everything asked for was done
+};
+
 struct PlaylistProgress {
     bool active{};
     size_t index{};
@@ -80,7 +86,8 @@ class Engine final : private aoap::PlaybackObserver {
     Engine& operator=(const Engine&) = delete;
 
     void refresh();
-    void connect(std::vector<size_t> selection, aoap::ProfileSetup setup);
+    // One ProfileSetup per selected device, in the same order.
+    void connect(std::vector<size_t> selection, std::vector<aoap::ProfileSetup> setups);
     void disconnect();
     void accessory(std::vector<size_t> selection);
     // `loops` 0 repeats until stopped.
@@ -105,6 +112,14 @@ class Engine final : private aoap::PlaybackObserver {
     [[nodiscard]] bool live_active() const noexcept {
         return live_active_.load(std::memory_order_acquire);
     }
+
+    // Changes one connected device's HIDs or their settings on the worker
+    // thread (see aoap::Session::reconfigure()). Whatever Live control holds
+    // is released first, and input waits about 100 ms after a HID is added.
+    // False, with nothing queued, unless connected and either not playing or
+    // paused. Results arrive through take_setup_events().
+    bool set_device_setup(size_t device, aoap::ProfileSetup setup);
+    std::vector<SetupEvent> take_setup_events();
 
     // Starts or stops one connected device's ADB Bridge on the worker
     // thread (it opens a Channel, a Context call). Handled while connected
@@ -134,8 +149,15 @@ class Engine final : private aoap::PlaybackObserver {
     [[nodiscard]] uint32_t connected_profiles() const noexcept {
         return profiles_.load(std::memory_order_relaxed);
     }
-    // The profiles of the current connection; changes only on connect.
-    [[nodiscard]] aoap::ProfileSetup connected_setup() const;
+    // What Live control works with while connected: for each HID, the
+    // settings of the first responding device that has it (`enabled` is false
+    // when none does). Touch positions are sent in that touchscreen's space
+    // and scaled for the others, and its contact count is the fewest any
+    // touchscreen declares, so the finger slots Live and the control API
+    // reserve exist on all of them. Changes on connect, with
+    // set_device_setup(), and when a device is dropped.
+    [[nodiscard]] aoap::ProfileSetup live_setup() const;
+    // Changes with every Connect, not with set_device_setup().
     [[nodiscard]] uint64_t setup_version() const noexcept {
         return setup_version_.load(std::memory_order_acquire);
     }
@@ -150,7 +172,7 @@ class Engine final : private aoap::PlaybackObserver {
     struct Command {
         enum class Kind { refresh, connect, disconnect, play, playlist, live, accessory, quit } kind;
         std::vector<size_t> selection;
-        aoap::ProfileSetup setup;
+        std::vector<aoap::ProfileSetup> setups;
         std::shared_ptr<const aoap::EventScript> script;
         std::string name;
         aoap::PlaybackPosition start;
@@ -177,8 +199,9 @@ class Engine final : private aoap::PlaybackObserver {
     void finish_run();
     void set_phase(Phase phase) noexcept;
     void note(aoap::Severity severity, const std::string& text);
-    std::shared_ptr<const aoap::EventScript>
-    prepare(const std::shared_ptr<const aoap::EventScript>& script);
+    // Loads `script` into the Player and says so when its coordinates are
+    // scaled on the way out.
+    void load(const std::shared_ptr<const aoap::EventScript>& script);
     void sent(const aoap::EventPayload& payload) noexcept override;
     void observe(const Observed& event) noexcept;
 
@@ -194,6 +217,13 @@ class Engine final : private aoap::PlaybackObserver {
     void pump_live();
     // Serves adb_bridge() requests. Worker thread only.
     void pump_bridge();
+    // Serves set_device_setup() requests. Worker thread only.
+    void pump_setup();
+    // The live pump while a script plays: serves them during a pause and
+    // refuses them otherwise.
+    void pump_setup_in_play();
+    // Publishes what the devices have after a connect or a change.
+    void publish_setup();
     // Releases everything live_held_ is holding, unconditionally. Worker
     // thread only.
     void release_live();
@@ -210,7 +240,7 @@ class Engine final : private aoap::PlaybackObserver {
     bool playlist_abort_{};
     std::vector<aoap::DeviceEntry> devices_;
     uint64_t devices_version_{};
-    aoap::ProfileSetup setup_;
+    aoap::ProfileSetup live_setup_;
     PlaylistProgress progress_;
     std::vector<LiveItem> live_inbox_;
     std::vector<LiveItem> live_batch_; // swapped with live_inbox_; worker thread only
@@ -221,8 +251,19 @@ class Engine final : private aoap::PlaybackObserver {
     };
     std::vector<BridgeRequest> bridge_inbox_;
     std::vector<BridgeEvent> bridge_events_;
+    struct SetupRequest {
+        size_t device;
+        aoap::ProfileSetup setup;
+    };
+    std::vector<SetupRequest> setup_inbox_;
+    std::vector<SetupEvent> setup_events_;
     bool live_stop_{}; // exits run_live()'s own loop; see live_stop()
     aoap::InputState live_held_; // what Live currently has pressed; worker thread only
+    // Worker thread only: the touch space of live_setup_, the space of the
+    // script being played, and the device count publish_setup() last saw.
+    aoap::Space live_space_worker_;
+    aoap::Space play_space_;
+    size_t seen_active_{};
 
     std::atomic<Phase> phase_{Phase::idle};
     std::atomic<uint32_t> profiles_{};
@@ -234,6 +275,7 @@ class Engine final : private aoap::PlaybackObserver {
     // the inbox; lets it skip locking mutex_ when there is nothing queued.
     std::atomic<bool> live_pending_{};
     std::atomic<bool> bridge_pending_{};
+    std::atomic<bool> setup_pending_{};
 
     // Single-producer (worker) single-consumer (UI) ring of sent events.
     static constexpr size_t ring_size = 4096;

@@ -75,6 +75,8 @@ const char* profile_name(const Profile profile) noexcept {
         return "gamepad";
     case Profile::pen:
         return "pen";
+    case Profile::digitizer:
+        return "digitizer";
     case Profile::toggle:
         return "toggle";
     default:
@@ -94,6 +96,8 @@ const char* profile_title(const Profile profile) noexcept {
         return "Gamepad";
     case Profile::pen:
         return "Pen";
+    case Profile::digitizer:
+        return "Digitizer";
     case Profile::toggle:
         return "Toggle Controls";
     default:
@@ -220,6 +224,18 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     nodes_[index] = opened_node;
     profile_mask_ |= profile_bit(profile);
     return AOAHID_OK;
+}
+
+aoahid_result Device::close_node(const Profile profile) noexcept {
+    const size_t index = static_cast<size_t>(profile);
+    if (nodes_[index] == nullptr)
+        return AOAHID_OK;
+    const aoahid_result closed = aoahid_node_close(nodes_[index]);
+    if (closed == AOAHID_OK) {
+        nodes_[index] = nullptr;
+        profile_mask_ &= ~profile_bit(profile);
+    }
+    return closed;
 }
 
 int Device::start_adb_bridge(const uint16_t port) noexcept {

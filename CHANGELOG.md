@@ -5,6 +5,47 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.0.0] - 2026-10-11
+
+- **Digitizer profile (breaking).** libaoahid 1.0.0 split the stylus in two,
+  so the player has a *Digitizer* HID next to *Pen*: a `d` CSV row (the
+  columns of `p`), `POST /digitizer`, the `digitizer` name for `POST /hid`,
+  `--digitizer` and `--pen` for `aoa_touch`, and a *Digitizer* switch on the
+  Devices tab. `--pen-mode direct|indirect` and the pen's *Mode* setting are
+  gone: use *Pen* for the old direct form and *Digitizer* for the indirect
+  form. A saved `pen.mode = indirect` is read as the Digitizer switch.
+  Builds against libaoahid 1.0.0 or newer.
+- **HIDs can be added and removed while connected.** A device's switches on
+  the new Devices tab act at once, and changed settings are registered again
+  with *Apply*: while stopped, paused, or in Live control, not while a script
+  is playing. A device may have no HID at all and stay connected.
+- **Settings per device (breaking).** Every device has its own HIDs and
+  settings, saved in a `[device <serial>]` section of
+  `aoahid_player_gui.ini`; a device seen for the first time copies
+  `[device default]`. The profile settings of an older file are not read. The
+  startup adb read sets each phone's own resolution and leaves a typed one
+  alone.
+- Coordinates are scaled for each device as a row is sent, so devices with
+  different resolutions play one file. A row goes to the devices that have
+  its HID; a device it does not fit skips it and the others still get it.
+- GUI: a Devices tab (the device list, Connect, and the shown device's HIDs)
+  replaces the left panel; the app opens on it. The Control API switch moved
+  to the Settings tab. The sidebar's width, side, and collapsed state, and
+  the remembered tab, are no longer settings.
+- Control API (breaking): `/status` reports `device_count` and a `devices`
+  array (label, active, bridge, reports, skipped, profiles, touch) in place
+  of the `devices` count and the top-level `profiles` and `bridges`, plus the
+  `space` `/touch` and `/pen` positions are given in. New `POST /hid` adds or
+  removes one HID on one connected device. `/connect` uses each device's
+  saved settings.
+- Core (breaking): `Session::connect()` takes one `ProfileSetup` per device;
+  `Session::reconfigure()` and `DeviceGroup::reconfigure()` change a
+  connected device; `DeviceGroup::apply()` takes the `Space` of the row;
+  `build_spec()` replaces `SpecSet`; `scale_script()` is gone
+  (`scale_coordinate()` is public); a setup with no profile is valid.
+  `DeviceGroup::scroll()` and `toggle()` skip a device that refuses the
+  value instead of dropping it.
+
 ## [2.0.0] - 2026-10-10
 
 - **Script format 3 (breaking).** Rows can be put in lap blocks that choose

@@ -65,31 +65,41 @@ App::App(std::function<void()> wake)
     log_.message(aoap::Severity::info,
                  "Scripts folder: " + aoap::script_directory() + ". Searching for devices...");
 
-    // One-time adb pre-flight: read the screen size while the server is up,
-    // then stop it so it does not hold the phone's USB interface during the
-    // scan below, or later during Connect's own AOA handshake.
-    startup_prep_task_ =
-        std::async(std::launch::async, [serial = adb_serial(), wake = wake_] {
-            StartupPrep result;
-            std::string error;
-            if (aoap::adb_start_server(error))
-                result.status = AdbStatus::running;
-            else
-                result.status =
-                    aoap::adb_missing(error) ? AdbStatus::not_found : AdbStatus::unknown;
-            result.size_ok =
-                aoap::adb_screen_size(serial, result.width, result.height, result.size_error);
-            std::string stop_error;
-            if (aoap::adb_kill_server(stop_error)) {
-                if (result.status != AdbStatus::not_found)
-                    result.status = AdbStatus::stopped;
-            } else if (aoap::adb_missing(stop_error)) {
-                result.status = AdbStatus::not_found;
+    // One-time adb pre-flight: read every phone's screen size while the server
+    // is up, then stop it so it does not hold the phones' USB interfaces
+    // during the scan below, or later during Connect's own AOA handshake.
+    startup_prep_task_ = std::async(std::launch::async, [wake = wake_] {
+        StartupPrep result;
+        std::string error;
+        if (aoap::adb_start_server(error))
+            result.status = AdbStatus::running;
+        else
+            result.status = aoap::adb_missing(error) ? AdbStatus::not_found : AdbStatus::unknown;
+        std::vector<aoap::AdbDevice> listed;
+        if (aoap::adb_list_devices(listed, result.size_error)) {
+            for (const aoap::AdbDevice& device : listed) {
+                // A bridge's network serial is not the phone's own.
+                if (device.state != "device" || aoap::adb_network_serial(device.serial))
+                    continue;
+                ScreenSize size{device.serial, 0, 0};
+                if (aoap::adb_screen_size(device.serial, size.width, size.height,
+                                          result.size_error))
+                    result.sizes.push_back(std::move(size));
             }
-            aoap::Timing::sleep_ms(1000);
-            wake();
-            return result;
-        });
+            if (result.sizes.empty() && result.size_error.empty())
+                result.size_error = "adb lists no device.";
+        }
+        std::string stop_error;
+        if (aoap::adb_kill_server(stop_error)) {
+            if (result.status != AdbStatus::not_found)
+                result.status = AdbStatus::stopped;
+        } else if (aoap::adb_missing(stop_error)) {
+            result.status = AdbStatus::not_found;
+        }
+        aoap::Timing::sleep_ms(1000);
+        wake();
+        return result;
+    });
     // What startup logged is in the Activity panel; notices start from here
     // on, unless that panel is hidden.
     toast_log_seen_ = log_hidden_ ? 0 : log_.version();
@@ -119,8 +129,6 @@ App::~App() {
 
 bool App::recording() const { return record_thread_.joinable(); }
 
-bool App::settings_locked() const { return engine_.phase() != Phase::idle; }
-
 bool App::animating() const {
     if (engine_.busy() || recording() || startup_prep_task_.valid() || retry_task_.valid() ||
         !adb_jobs_.empty() || adb_task_.valid() || ui::animations_active() || !toasts_.empty())
@@ -143,23 +151,8 @@ std::string App::adb_serial() const {
 
 Settings App::current_settings() const {
     Settings settings;
-    settings.use_touch = use_touch_;
-    settings.touch_width = touch_width_;
-    settings.touch_height = touch_height_;
-    settings.touch_contacts = touch_contacts_;
-    settings.use_mouse = use_mouse_;
-    settings.mouse_buttons = mouse_buttons_;
-    settings.use_key = use_key_;
-    settings.key_min = key_min_;
-    settings.key_max = key_max_;
-    settings.use_gamepad = use_gamepad_;
-    settings.pad_buttons = pad_buttons_;
-    settings.pad_bits = pad_bits_;
-    settings.pad_dpad = pad_dpad_;
-    settings.pad_axes = pad_axes_;
-    settings.use_pen = use_pen_;
-    settings.pen_mode = pen_mode_;
-    settings.use_toggle = use_toggle_;
+    settings.device_default = device_default_;
+    settings.devices = device_configs_;
     settings.adb_ports = adb_ports_;
     settings.api_enabled = api_enabled_;
     settings.api_port = api_port_;
@@ -168,8 +161,6 @@ Settings App::current_settings() const {
     settings.player_play_key = player_keys_[0];
     settings.player_stop_key = player_keys_[1];
     settings.player_restart_key = player_keys_[2];
-    settings.sidebar_width = sidebar_width_;
-    settings.sidebar_collapsed = sidebar_collapsed_;
     settings.dark_theme = dark_theme_;
     settings.accent = accent_;
     settings.glass_on = glass_on_;
@@ -179,7 +170,6 @@ Settings App::current_settings() const {
     settings.card_rounding = card_rounding_;
     settings.motion = motion_;
     settings.ui_scale = ui_scale_;
-    settings.sidebar_right = sidebar_right_;
     settings.log_hidden = log_hidden_;
     settings.toasts = toasts_enabled_;
     settings.bg_mode = bg_mode_;
@@ -192,7 +182,6 @@ Settings App::current_settings() const {
     settings.window_y = window_y_;
     settings.window_width = window_width_;
     settings.window_height = window_height_;
-    settings.tab = static_cast<int>(tab_);
     settings.player_mode = static_cast<int>(player_mode_);
     settings.last_script = script_reference_;
     settings.speed = speed_;
@@ -221,23 +210,8 @@ Settings App::current_settings() const {
 }
 
 void App::apply_settings(const Settings& settings) {
-    use_touch_ = settings.use_touch;
-    touch_width_ = settings.touch_width;
-    touch_height_ = settings.touch_height;
-    touch_contacts_ = settings.touch_contacts;
-    use_mouse_ = settings.use_mouse;
-    mouse_buttons_ = settings.mouse_buttons;
-    use_key_ = settings.use_key;
-    key_min_ = settings.key_min;
-    key_max_ = settings.key_max;
-    use_gamepad_ = settings.use_gamepad;
-    pad_buttons_ = settings.pad_buttons;
-    pad_bits_ = settings.pad_bits;
-    pad_dpad_ = settings.pad_dpad;
-    pad_axes_ = settings.pad_axes;
-    use_pen_ = settings.use_pen;
-    pen_mode_ = settings.pen_mode;
-    use_toggle_ = settings.use_toggle;
+    device_default_ = settings.device_default;
+    device_configs_ = settings.devices;
     adb_ports_ = settings.adb_ports;
     api_enabled_ = settings.api_enabled;
     api_port_ = settings.api_port;
@@ -246,20 +220,12 @@ void App::apply_settings(const Settings& settings) {
     player_keys_[0] = settings.player_play_key;
     player_keys_[1] = settings.player_stop_key;
     player_keys_[2] = settings.player_restart_key;
-    sidebar_width_ = settings.sidebar_width;
-    sidebar_collapsed_ = settings.sidebar_collapsed;
     apply_look(settings);
     window_x_ = settings.window_x;
     window_y_ = settings.window_y;
     window_width_ = settings.window_width;
     window_height_ = settings.window_height;
-    // An old saved Playlist tab (2) is the Player's Playlist mode now.
-    tab_ = settings.tab == 2   ? Tab::player
-           : settings.tab >= 0 && settings.tab <= 5 ? static_cast<Tab>(settings.tab)
-                                                    : Tab::live;
-    player_mode_ = settings.tab == 2 || settings.player_mode == 1 ? PlayerMode::playlist
-                                                                  : PlayerMode::script;
-    shown_tab_ = tab_;
+    player_mode_ = settings.player_mode == 1 ? PlayerMode::playlist : PlayerMode::script;
     speed_ = settings.speed;
     loop_limit_ = settings.loop_limit;
     log_open_ = settings.log_open;
@@ -321,23 +287,40 @@ void App::persist_settings() {
     saved_settings_ = std::move(current);
 }
 
-aoap::ProfileSetup App::build_setup() const {
+aoap::ProfileSetup App::build_setup(const DeviceConfig& config) const {
     aoap::ProfileSetup setup;
-    setup.touch = {use_touch_, touch_width_, touch_height_, static_cast<uint32_t>(touch_contacts_)};
-    setup.mouse = {use_mouse_, static_cast<uint32_t>(mouse_buttons_)};
-    setup.key = {use_key_, static_cast<uint16_t>(key_min_), static_cast<uint16_t>(key_max_)};
-    setup.gamepad.enabled = use_gamepad_;
-    setup.gamepad.buttons = static_cast<uint32_t>(pad_buttons_);
-    setup.gamepad.axis_bits = static_cast<uint32_t>(pad_bits_);
-    setup.gamepad.dpad = pad_dpad_ == 0   ? AOAHID_DPAD_NONE
-                         : pad_dpad_ == 1 ? AOAHID_DPAD_HAT
-                                          : AOAHID_DPAD_BUTTONS;
-    setup.gamepad.axes = pad_axes_;
-    setup.pen.enabled = use_pen_;
-    setup.pen.mode = pen_mode_ == 0 ? AOAHID_PEN_DIRECT_SCREEN : AOAHID_PEN_INDIRECT_TABLET;
+    setup.touch = {config.use_touch, config.touch_width, config.touch_height,
+                   static_cast<uint32_t>(config.touch_contacts)};
+    setup.mouse = {config.use_mouse, static_cast<uint32_t>(config.mouse_buttons)};
+    setup.key = {config.use_key, static_cast<uint16_t>(config.key_min),
+                 static_cast<uint16_t>(config.key_max)};
+    setup.gamepad.enabled = config.use_gamepad;
+    setup.gamepad.buttons = static_cast<uint32_t>(config.pad_buttons);
+    setup.gamepad.axis_bits = static_cast<uint32_t>(config.pad_bits);
+    setup.gamepad.dpad = config.pad_dpad == 0   ? AOAHID_DPAD_NONE
+                         : config.pad_dpad == 1 ? AOAHID_DPAD_HAT
+                                                : AOAHID_DPAD_BUTTONS;
+    setup.gamepad.axes = config.pad_axes;
+    setup.pen.enabled = config.use_pen;
+    setup.digitizer.enabled = config.use_digitizer;
     aoap::resolve_pen_surface(setup);
-    setup.toggle.enabled = use_toggle_;
+    setup.toggle.enabled = config.use_toggle;
     return setup;
+}
+
+DeviceConfig& App::config_for(const std::string& key) {
+    return device_configs_.try_emplace(key, device_default_).first->second;
+}
+
+const DeviceConfig& App::pending_config() const {
+    for (const aoap::DeviceEntry& device : devices_) {
+        if (selected_.count(device.key) == 0)
+            continue;
+        const auto found = device_configs_.find(device.key);
+        if (found != device_configs_.end())
+            return found->second;
+    }
+    return device_default_;
 }
 
 // --- Control API requests -------------------------------------------------
@@ -445,8 +428,56 @@ UiReply App::run_ui_request(const UiRequest& request) {
             return UiReply{409, error};
         return {};
     }
+    case UiRequest::Kind::hid: {
+        const std::string error = request_hid(request.device, request.profile, request.on);
+        if (!error.empty())
+            return UiReply{409, error};
+        return {};
+    }
     }
     return UiReply{400, "Unknown request."};
+}
+
+std::string App::request_hid(const size_t index, const aoap::Profile profile, const bool on) {
+    const std::vector<aoap::DeviceStatus> status = engine_.device_status();
+    if (!engine_.connected() || index >= status.size())
+        return "No connected device " + std::to_string(index + 1) + ".";
+    if (!status[index].active)
+        return "That device was dropped.";
+    // From the saved settings, not from what is registered now, so a HID
+    // that was off comes back with its own settings.
+    DeviceConfig& config = config_for(status[index].key);
+    bool& flag = device_switch(config, profile);
+    const bool before = flag;
+    flag = on;
+    if (!engine_.set_device_setup(index, build_setup(config))) {
+        flag = before;
+        return "Stop or pause playback to change HIDs.";
+    }
+    setup_busy_.insert(index);
+    return {};
+}
+
+void App::update_device_setups() {
+    const std::vector<SetupEvent> events = engine_.take_setup_events();
+    if (events.empty())
+        return;
+    const std::vector<aoap::DeviceStatus> status = engine_.device_status();
+    for (const SetupEvent& event : events) {
+        setup_busy_.erase(event.device);
+        if (event.error.empty())
+            continue;
+        log_.message(aoap::Severity::warning, event.error);
+        if (event.device >= status.size())
+            continue;
+        // The switches show what the device really has now.
+        DeviceConfig& config = config_for(status[event.device].key);
+        for (size_t index = 0; index < aoap::profile_count; ++index) {
+            const auto profile = static_cast<aoap::Profile>(index);
+            device_switch(config, profile) =
+                (status[event.device].profiles & aoap::profile_bit(profile)) != 0U;
+        }
+    }
 }
 
 // --- Actions ---------------------------------------------------------------
@@ -455,10 +486,32 @@ void App::poll() {
     const uint64_t version = engine_.devices_version();
     if (version != devices_version_) {
         devices_version_ = version;
+        // The shown device stays shown across a refresh: found again by its
+        // key, and by its position among the rows that share one.
+        std::string shown_key;
+        size_t shown_nth = 0;
+        if (shown_row_ < devices_.size()) {
+            shown_key = devices_[shown_row_].key;
+            for (size_t row = 0; row < shown_row_; ++row)
+                shown_nth += devices_[row].key == shown_key ? 1U : 0U;
+        }
         devices_ = engine_.devices();
-        // With exactly one phone there is nothing to choose.
-        if (devices_.size() == 1 && selected_.empty())
-            selected_.insert(devices_.front().key);
+        shown_row_ = SIZE_MAX;
+        for (size_t row = 0; row < devices_.size(); ++row) {
+            config_for(devices_[row].key);
+            if (shown_row_ == SIZE_MAX && !shown_key.empty() && devices_[row].key == shown_key &&
+                shown_nth-- == 0)
+                shown_row_ = row;
+        }
+        if (devices_.size() == 1) {
+            // With exactly one phone there is nothing to choose.
+            if (selected_.empty())
+                selected_.insert(devices_.front().key);
+            if (!shown_once_) {
+                shown_row_ = 0;
+                shown_once_ = true;
+            }
+        }
     }
     handle_ui_requests();
     ui_status_.recording.store(recording(), std::memory_order_relaxed);
@@ -486,6 +539,8 @@ void App::poll() {
                                      last_phase_ == Phase::connected ||
                                      last_phase_ == Phase::playing))
             push_toast(aoap::Severity::info, "Disconnected.");
+        if (phase == Phase::idle)
+            setup_busy_.clear();
         // Disconnect has released every phone; see restart_adb_server().
         if (phase == Phase::idle &&
             (last_phase_ == Phase::disconnecting || last_phase_ == Phase::connected ||
@@ -500,17 +555,22 @@ void App::poll() {
         collect_toasts();
         const StartupPrep result = startup_prep_task_.get();
         set_adb_status(result.status);
-        touch_size_ = result.size_ok ? TouchSize::from_phone : TouchSize::not_read;
-        if (result.size_ok) {
-            touch_width_ = result.width;
-            touch_height_ = result.height;
-            log_.message(aoap::Severity::info, "Screen size from adb: " +
-                                                   std::to_string(result.width) + " x " +
-                                                   std::to_string(result.height) + ".");
-        } else {
+        sizes_checked_ = true;
+        for (const ScreenSize& size : result.sizes) {
+            DeviceConfig& config = config_for(size.serial);
+            size_read_.insert(size.serial);
+            if (config.touch_size_typed)
+                continue;
+            config.touch_width = size.width;
+            config.touch_height = size.height;
+            log_.message(aoap::Severity::info,
+                         "Screen size from adb: " + size.serial + " is " +
+                             std::to_string(size.width) + " x " + std::to_string(size.height) +
+                             ".");
+        }
+        if (result.sizes.empty())
             log_.message(aoap::Severity::warning,
                          "Screen size not detected. " + result.size_error);
-        }
         engine_.refresh();
         // Still part of startup: shown in the Activity panel, not as notices.
         if (!log_hidden_)
@@ -548,6 +608,7 @@ void App::poll() {
     if (record_done_.load(std::memory_order_acquire))
         finish_recording();
     update_adb_bridges();
+    update_device_setups();
 }
 
 void App::refresh_scripts() {
@@ -627,13 +688,24 @@ void App::connect() {
                                           : "Select at least one device.";
         return;
     }
-    const aoap::ProfileSetup setup = build_setup();
-    std::string error;
-    if (!aoap::validate_setup(setup, error)) {
-        connect_error_ = error;
+    std::vector<aoap::ProfileSetup> setups;
+    bool any_hid = false;
+    for (const size_t index : selection) {
+        const aoap::DeviceEntry& device = devices_[index];
+        aoap::ProfileSetup setup = build_setup(config_for(device.key));
+        std::string error;
+        if (!aoap::validate_setup(setup, error)) {
+            connect_error_ = device.product + ": " + error;
+            return;
+        }
+        any_hid = any_hid || aoap::enabled_profiles(setup) != 0U;
+        setups.push_back(std::move(setup));
+    }
+    if (!any_hid) {
+        connect_error_ = "Turn on at least one HID on a selected device first.";
         return;
     }
-    engine_.connect(std::move(selection), setup);
+    engine_.connect(std::move(selection), std::move(setups));
 }
 
 void App::retry() {
@@ -993,7 +1065,7 @@ void App::on_cursor(const double x, const double y) {
     // which only runs while that tab (fullscreen included, since it never
     // leaves Tab::live) is the one being drawn.
     if (live_touching_ && live_.touch && engine_.live_active() && tab_ == Tab::live) {
-        const aoap::ProfileSetup setup = engine_.connected_setup();
+        const aoap::ProfileSetup setup = engine_.live_setup();
         const ImVec2 size(live_phone_max_.x - live_phone_min_.x,
                           live_phone_max_.y - live_phone_min_.y);
         if (setup.touch.enabled && size.x > 0.0f && size.y > 0.0f) {
@@ -1167,32 +1239,11 @@ void App::frame() {
                      (log_hidden ? 0.0f : log_height + ImGui::GetStyle().ItemSpacing.y + px(4)),
                  px(120));
 
-    // The sidebar (with its splitter) and the nav rail sit left of the main
-    // pane, or mirrored on its right.
-    const float sidebar_shown_width = sidebar_collapsed_ ? px(44) : px(sidebar_width_);
-    const auto draw_side = [&] {
-        ImGui::BeginChild("##sidebar", ImVec2(sidebar_shown_width, body), ImGuiChildFlags_None);
-        if (sidebar_collapsed_)
-            draw_sidebar_collapsed();
-        else
-            draw_sidebar();
-        ImGui::EndChild();
-    };
-    const auto draw_splitter_gap = [&] {
-        if (sidebar_collapsed_) {
-            ImGui::SameLine(0, px(12));
-        } else {
-            ImGui::SameLine(0, px(6));
-            draw_sidebar_splitter(body);
-            ImGui::SameLine(0, px(6));
-        }
-    };
-    const auto draw_nav = [&] {
-        ImGui::BeginChild("##navrail", ImVec2(px(52), body), ImGuiChildFlags_None);
-        draw_nav_rail();
-        ImGui::EndChild();
-    };
-    const auto draw_main = [&](const float width) {
+    ImGui::BeginChild("##navrail", ImVec2(px(52), body), ImGuiChildFlags_None);
+    draw_nav_rail();
+    ImGui::EndChild();
+    ImGui::SameLine(0, px(10));
+    {
         // A changed tab fades in and rises a few pixels, once, if motion is
         // on. Checked here, after the nav rail may have changed it this frame.
         if (tab_ != shown_tab_) {
@@ -1200,7 +1251,7 @@ void App::frame() {
             tab_changed_at_ = ImGui::GetTime();
             themes_stale_ = true;
         }
-        ImGui::BeginChild("##main", ImVec2(width, body), ImGuiChildFlags_None);
+        ImGui::BeginChild("##main", ImVec2(0, body), ImGuiChildFlags_None);
         const float progress =
             motion_ ? std::clamp(static_cast<float>((ImGui::GetTime() - tab_changed_at_) /
                                                     tab_fade_seconds),
@@ -1211,7 +1262,9 @@ void App::frame() {
             ImGui::PushStyleVar(ImGuiStyleVar_Alpha, eased);
             ImGui::SetCursorPosY(ImGui::GetCursorPosY() + px(6) * (1.0f - eased));
         }
-        if (tab_ == Tab::player)
+        if (tab_ == Tab::devices)
+            draw_devices();
+        else if (tab_ == Tab::player)
             draw_player();
         else if (tab_ == Tab::live)
             draw_live();
@@ -1224,24 +1277,6 @@ void App::frame() {
         if (progress < 1.0f)
             ImGui::PopStyleVar();
         ImGui::EndChild();
-    };
-    if (sidebar_right_) {
-        const float side_gap = sidebar_collapsed_ ? px(12) : px(6) * 2 + px(6);
-        // Never zero or negative (ImGui would read that as "the rest"), even
-        // with the widest sidebar at the largest UI size.
-        draw_main(std::max(ImGui::GetContentRegionAvail().x - px(10) - px(52) - side_gap -
-                               sidebar_shown_width,
-                           px(200)));
-        ImGui::SameLine(0, px(10));
-        draw_nav();
-        draw_splitter_gap();
-        draw_side();
-    } else {
-        draw_side();
-        draw_splitter_gap();
-        draw_nav();
-        ImGui::SameLine(0, px(10));
-        draw_main(0.0f);
     }
 
     if (!log_hidden) {

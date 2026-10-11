@@ -5,8 +5,8 @@ what crosses each boundary, which values have to be kept in step by hand, and
 the order a change travels in. It lives here because this repository is the
 only one that depends on both of the others.
 
-Source references are `repo/path#Lnnn`, valid at libaoahid v4.2.0,
-aoahid_adb_proxy v3.2.1, and aoahid_player v2.0.0.
+Source references are `repo/path#Lnnn`, valid at libaoahid v1.0.0,
+aoahid_adb_proxy v3.2.2, and aoahid_player v3.0.0.
 
 ## Stack
 
@@ -27,11 +27,11 @@ libaoahid          C++20 library, stable C ABI (aoahid.h): AOA 2.0 HID over libu
 | Step | Where | Data |
 | --- | --- | --- |
 | Parse | `aoahid_player/src/event_script.cpp#L123` | CSV text to an `EventPayload` variant plus `wait_ns`. |
-| Schedule | `aoahid_player/src/player.cpp#L263` | The row's absolute deadline on the playback thread. |
-| Apply | `aoahid_player/src/device_group.cpp#L35` | One `aoahid::` call per device, for example `touch(node, id, state, x, y, nullptr)`. |
+| Schedule | `aoahid_player/src/player.cpp#L265` | The row's absolute deadline on the playback thread. |
+| Apply | `aoahid_player/src/device_group.cpp#L60` | One `aoahid::` call per device, for example `touch(node, id, state, x, y, nullptr)`. |
 | State | libaoahid `src/profiles/state.cpp` | The Node's state changes; nothing is sent. |
-| Submit | `aoahid_player/src/device_group.cpp#L233` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
-| Serialize | `libaoahid/src/profiles/state.cpp#L318` | The input report, straight into a transfer pool slot. |
+| Submit | `aoahid_player/src/device_group.cpp#L274` | `aoahid_node_submit`, then `aoahid_node_submit_blocking` for each dirty Node. |
+| Serialize | `libaoahid/src/profiles/state.cpp#L319` | The input report, straight into a transfer pool slot. |
 | Transfer | `libaoahid/src/transport/transport.cpp#L286` | AOA request 57 on endpoint 0. |
 
 The ADB path is separate: adb's TCP connection to
@@ -64,15 +64,15 @@ one side has to be made on the other.
 
 | Assumption | Relied on in | Provided by |
 | --- | --- | --- |
-| Every call on one Context comes from one thread at a time. | The whole core; the GUI funnels calls through one worker (`aoahid_player/apps/aoahid_player_gui/engine.cpp#L370`). | libaoahid's header contract. |
+| Every call on one Context comes from one thread at a time. | The whole core; the GUI funnels calls through one worker (`aoahid_player/apps/aoahid_player_gui/engine.cpp#L403`). | libaoahid's header contract. |
 | The Context is in internal-thread mode. | The proxy reads and writes the Channel from two threads. | `aoahid_player/src/context.cpp#L100` |
-| The proxy is stopped before the Device is closed. | The proxy's Channel must not be closed while its threads run. | `aoahid_player/src/device.cpp#L244` |
+| The proxy is stopped before the Device is closed. | The proxy's Channel must not be closed while its threads run. | `aoahid_player/src/device.cpp#L252` |
 | Input starts no sooner than about 100 ms after `aoahid_node_open`. | Android registers the HID device asynchronously; an earlier report is refused. | `aoahid_player/src/session.cpp#L18` |
 | `aoahid_device_close` consumes the Device and its Nodes even when it returns `AOAHID_CLOSE_PENDING`. | The player drops its pointers after one call. | libaoahid's header contract for `aoahid_device_close`. |
-| After `AOAHID_ADB_PROXY_ERR_INTERFACE`, the calling thread's `aoahid_last_error()` is the failed `aoahid_channel_open`. | `aoahid_player/src/device.cpp#L138` reads `libusb_status` to tell a driver problem (-12, `LIBUSB_ERROR_NOT_SUPPORTED`) from an adb server holding the interface. | The proxy makes no libaoahid call after a failed open. |
-| A context destroy that timed out and kept ownership reports the field name `context.destroy`. | `aoahid_player/src/context.cpp#L116` compares that string to decide whether to retry. | `libaoahid/src/api/c_api.cpp#L2237`. Renaming the string in libaoahid breaks the retry without a build error. |
+| After `AOAHID_ADB_PROXY_ERR_INTERFACE`, the calling thread's `aoahid_last_error()` is the failed `aoahid_channel_open`. | `aoahid_player/src/device.cpp#L142` reads `libusb_status` to tell a driver problem (-12, `LIBUSB_ERROR_NOT_SUPPORTED`) from an adb server holding the interface. | The proxy makes no libaoahid call after a failed open. |
+| A context destroy that timed out and kept ownership reports the field name `context.destroy`. | `aoahid_player/src/context.cpp#L116` compares that string to decide whether to retry. | `libaoahid/src/api/c_api.cpp#L2238`. Renaming the string in libaoahid breaks the retry without a build error. |
 | The Linux HID parser limits the player passes are the ones in libaoahid's `docs/LIMITS.md`. | `aoahid_player/src/device.cpp#L42` | libaoahid has no default for them. |
-| The media-key Usages, their semantics, and their expected Linux codes are parallel arrays in one order. | `aoahid_player/include/aoahid_player/spec_builder.hpp#L431` and the CSV parser share `media_usages`. | A `static_assert` checks the lengths, not the order. |
+| The media-key Usages, their semantics, and their expected Linux codes are parallel arrays in one order. | `aoahid_player/include/aoahid_player/spec_builder.hpp#L485` and the CSV parser share `media_usages`. | A `static_assert` checks the lengths, not the order. |
 | An ADB packet is at most 1 MiB and its header is 24 bytes. | The proxy's buffers and Channel options. | AOSP `adb.h` (`MAX_PAYLOAD`). |
 
 ## Copies that must match
@@ -87,9 +87,9 @@ one side has to be made on the other.
 
 | Pin | Where | Meaning |
 | --- | --- | --- |
-| libaoahid minimum for the player | `aoahid_player/CMakeLists.txt#L37` | The oldest libaoahid the source builds and runs against. The comment above it explains each raise. |
+| libaoahid minimum for the player | `aoahid_player/CMakeLists.txt#L29` | The oldest libaoahid the source builds and runs against. The comment above it explains each raise. |
 | libaoahid release the player's binaries link | `aoahid_player/.github/workflows/ci.yml#L20` and `aoahid_player/.github/workflows/release.yml#L31` | A tag whose release assets CI downloads. It must already be published. |
-| libaoahid minimum for the proxy | `aoahid_adb_proxy/CMakeLists.txt#L16` | 4.0. |
+| libaoahid minimum for the proxy | `aoahid_adb_proxy/CMakeLists.txt#L16` | 1.0. |
 | libaoahid release the proxy's CI builds against | `aoahid_adb_proxy/.github/workflows/ci.yml#L13` | The oldest supported release, on purpose. |
 | libaoahid source fallback for the proxy | `aoahid_adb_proxy/CMakeLists.txt#L22` | A commit, used only when no installed package is found. |
 | libusb | libaoahid requires 1.0.30 at build time and at run time (`libaoahid/src/transport/libusb_include.hpp#L35`) | The player's release archives ship a matching libusb next to libaoahid. |

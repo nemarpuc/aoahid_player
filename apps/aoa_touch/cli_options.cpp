@@ -112,7 +112,8 @@ void print_usage(const char* program) {
         "  --gamepad-dpad MODE      none|hat|buttons\n"
         "  --key-usage-range LO,HI  Keyboard HID usage range (default 0x04,0x65)\n"
         "  --mouse-buttons N        Number of mouse buttons\n"
-        "  --pen-mode MODE          direct|indirect\n"
+        "  --pen                    Stylus on the Pen collection (needed by p rows)\n"
+        "  --digitizer              Stylus on the Digitizer collection (needed by d rows)\n"
         "  --toggle                 Media keys (Consumer Control; needed by c rows)\n"
         "\n"
         "Playback:\n"
@@ -295,19 +296,12 @@ std::optional<Options> parse(const int argc, char** argv) {
             have_gamepad_dpad = true;
             continue;
         }
-        if (argument == "--pen-mode") {
-            if (!needs_value(index, argc, "--pen-mode"))
-                return std::nullopt;
-            const std::string_view mode(argv[++index]);
-            if (mode == "direct")
-                options.profiles.pen.mode = AOAHID_PEN_DIRECT_SCREEN;
-            else if (mode == "indirect")
-                options.profiles.pen.mode = AOAHID_PEN_INDIRECT_TABLET;
-            else {
-                std::fprintf(stderr, "[ERROR] --pen-mode must be direct or indirect\n");
-                return std::nullopt;
-            }
+        if (argument == "--pen") {
             options.profiles.pen.enabled = true;
+            continue;
+        }
+        if (argument == "--digitizer") {
+            options.profiles.digitizer.enabled = true;
             continue;
         }
         if (argument == "--toggle") {
@@ -390,12 +384,13 @@ std::optional<Options> parse(const int argc, char** argv) {
             return std::nullopt;
         }
     }
-    if (options.profiles.pen.enabled)
+    if (options.profiles.pen.enabled || options.profiles.digitizer.enabled)
         resolve_pen_surface(options.profiles);
 
     if (!options.profiles.touch.enabled && !options.profiles.mouse.enabled &&
         !options.profiles.key.enabled && !options.profiles.gamepad.enabled &&
-        !options.profiles.pen.enabled && !options.profiles.toggle.enabled) {
+        !options.profiles.pen.enabled && !options.profiles.digitizer.enabled &&
+        !options.profiles.toggle.enabled) {
         std::fprintf(stderr, "[ERROR] no profile was configured; see --help\n");
         return std::nullopt;
     }

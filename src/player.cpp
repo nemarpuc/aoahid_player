@@ -27,6 +27,7 @@ Player::Player(DeviceGroup& group, EventSink* sink) : group_(group), sink_(sink)
 
 void Player::load(std::shared_ptr<const EventScript> script) {
     script_ = std::move(script);
+    space_ = script_ ? Space{script_->screen_width, script_->screen_height} : Space{};
     walk_ = {};
     // A batch never holds more rows than the script, and the transitions a
     // seek builds never hold more than the tracked state; reserving here
@@ -205,12 +206,12 @@ void Player::flush_now() {
 }
 
 aoahid_result Player::send(const EventPayload& payload) {
-    aoahid_result result = group_.apply(payload);
+    aoahid_result result = group_.apply(payload, space_);
     if (result == AOAHID_ERR_BUSY) {
         // libaoahid saw an unreported opposite edge that batch_key did not
         // predict; let the pending report land, then retry once.
         flush_now();
-        result = group_.apply(payload);
+        result = group_.apply(payload, space_);
     }
     if (result == AOAHID_OK) {
         live_.apply(payload);
@@ -427,11 +428,23 @@ void Player::run(const PlaybackPosition start) {
     live_.clear();
     staged_keys_.clear();
 
-    const uint32_t missing = script_->required_profiles() & ~group_.profile_mask();
+    const uint32_t required = script_->required_profiles();
+    const uint32_t missing = required & ~group_.profile_mask();
     if (missing != 0U && sink_ != nullptr) {
         sink_->message(Severity::warning, "The script uses the " + describe_profiles(missing) +
                                               ", which is not connected; those rows are skipped.");
-        warned_profiles_ = missing;
+    }
+    warned_profiles_ = missing;
+    const std::vector<DeviceStatus> before = group_.snapshot();
+    skipped_before_.assign(before.size(), 0U);
+    for (size_t index = 0; index < before.size(); ++index) {
+        const DeviceStatus& device = before[index];
+        skipped_before_[index] = device.skipped;
+        const uint32_t lacks = required & ~missing & ~device.profiles;
+        if (device.active && lacks != 0U && sink_ != nullptr)
+            sink_->message(Severity::warning, device.label + " has no " +
+                                                  describe_profiles(lacks) +
+                                                  "; those rows are skipped on it.");
     }
 
     jump(start);
@@ -484,6 +497,17 @@ void Player::run(const PlaybackPosition start) {
     paused_ = false;
     // Late control requests belong to this run, not the next one.
     requests_.store(0U, std::memory_order_release);
+    if (sink_ != nullptr) {
+        const std::vector<DeviceStatus> after = group_.snapshot();
+        for (size_t index = 0; index < after.size() && index < skipped_before_.size(); ++index) {
+            const uint64_t skipped = after[index].skipped - skipped_before_[index];
+            if (skipped != 0U)
+                sink_->message(Severity::warning,
+                               after[index].label + " skipped " + std::to_string(skipped) +
+                                   (skipped == 1U ? " row that does" : " rows that do") +
+                                   " not fit its settings.");
+        }
+    }
     publish(PlaybackState::stopped, {walk_.lap, 0});
 }
 

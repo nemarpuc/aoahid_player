@@ -3,6 +3,8 @@
 
 #include <aoahid.h>
 
+#include "aoahid_player/device.hpp"
+
 #include <filesystem>
 #include <map>
 #include <string>
@@ -18,13 +20,16 @@ inline constexpr float ui_scales[] = {0.85f, 1.0f, 1.15f, 1.3f};
 // The control API's port until the user picks another.
 inline constexpr int default_api_port = 47821;
 
-// What the GUI remembers between runs: the profile choices and the adb
-// option. Defaults are what a first run shows.
-struct Settings {
+// One device's HIDs and their settings.
+struct DeviceConfig {
     bool use_touch{true};
     int touch_width{1440};
     int touch_height{2560};
+    // 16 by default (the maximum) so the Live tab's reserved top slot (see
+    // App::live_finger()) is always available alongside whatever a script uses.
     int touch_contacts{16};
+    // The resolution was typed in; the startup adb read leaves it alone.
+    bool touch_size_typed{};
     bool use_mouse{true};
     int mouse_buttons{5};
     bool use_key{true};
@@ -37,8 +42,22 @@ struct Settings {
     std::vector<aoahid_axis_role> pad_axes{AOAHID_AXIS_X, AOAHID_AXIS_Y, AOAHID_AXIS_Z,
                                            AOAHID_AXIS_RZ};
     bool use_pen{};
-    int pen_mode{}; // 0 direct screen, 1 indirect tablet
+    bool use_digitizer{};
     bool use_toggle{};
+
+    bool operator==(const DeviceConfig&) const = default;
+};
+
+// The switch of one HID in `config`.
+[[nodiscard]] bool& device_switch(DeviceConfig& config, aoap::Profile profile) noexcept;
+
+// What the GUI remembers between runs: each device's profile choices, and
+// the window's own options. Defaults are what a first run shows.
+struct Settings {
+    // What a device seen for the first time starts with, and each known
+    // device's own settings by its key (aoap::DeviceEntry::key).
+    DeviceConfig device_default;
+    std::map<std::string, DeviceConfig> devices;
 
     // The ADB tab's bridge port per device key (aoap::DeviceEntry::key).
     std::map<std::string, int> adb_ports;
@@ -55,10 +74,6 @@ struct Settings {
     int player_play_key{};
     int player_stop_key{};
     int player_restart_key{};
-    // Unscaled width of the sidebar, dragged via the splitter next to it.
-    float sidebar_width{392.0f};
-    // Whether Devices/Profiles/Connect are collapsed to a slim rail.
-    bool sidebar_collapsed{};
     // Dark theme or light theme.
     bool dark_theme{true};
     // The accent colour every accent shade is made from (0xRRGGBB).
@@ -77,9 +92,8 @@ struct Settings {
     bool motion{true};
     // One of ui_scales.
     float ui_scale{1.0f};
-    // Layout: the sidebar on the right instead of the left, the Activity
-    // panel hidden, and notifications for problems and the connection.
-    bool sidebar_right{};
+    // Layout: the Activity panel hidden, and notifications for problems and
+    // the connection.
     bool log_hidden{};
     bool toasts{true};
     // The window's background: 0 the theme's colour, 1 `bg_color`, 2 the
@@ -106,10 +120,6 @@ struct Settings {
     // 1 normalized.
     int record_coords{};
 
-    // 0 = Player, 1 = Live, 3 = Recorder, 4 = ADB, 5 = Settings (App::Tab's
-    // numbers); Live by default. 2 was the Playlist tab and opens the Player
-    // in Playlist mode.
-    int tab{1};
     // 0 = Script, 1 = Playlist (App::PlayerMode).
     int player_mode{};
     // A script reference (see script_reference()/resolve_script_reference()

@@ -476,6 +476,14 @@ void draw_icon(ImDrawList* list, const Icon icon, const ImVec2 c, const float s,
                       ImVec2(c.x + w * 0.4f, c.y + h + t * 1.6f), color, t);
         break;
     }
+    case Icon::phone: {
+        const float w = s * 0.24f;
+        const float h = s * 0.4f;
+        list->AddRect(ImVec2(c.x - w, c.y - h), ImVec2(c.x + w, c.y + h), color, t, t);
+        list->AddLine(ImVec2(c.x - w * 0.35f, c.y + h - t * 2.2f),
+                      ImVec2(c.x + w * 0.35f, c.y + h - t * 2.2f), color, t);
+        break;
+    }
     case Icon::list: {
         const float w = s * 0.32f;
         const float step = s * 0.22f;

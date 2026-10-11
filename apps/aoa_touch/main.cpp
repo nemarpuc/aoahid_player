@@ -299,7 +299,7 @@ int run(int argc, char** argv) {
                          error.c_str(), options.profiles.touch.width,
                          options.profiles.touch.height);
         }
-        if (options.profiles.pen.enabled)
+        if (options.profiles.pen.enabled || options.profiles.digitizer.enabled)
             aoap::resolve_pen_surface(options.profiles);
         std::printf("[INFO] stopping the adb server so it releases the USB device\n");
         std::fflush(stdout);
@@ -309,6 +309,10 @@ int run(int argc, char** argv) {
     }
 
     std::string error;
+    if (aoap::enabled_profiles(options.profiles) == 0U) {
+        fail("Choose at least one profile to connect.");
+        return 1;
+    }
     if (!aoap::validate_setup(options.profiles, error)) {
         fail(error);
         return 1;
@@ -364,7 +368,9 @@ int run(int argc, char** argv) {
     if (!script && !load_script(options, script_path, script))
         return 1;
 
-    if (!session.connect(selection, options.profiles, error, options.adb_bridge)) {
+    if (!session.connect(selection,
+                         std::vector<aoap::ProfileSetup>(selection.size(), options.profiles),
+                         error, options.adb_bridge)) {
         fail(error);
         return 1;
     }
@@ -389,20 +395,13 @@ int run(int argc, char** argv) {
         });
     }
 
-    // A recording names the space its coordinates were taken in; map it onto
-    // the connected touchscreen and pen surfaces before playing.
-    {
-        const aoap::ProfileSetup& setup = options.profiles;
-        auto scaled = std::make_shared<aoap::EventScript>();
-        if (aoap::scale_script(*script, setup.touch.enabled ? setup.touch.width : 0,
-                               setup.touch.enabled ? setup.touch.height : 0,
-                               setup.pen.enabled ? setup.pen.width : 0,
-                               setup.pen.enabled ? setup.pen.height : 0, *scaled)) {
-            std::printf("[INFO] scaling coordinates from %dx%d\n", script->screen_width,
-                        script->screen_height);
-            script = std::move(scaled);
-        }
-    }
+    // A recording names the space its coordinates were taken in; they are
+    // scaled onto each device's touchscreen and pen surface as they are sent.
+    if (script->screen_width > 0 && options.profiles.touch.enabled &&
+        (script->screen_width != options.profiles.touch.width ||
+         script->screen_height != options.profiles.touch.height))
+        std::printf("[INFO] scaling coordinates from %dx%d\n", script->screen_width,
+                    script->screen_height);
 
     aoap::Player player(session.group(), &sink);
     player.load(script);

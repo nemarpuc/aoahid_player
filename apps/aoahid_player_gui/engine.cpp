@@ -32,8 +32,11 @@ Engine::Engine(aoap::EventSink& sink, std::function<void()> wake)
     player_.set_observer(this);
     // Wired once, unconditionally: pump_live() itself is a cheap no-op
     // whenever Live control is off and nothing is left to release, so a
-    // script that never turns Live on pays only one relaxed load per wake.
-    player_.set_live_pump([this] { pump_live(); });
+    // script that never turns Live on pays only two relaxed loads per wake.
+    player_.set_live_pump([this] {
+        pump_setup_in_play();
+        pump_live();
+    });
     live_inbox_.reserve(256);
     live_batch_.reserve(256);
     worker_ = std::thread([this] { loop(); });
@@ -91,9 +94,9 @@ void Engine::refresh() {
               Phase::refreshing);
 }
 
-void Engine::connect(std::vector<size_t> selection, aoap::ProfileSetup setup) {
+void Engine::connect(std::vector<size_t> selection, std::vector<aoap::ProfileSetup> setups) {
     push_from(Phase::idle,
-              Command{Command::Kind::connect, std::move(selection), std::move(setup), {}, {}, {},
+              Command{Command::Kind::connect, std::move(selection), std::move(setups), {}, {}, {},
                       0, {}, 0},
               Phase::connecting);
 }
@@ -311,9 +314,9 @@ std::vector<aoap::DeviceStatus> Engine::device_status() const {
     return session_.group().snapshot();
 }
 
-aoap::ProfileSetup Engine::connected_setup() const {
+aoap::ProfileSetup Engine::live_setup() const {
     const std::lock_guard lock(mutex_);
-    return setup_;
+    return live_setup_;
 }
 
 PlaylistProgress Engine::playlist_progress() const {
@@ -343,28 +346,40 @@ bool Engine::take(Observed& out) noexcept {
     return true;
 }
 
+// A script row as it was sent. The preview draws in the space Live input is
+// sent in, so the row's position is brought there first.
 void Engine::sent(const aoap::EventPayload& payload) noexcept {
     if (!observing_.load(std::memory_order_relaxed))
         return;
-    observe(Observed{Observed::Kind::payload, payload, 0, aoap::Timing::now_ns()});
+    Observed event{Observed::Kind::payload, payload, 0, aoap::Timing::now_ns()};
+    const aoap::Space to = live_space_worker_;
+    if (play_space_.width > 0 && to.width > 0 && play_space_ != to) {
+        if (auto* touch = std::get_if<aoap::TouchEvent>(&event.payload)) {
+            touch->x = aoap::scale_coordinate(touch->x, play_space_.width, to.width);
+            touch->y = aoap::scale_coordinate(touch->y, play_space_.height, to.height);
+        } else if (auto* pen = std::get_if<aoap::PenSample>(&event.payload)) {
+            pen->x = aoap::scale_coordinate(pen->x, play_space_.width, to.width);
+            pen->y = aoap::scale_coordinate(pen->y, play_space_.height, to.height);
+        } else if (auto* digitizer = std::get_if<aoap::DigitizerSample>(&event.payload)) {
+            digitizer->x = aoap::scale_coordinate(digitizer->x, play_space_.width, to.width);
+            digitizer->y = aoap::scale_coordinate(digitizer->y, play_space_.height, to.height);
+        }
+    }
+    observe(event);
 }
 
 // --- Worker --------------------------------------------------------------
 
-std::shared_ptr<const aoap::EventScript>
-Engine::prepare(const std::shared_ptr<const aoap::EventScript>& script) {
-    const aoap::ProfileSetup& setup = session_.setup();
-    auto scaled = std::make_shared<aoap::EventScript>();
-    const bool touch = setup.touch.enabled;
-    const bool pen = setup.pen.enabled;
-    if (!aoap::scale_script(*script, touch ? setup.touch.width : 0, touch ? setup.touch.height : 0,
-                            pen ? setup.pen.width : 0, pen ? setup.pen.height : 0, *scaled))
-        return script;
+void Engine::load(const std::shared_ptr<const aoap::EventScript>& script) {
+    play_space_ = {script->screen_width, script->screen_height};
+    player_.load(script);
+    const aoap::Space to = live_space_worker_;
+    if (play_space_.width <= 0 || to.width <= 0 || play_space_ == to)
+        return;
     char text[128];
     std::snprintf(text, sizeof text, "Coordinates scaled from %dx%d to the connected surface.",
-                  script->screen_width, script->screen_height);
+                  play_space_.width, play_space_.height);
     note(aoap::Severity::info, text);
-    return scaled;
 }
 
 void Engine::loop() {
@@ -373,8 +388,14 @@ void Engine::loop() {
         {
             std::unique_lock lock(mutex_);
             ready_.wait(lock, [this] {
-                return !queue_.empty() || bridge_pending_.load(std::memory_order_relaxed);
+                return !queue_.empty() || bridge_pending_.load(std::memory_order_relaxed) ||
+                       setup_pending_.load(std::memory_order_relaxed);
             });
+            if (setup_pending_.load(std::memory_order_relaxed)) {
+                lock.unlock();
+                pump_setup();
+                continue;
+            }
             if (bridge_pending_.load(std::memory_order_relaxed)) {
                 lock.unlock();
                 pump_bridge();
@@ -407,6 +428,8 @@ void Engine::loop() {
 // on, it lost the worker thread's low-latency wait the moment playback
 // preempted it (see run_live()), so a fresh live command resumes it.
 void Engine::finish_run() {
+    if (session_.group().active_count() != seen_active_)
+        publish_setup();
     {
         const std::lock_guard lock(mutex_);
         // A stop() or seek that arrived after the last Player::run() returned
@@ -430,15 +453,15 @@ void Engine::finish_run() {
 
 void Engine::apply_live_one(const aoap::EventPayload& payload) {
     aoap::DeviceGroup& group = session_.group();
-    aoahid_result result = group.apply(payload);
+    aoahid_result result = group.apply(payload, live_space_worker_);
     if (result == AOAHID_ERR_BUSY) {
         // The opposite edge of the same control is still unreported.
         group.flush();
-        result = group.apply(payload);
+        result = group.apply(payload, live_space_worker_);
     }
     if (result == AOAHID_OK) {
         live_held_.apply(payload);
-        sent(payload);
+        observe(Observed{Observed::Kind::payload, payload, 0, aoap::Timing::now_ns()});
     }
 }
 
@@ -459,6 +482,9 @@ void Engine::release_live() {
 // Player::set_live_pump()) while a script plays. Cheap to call when there is
 // nothing to do — one relaxed load — so both call it liberally.
 void Engine::pump_live() {
+    // A device was dropped: the space Live sends in may have gone with it.
+    if (session_.group().active_count() != seen_active_)
+        publish_setup();
     if (!live_active_.load(std::memory_order_acquire)) {
         // Just turned off (or never on): release whatever is still held,
         // exactly once — neutral() is false only until this runs.
@@ -568,6 +594,111 @@ void Engine::pump_bridge() {
         wake_();
 }
 
+bool Engine::set_device_setup(const size_t device, aoap::ProfileSetup setup) {
+    const Phase now = phase();
+    if (now != Phase::connected &&
+        !(now == Phase::playing && player_.status().state == aoap::PlaybackState::paused))
+        return false;
+    {
+        const std::lock_guard lock(mutex_);
+        setup_inbox_.push_back(SetupRequest{device, std::move(setup)});
+        setup_pending_.store(true, std::memory_order_release);
+    }
+    ready_.notify_one();
+    player_.wake_live();
+    return true;
+}
+
+std::vector<SetupEvent> Engine::take_setup_events() {
+    std::vector<SetupEvent> events;
+    const std::lock_guard lock(mutex_);
+    events.swap(setup_events_);
+    return events;
+}
+
+void Engine::publish_setup() {
+    aoap::ProfileSetup live;
+    uint32_t seen = 0;
+    for (const aoap::DeviceStatus& status : session_.group().snapshot()) {
+        if (!status.active)
+            continue;
+        const auto first = [&](const aoap::Profile profile) {
+            return (status.profiles & ~seen & aoap::profile_bit(profile)) != 0U;
+        };
+        if (first(aoap::Profile::touch))
+            live.touch = status.setup.touch;
+        else if ((status.profiles & aoap::profile_bit(aoap::Profile::touch)) != 0U)
+            live.touch.max_contacts =
+                std::min(live.touch.max_contacts, status.setup.touch.max_contacts);
+        if (first(aoap::Profile::mouse))
+            live.mouse = status.setup.mouse;
+        if (first(aoap::Profile::key))
+            live.key = status.setup.key;
+        if (first(aoap::Profile::gamepad))
+            live.gamepad = status.setup.gamepad;
+        if (first(aoap::Profile::pen))
+            live.pen = status.setup.pen;
+        if (first(aoap::Profile::digitizer))
+            live.digitizer = status.setup.digitizer;
+        if (first(aoap::Profile::toggle))
+            live.toggle = status.setup.toggle;
+        seen |= status.profiles;
+    }
+    live_space_worker_ = live.touch.enabled ? aoap::Space{live.touch.width, live.touch.height}
+                                            : aoap::Space{};
+    seen_active_ = session_.group().active_count();
+    {
+        const std::lock_guard lock(mutex_);
+        live_setup_ = std::move(live);
+    }
+    profiles_.store(session_.group().profile_mask(), std::memory_order_relaxed);
+}
+
+void Engine::pump_setup() {
+    if (!setup_pending_.exchange(false, std::memory_order_acq_rel))
+        return;
+    std::vector<SetupRequest> batch;
+    {
+        const std::lock_guard lock(mutex_);
+        batch.swap(setup_inbox_);
+    }
+    // A Node that goes away takes what it held with it; Live lets go first
+    // so its own record of what is pressed stays true.
+    release_live();
+    for (SetupRequest& request : batch) {
+        SetupEvent event{request.device, {}};
+        static_cast<void>(session_.reconfigure(request.device, request.setup, event.error));
+        const std::lock_guard lock(mutex_);
+        setup_events_.push_back(std::move(event));
+    }
+    publish_setup();
+    if (wake_)
+        wake_();
+}
+
+void Engine::pump_setup_in_play() {
+    if (!setup_pending_.load(std::memory_order_relaxed))
+        return;
+    if (player_.holding_pause()) {
+        pump_setup();
+        return;
+    }
+    // Accepted during a pause that has since ended: a Node must not come or
+    // go under a running script.
+    setup_pending_.store(false, std::memory_order_release);
+    std::vector<SetupRequest> batch;
+    {
+        const std::lock_guard lock(mutex_);
+        batch.swap(setup_inbox_);
+        for (const SetupRequest& request : batch)
+            setup_events_.push_back(
+                SetupEvent{request.device, "Not applied: playback is running. Pause or stop it "
+                                           "first."});
+    }
+    if (wake_)
+        wake_();
+}
+
 void Engine::run_live() {
     aoap::DeviceGroup& group = session_.group();
     bool stopped = false;
@@ -577,7 +708,8 @@ void Engine::run_live() {
             ready_.wait(lock, [&] {
                 return live_stop_ || !queue_.empty() ||
                        live_pending_.load(std::memory_order_relaxed) ||
-                       bridge_pending_.load(std::memory_order_relaxed);
+                       bridge_pending_.load(std::memory_order_relaxed) ||
+                       setup_pending_.load(std::memory_order_relaxed);
             });
             if (live_stop_ || !queue_.empty()) {
                 // Captured under the same lock as the check above, not by
@@ -591,6 +723,7 @@ void Engine::run_live() {
             }
         }
         pump_live();
+        pump_setup();
         pump_bridge();
         if (group.active_count() == 0) {
             note(aoap::Severity::error, "Every device was dropped; live control stopped.");
@@ -638,18 +771,14 @@ void Engine::execute(Command& command) {
         break;
     }
     case Command::Kind::connect: {
-        if (!session_.connect(command.selection, command.setup, error)) {
+        if (!session_.connect(command.selection, command.setups, error)) {
             note(aoap::Severity::error, error);
             profiles_.store(0U, std::memory_order_relaxed);
             set_phase(Phase::idle);
             break;
         }
-        {
-            const std::lock_guard lock(mutex_);
-            setup_ = session_.setup();
-        }
+        publish_setup();
         setup_version_.fetch_add(1, std::memory_order_acq_rel);
-        profiles_.store(session_.group().profile_mask(), std::memory_order_relaxed);
         note(aoap::Severity::info,
              "Ready: " + plural(session_.group().size(), "device", "devices") + " with " +
                  aoap::describe_profiles(session_.group().profile_mask()) + ".");
@@ -683,7 +812,7 @@ void Engine::execute(Command& command) {
         // The live offset belongs to one run: it starts at zero every time.
         player_.set_offset_ns(0);
         player_.set_loop_limit(command.loops);
-        player_.load(prepare(command.script));
+        load(command.script);
         note(aoap::Severity::info, "Playing " + command.name + ".");
         player_.run(command.start);
         const aoap::PlaybackStatus status = player_.status();
@@ -715,7 +844,7 @@ void Engine::execute(Command& command) {
                 wake_();
             player_.set_offset_ns(0);
             player_.set_loop_limit(std::max<int64_t>(step.loops, 1));
-            player_.load(prepare(step.script));
+            load(step.script);
             note(aoap::Severity::info, "Playlist " + std::to_string(index + 1) + "/" +
                                            std::to_string(count) + ": " + step.name + " (" +
                                            plural(static_cast<uint64_t>(step.loops), "loop",

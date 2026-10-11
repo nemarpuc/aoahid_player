@@ -220,7 +220,6 @@ void App::apply_look(const Settings& settings) {
     live_phone_glass_ = settings.live_phone_glass;
     live_phone_clear_ = settings.live_phone_clear;
     live_phone_rounding_ = settings.live_phone_rounding;
-    sidebar_right_ = settings.sidebar_right;
     log_hidden_ = settings.log_hidden;
     toasts_enabled_ = settings.toasts;
     if (!toasts_enabled_)
@@ -267,8 +266,8 @@ void App::collect_toasts() {
         push_toast(severity, std::move(text));
 }
 
-// Newest at the bottom, in the bottom corner away from the sidebar (so they
-// never cover Connect), over everything, full screen included. Nearly
+// Newest at the bottom, in the bottom-right corner, over everything, full
+// screen included. Nearly
 // solid, so text under them does not show through. Hovering keeps one up;
 // a click dismisses it.
 void App::draw_toasts() {
@@ -278,12 +277,9 @@ void App::draw_toasts() {
         return;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
     const float margin = px(20);
-    const bool left = sidebar_right_ && !live_fullscreen_;
-    ImGui::SetNextWindowPos(
-        ImVec2(left ? viewport->WorkPos.x + margin
-                    : viewport->WorkPos.x + viewport->WorkSize.x - margin,
-               viewport->WorkPos.y + viewport->WorkSize.y - margin),
-        ImGuiCond_Always, ImVec2(left ? 0.0f : 1.0f, 1.0f));
+    ImGui::SetNextWindowPos(ImVec2(viewport->WorkPos.x + viewport->WorkSize.x - margin,
+                                   viewport->WorkPos.y + viewport->WorkSize.y - margin),
+                            ImGuiCond_Always, ImVec2(1.0f, 1.0f));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
     constexpr ImGuiWindowFlags flags =
         ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
@@ -358,6 +354,8 @@ void App::draw_settings() {
         draw_live_look_card();
         gap(2);
         draw_layout_card();
+        gap(2);
+        draw_control_api_card();
     };
     if (available.x >= px(760)) {
         const float spacing = px(10);
@@ -714,9 +712,6 @@ void App::draw_live_look_card() {
 
 void App::draw_layout_card() {
     ui::begin_card("##layout", "Layout");
-    field("Sidebar");
-    static const char* const sides[] = {"Left", "Right"};
-    sidebar_right_ = segmented("##sidebar_side", sides, 2, sidebar_right_ ? 1 : 0) == 1;
     bool show_log = !log_hidden_;
     if (ui::toggle("Show activity panel", &show_log))
         log_hidden_ = !show_log;
@@ -724,6 +719,48 @@ void App::draw_layout_card() {
         toasts_.clear();
     small_dim("Notifications show warnings, errors, and the connection in the bottom-right "
               "corner for a few seconds.");
+    ui::end_card();
+}
+
+void App::draw_control_api_card() {
+    ui::begin_card("##control_api", "Control API");
+    bool enabled = control_api_.running();
+    if (ui::toggle("Listen on this machine##api", &enabled)) {
+        if (enabled) {
+            const std::string error = control_api_.start(api_port_);
+            if (error.empty()) {
+                api_enabled_ = true;
+                log_.message(aoap::Severity::info, "Control API listening on 127.0.0.1:" +
+                                                        std::to_string(api_port_) + ".");
+            } else {
+                log_.message(aoap::Severity::error, error);
+            }
+        } else {
+            control_api_.stop();
+            api_enabled_ = false;
+        }
+    }
+    ImGui::SetItemTooltip("Lets any program on this machine drive the app over plain HTTP "
+                          "(127.0.0.1 only). Off by default.");
+    field("Port");
+    ImGui::BeginDisabled(control_api_.running());
+    ImGui::SetNextItemWidth(px(90));
+    if (ImGui::InputInt("##api_port", &api_port_, 0, 0))
+        api_port_ = std::clamp(api_port_, 1024, 65535);
+    ImGui::EndDisabled();
+    if (control_api_.running())
+        ImGui::SetItemTooltip("Turn it off to change the port.");
+    gap(2);
+    if (control_api_.running()) {
+        small_dim("Any local program can reach it, with no further authentication — see "
+                  "README.md's \"Control API\" section for the routes.");
+    } else {
+        small_dim("Off by default. Turning it on lets any local program drive this app over "
+                  "plain HTTP — play/stop/seek a script, send touch/mouse/keyboard/gamepad/"
+                  "media-key input, switch a device's HIDs, read status. Binds 127.0.0.1 only, "
+                  "never a public interface, but nothing more: any program running on this "
+                  "machine could reach it once it is on.");
+    }
     ui::end_card();
 }
 

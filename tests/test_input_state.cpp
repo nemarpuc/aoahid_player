@@ -41,13 +41,14 @@ TEST_CASE("Releasing everything lifts contacts at their last position") {
     held.apply(aoap::GamepadAxis{1, -500});
     held.apply(aoap::GamepadDpad{true, false, false, false});
     held.apply(aoap::PenSample{true, true, 5, 6, 100});
+    held.apply(aoap::DigitizerSample{true, false, 7, 8, 0});
     CHECK_FALSE(held.neutral());
 
     std::vector<EventPayload> releases;
     std::vector<EventPayload> presses;
     InputState::transition(held, InputState{}, releases, presses);
     CHECK(presses.empty());
-    CHECK(releases.size() == 7);
+    CHECK(releases.size() == 8);
 
     const auto* lift = std::get_if<aoap::TouchEvent>(&releases.front());
     REQUIRE(lift != nullptr);
@@ -57,6 +58,7 @@ TEST_CASE("Releasing everything lifts contacts at their last position") {
     CHECK(lift->y == 250);
     CHECK(count_of<aoap::KeyEvent>(releases) == 1);
     CHECK(count_of<aoap::PenSample>(releases) == 1);
+    CHECK(count_of<aoap::DigitizerSample>(releases) == 1);
 }
 
 

@@ -26,6 +26,7 @@ enum class Icon {
     trash,
     expand,
     monitor, // a screen with a small stand, for "Live"
+    phone,   // an upright phone, for "Devices"
     list,    // three lines, for "Playlist"
     gear,    // a toothed wheel, for "Settings"
     terminal, // ">_", for "ADB"
