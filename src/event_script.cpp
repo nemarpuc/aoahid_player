@@ -351,7 +351,7 @@ uint64_t batch_key(const EventPayload& payload) noexcept {
             else if constexpr (std::is_same_v<T, DigitizerSample>)
                 return uint64_t{9} << 56;
             else
-                return uint64_t{8} << 56; // one Consumer field: any two rows conflict
+                return (uint64_t{8} << 56) | value.usage; // one bit per Consumer usage
         },
         payload);
 }

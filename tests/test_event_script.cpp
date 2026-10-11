@@ -332,8 +332,10 @@ TEST_CASE("EventScript::load parses media key rows by name or usage") {
     CHECK(std::get<aoap::MediaKey>(script.rows[1].payload).down == false);
     CHECK(std::get<aoap::MediaKey>(script.rows[2].payload).usage == 0x00CD);
     CHECK(std::get<aoap::MediaKey>(script.rows[4].payload).usage == 0x00B6);
-    // One Consumer field: every media row conflicts with every other.
-    CHECK(aoap::batch_key(script.rows[0].payload) == aoap::batch_key(script.rows[2].payload));
+    // Each Consumer usage has its own bit: one usage conflicts with itself, two usages do not.
+    CHECK(aoap::batch_key(aoap::MediaKey{0x00E9, true}) ==
+          aoap::batch_key(aoap::MediaKey{0x00E9, false}));
+    CHECK(aoap::batch_key(script.rows[0].payload) != aoap::batch_key(script.rows[2].payload));
     CHECK(aoap::batch_key(script.rows[0].payload) != 0U);
     CHECK(script.required_profiles() == aoap::profile_bit(aoap::Profile::toggle));
 
