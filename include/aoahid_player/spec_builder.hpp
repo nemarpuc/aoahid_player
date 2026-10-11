@@ -484,9 +484,9 @@ inline aoahid_result create_mouse(const MouseSetup& setup, aoahid_spec** spec) {
 inline aoahid_result create_key(const KeySetup& setup, aoahid_spec** spec) {
     aoahid_keyboard_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
-    // The keyboard profile is exclusively full-NKRO as of libaoahid 0.2.0:
-    // every usage is a one-bit Variable field, so there is no Array slot
-    // count or ErrorRollOver encoding left to configure.
+    // The keyboard profile is full NKRO: every usage is a one-bit Variable
+    // field, so there is no Array slot count or ErrorRollOver encoding to
+    // configure.
     options.usage_minimum = setup.usage_minimum;
     options.usage_maximum = setup.usage_maximum;
     apply_battery(options, setup.battery);
@@ -522,9 +522,8 @@ inline aoahid_result create_gamepad(const GamepadSetup& setup, aoahid_spec** spe
 
     aoahid_gamepad_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
-    // libaoahid 0.3.0 removed the Joystick Application Collection and the
-    // options.application selector; aoahid_spec_create_gamepad now always
-    // emits the Generic Desktop / Game Pad form.
+    // aoahid_spec_create_gamepad always emits the Generic Desktop / Game Pad
+    // Application Collection; there is no Joystick form to select.
     options.axes = axes.data();
     options.axis_count = axes.size();
     options.button_count = setup.buttons;
