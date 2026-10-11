@@ -365,7 +365,7 @@ inline aoahid_result create_touch(const TouchSetup& setup, aoahid_spec** spec) {
     options.contacts_per_report = setup.max_contacts;
     // Four bits cover the 0..15 Contact Identifier space that
     // maximum_contacts is itself capped at.
-    options.contact_identifier = field(0, 15, 4);
+    options.contact_id = field(0, 15, 4);
     options.x = field(0, setup.width - 1, unsigned_bits(setup.width - 1));
     options.y = field(0, setup.height - 1, unsigned_bits(setup.height - 1));
     options.contact_count = field(0, static_cast<int32_t>(setup.max_contacts),
@@ -409,13 +409,13 @@ inline aoahid_result create_gamepad(const GamepadSetup& setup, aoahid_spec** spe
     const int32_t unsigned_extent = static_cast<int32_t>(
         unsigned_span > int64_t{INT32_MAX} ? int64_t{INT32_MAX} : unsigned_span);
 
-    std::vector<aoahid_gamepad_axis> axes;
+    std::vector<aoahid_gamepad_axis_option> axes;
     axes.reserve(setup.axes.size());
     for (const aoahid_axis_role role : setup.axes) {
         const AxisIdentity* identity = find_axis(role);
         if (identity == nullptr)
             return AOAHID_ERR_PARAM;
-        aoahid_gamepad_axis axis{};
+        aoahid_gamepad_axis_option axis{};
         axis.role = identity->role;
         axis.usage_page = identity->usage_page;
         axis.usage = identity->usage;

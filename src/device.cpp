@@ -42,8 +42,8 @@ aoahid_device_options make_device_options() noexcept {
     options.linux_hid_fields_per_report_policy = 256U;
     options.linux_hid_global_stack_depth_policy = 4U;
     options.linux_hid_usages_policy = 12288U;
-    options.linux_hid_report_data_bits_policy = 65528U;
-    options.linux_hid_report_size_bits_policy = 256U;
+    options.linux_hid_report_data_policy_bits = 65528U;
+    options.linux_hid_report_size_policy_bits = 256U;
     options.target_ep0_data_policy_bytes = descriptor_policy_bytes;
     options.host_control_buffer_policy_bytes = descriptor_policy_bytes;
     options.interface_claim_policy = AOAHID_INTERFACE_CLAIM_NONE;

@@ -5,6 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.0.1] - 2026-10-11
+
+- Builds against libaoahid 1.0.0 as it is released. Only names changed: the
+  media key call is `aoahid::toggle_usage` (it was `aoahid::toggle`), the gamepad
+  axis call is `aoahid::gamepad_axis` (it was `aoahid::gamepad_set_axis`), and
+  the options fields are `contact_id`, `aoahid_gamepad_axis_option`,
+  `linux_hid_report_data_policy_bits`, and `linux_hid_report_size_policy_bits`.
+  Behavior is the same.
+
 ## [3.0.0] - 2026-10-11
 
 - **Media keys can be held together.** libaoahid's toggle profile now keeps one

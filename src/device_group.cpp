@@ -79,13 +79,13 @@ aoahid_result mutate(const Device& device, const EventPayload& payload, const Sp
             } else if constexpr (std::is_same_v<T, GamepadButton>) {
                 return aoahid::gamepad_button(device.node(Profile::gamepad), value.button, value.pressed);
             } else if constexpr (std::is_same_v<T, GamepadAxis>) {
-                return aoahid::gamepad_set_axis(device.node(Profile::gamepad), value.axis_index, value.value);
+                return aoahid::gamepad_axis(device.node(Profile::gamepad), value.axis_index, value.value);
             } else if constexpr (std::is_same_v<T, GamepadDpad>) {
                 return aoahid::gamepad_dpad(device.node(Profile::gamepad), value.up, value.down, value.right, value.left);
             } else if constexpr (std::is_same_v<T, MediaKey>) {
                 // Each Consumer usage has its own bit; a release of a usage
                 // that is not held changes nothing.
-                return aoahid::toggle(device.node(Profile::toggle), value.usage, value.down);
+                return aoahid::toggle_usage(device.node(Profile::toggle), value.usage, value.down);
             } else if constexpr (std::is_same_v<T, PenSample>) {
                 const auto sample = stylus_sample<aoahid_pen_sample>(value, space, pen);
                 return aoahid::pen_update(device.node(Profile::pen), &sample);
@@ -253,7 +253,7 @@ aoahid_result DeviceGroup::scroll(const int32_t wheel) {
 
 aoahid_result DeviceGroup::toggle(const uint16_t usage, const uint8_t value) {
     return broadcast(Profile::toggle, [&](const Slot& slot) {
-        return aoahid::toggle(slot.device.node(Profile::toggle), usage, value != 0);
+        return aoahid::toggle_usage(slot.device.node(Profile::toggle), usage, value != 0);
     });
 }
 
