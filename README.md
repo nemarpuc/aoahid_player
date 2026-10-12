@@ -274,7 +274,9 @@ is still there.
 
 The *Script | Playlist* switch at the top of the Player tab chooses what it
 plays. *Playlist* plays several scripts in order, each for its own number of
-loops, with an optional limit in minutes on the whole run. It uses the same
+loops, with an optional limit in minutes on the whole run. *Loops* under the
+list is how many times the whole list plays (0 repeats it until stopped, as
+for a single script), and the bar then shows which loop it is on. It uses the same
 play bar as a single script: the bar shows the script that is running (for
 example *2/5*), and play/pause, stop, speed, offset, and seeking act on that
 script. *Loops* is set for each script in the list instead. Playlists are

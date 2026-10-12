@@ -145,7 +145,8 @@ bool Engine::play(std::shared_ptr<const aoap::EventScript> script, std::string n
                      Phase::playing);
 }
 
-void Engine::play_playlist(std::vector<PlaylistStep> steps, const int64_t time_limit_ns) {
+void Engine::play_playlist(std::vector<PlaylistStep> steps, const int64_t loops,
+                           const int64_t time_limit_ns) {
     if (steps.empty())
         return;
     {
@@ -153,7 +154,7 @@ void Engine::play_playlist(std::vector<PlaylistStep> steps, const int64_t time_l
         if (phase_.load(std::memory_order_acquire) != Phase::connected)
             return;
         playlist_abort_ = false;
-        queue_.push_back(Command{Command::Kind::playlist, {}, {}, {}, {}, {}, 0,
+        queue_.push_back(Command{Command::Kind::playlist, {}, {}, {}, {}, {}, loops,
                                  std::move(steps), time_limit_ns});
         phase_.store(Phase::playing, std::memory_order_release);
     }
@@ -826,14 +827,19 @@ void Engine::execute(Command& command) {
         player_.set_stop_at(stop_at);
         const size_t count = command.steps.size();
         bool by_time = false;
-        size_t finished = 0;
-        for (size_t index = 0; index < count; ++index) {
+        // The whole list plays command.loops times, or until stopped when
+        // that is 0.
+        bool ended = false;
+        int64_t loop = 1;
+        size_t index = 0;
+        while (!ended) {
             const PlaylistStep& step = command.steps[index];
             {
                 const std::lock_guard lock(mutex_);
                 if (playlist_abort_)
                     break;
-                progress_ = PlaylistProgress{true, index, count, step.name, step.loops, stop_at};
+                progress_ = PlaylistProgress{true,       index,   count, step.name,
+                                             step.loops, stop_at, loop,  command.loops};
             }
             if (wake_)
                 wake_();
@@ -855,7 +861,11 @@ void Engine::execute(Command& command) {
             const std::lock_guard lock(mutex_);
             if (playlist_abort_)
                 break;
-            ++finished;
+            if (++index == count) {
+                index = 0;
+                ended = command.loops > 0 && loop >= command.loops;
+                ++loop;
+            }
         }
         player_.set_stop_at(0);
         {
@@ -864,7 +874,7 @@ void Engine::execute(Command& command) {
         }
         if (by_time)
             note(aoap::Severity::info, "Time limit reached; the playlist stopped.");
-        else if (finished == count)
+        else if (ended)
             note(aoap::Severity::info, "Playlist finished.");
         else
             note(aoap::Severity::info, "Playlist stopped.");

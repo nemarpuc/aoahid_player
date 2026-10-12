@@ -909,7 +909,7 @@ void App::play_playlist() {
     playlist_error_.clear();
     const int64_t limit = static_cast<int64_t>(playlist_.time_limit_minutes) * 60 *
                           1'000'000'000LL;
-    engine_.play_playlist(std::move(steps), limit);
+    engine_.play_playlist(std::move(steps), playlist_.loops, limit);
 }
 
 void App::stop_playback() {

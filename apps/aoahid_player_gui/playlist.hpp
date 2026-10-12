@@ -8,8 +8,8 @@
 
 namespace gui {
 
-// Scripts played in order, each a number of loops, with an optional limit on
-// the whole run. Saved as playlists/<name>.playlist next to the program.
+// Scripts played in order, each a number of loops, the whole list a number
+// of loops too, with an optional limit on the whole run. Saved as playlists/<name>.playlist next to the program.
 struct Playlist {
     struct Entry {
         std::string script; // file name inside csv/, or a full path elsewhere
@@ -18,6 +18,7 @@ struct Playlist {
     };
     std::string name;
     std::vector<Entry> entries;
+    int loops{1};             // of the whole list; 0 = until stopped
     int time_limit_minutes{}; // 0 = no limit
 
     bool operator==(const Playlist&) const = default;

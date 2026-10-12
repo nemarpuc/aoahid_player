@@ -295,8 +295,22 @@ void App::draw_playlist_scripts_card() {
         draw_script_picker(width, true);
     }
 
-    // Stops the whole run after this long, whichever script is playing.
+    // How many times the whole list plays, as Loops does for one script.
     thin_rule(2.0f, 4.0f);
+    field("Loops");
+    ImGui::BeginDisabled(running);
+    ImGui::SetNextItemWidth(px(120));
+    if (ImGui::InputInt("##list_loops", &playlist_.loops, 1, 10)) {
+        playlist_.loops = std::clamp(playlist_.loops, 0, 1000000);
+        playlist_dirty_ = true;
+    }
+    ImGui::EndDisabled();
+    ImGui::SameLine(0, px(10));
+    ImGui::AlignTextToFramePadding();
+    ImGui::TextDisabled(playlist_.loops == 0 ? "Repeats the list until stopped"
+                                             : "Stops after this many loops of the list");
+
+    // Stops the whole run after this long, whichever script is playing.
     field("Time limit");
     ImGui::BeginDisabled(running);
     ImGui::SetNextItemWidth(px(120));

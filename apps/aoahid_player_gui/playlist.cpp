@@ -85,6 +85,10 @@ bool load_playlist(const std::string& name, Playlist& out, std::string& error) {
             long minutes = 0;
             if (read_count(value, 0, 100000, minutes))
                 playlist.time_limit_minutes = static_cast<int>(minutes);
+        } else if (key == "loops") {
+            long loops = 1;
+            if (read_count(value, 0, 1000000, loops))
+                playlist.loops = static_cast<int>(loops);
         } else if (key == "play") {
             // "<script>, <loops>"; the script name itself may contain commas.
             const size_t comma = value.rfind(',');
@@ -109,6 +113,7 @@ bool save_playlist(const Playlist& playlist, std::string& error) {
     std::filesystem::create_directories(playlist_directory(), code);
     std::ostringstream text;
     text << "# AOA HID Player playlist, saved automatically.\n";
+    text << "loops = " << playlist.loops << '\n';
     text << "time_limit_minutes = " << playlist.time_limit_minutes << '\n';
     for (const Playlist::Entry& entry : playlist.entries)
         text << "play = " << entry.script << ", " << entry.loops << '\n';

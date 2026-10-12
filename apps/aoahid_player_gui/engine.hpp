@@ -58,6 +58,8 @@ struct PlaylistProgress {
     std::string name;
     int64_t loops{};
     int64_t ends_at_ns{}; // 0 = no time limit
+    int64_t list_loop{1}; // which loop of the whole list this is, from 1
+    int64_t list_loops{1}; // how many it plays; 0 = until stopped
 };
 
 // Runs every libaoahid call on one worker thread, which is what libaoahid's
@@ -95,7 +97,8 @@ class Engine final : private aoap::PlaybackObserver {
     bool play(std::shared_ptr<const aoap::EventScript> script, std::string name,
               aoap::PlaybackPosition start, int64_t loops);
     // Plays the steps in order; `time_limit_ns` 0 means no limit.
-    void play_playlist(std::vector<PlaylistStep> steps, int64_t time_limit_ns);
+    // `loops` is how many times the whole list plays; 0 repeats it until stopped.
+    void play_playlist(std::vector<PlaylistStep> steps, int64_t loops, int64_t time_limit_ns);
     // Cancels a queued play or stops the running one, playlists included.
     void stop();
 

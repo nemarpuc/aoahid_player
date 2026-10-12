@@ -5,6 +5,13 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.3.0] - 2026-10-12
+
+- Playlist: *Loops* under the list sets how many times the whole list plays;
+  0 repeats it until stopped, as for a single script. It is saved in the
+  playlist file as `loops = N`; a file without the line plays once, as
+  before. The play bar shows which loop of the list is running.
+
 ## [3.2.1] - 2026-10-12
 
 - The Script card's refresh button also reads the loaded script again (not

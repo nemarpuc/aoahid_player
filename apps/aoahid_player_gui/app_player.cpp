@@ -525,6 +525,14 @@ void App::draw_transport_card() {
         } else {
             where = std::to_string(playlist_now.index + 1) + "/" +
                     std::to_string(playlist_now.count);
+            // Which loop of the whole list, unless it plays just once.
+            if (playlist_now.list_loops != 1) {
+                std::string loop =
+                    "Loop " + format_count(static_cast<uint64_t>(playlist_now.list_loop));
+                if (playlist_now.list_loops > 0)
+                    loop += " of " + format_count(static_cast<uint64_t>(playlist_now.list_loops));
+                where = loop + "  \xC2\xB7  " + where;
+            }
             if (has_repeat) {
                 where += "  ·  Lap " + format_count(lap) + " of " +
                          format_count(static_cast<uint64_t>(playlist_now.loops));
