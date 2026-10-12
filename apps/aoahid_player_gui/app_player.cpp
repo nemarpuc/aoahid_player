@@ -680,18 +680,6 @@ void App::draw_transport_card() {
     ImGui::SetCursorPosY(row_y + large);
     thin_rule(2.0f, 2.0f);
 
-    // Active touches: every contact currently down, including Live's own
-    // reserved finger (see live_finger()), since playback and Live control
-    // can now run at once.
-    if (engine_.live_setup().touch.enabled && !touch_contacts_active_.empty()) {
-        gap(1);
-        ImGui::PushFont(nullptr, theme::font_small);
-        draw_touch_contacts();
-        ImGui::PopFont();
-        gap(1);
-        thin_rule(2.0f, 2.0f);
-    }
-
     // Speed, loop limit, lap, live offset.
     if (ImGui::BeginTable("##settings", playlist_view ? 3 : 4,
                           ImGuiTableFlags_SizingStretchSame)) {
@@ -808,6 +796,18 @@ void App::draw_transport_card() {
         ImGui::TableNextColumn();
         draw_player_key_setting(PlayerAction::restart, "Back to start key");
         ImGui::EndTable();
+    }
+
+    // Active touches: every contact currently down, including Live's own
+    // reserved finger (see live_finger()), since playback and Live control
+    // can now run at once. Last in the card: the list grows and shrinks with
+    // every touch, and anything below it would move with it.
+    if (engine_.live_setup().touch.enabled && !touch_contacts_active_.empty()) {
+        thin_rule(2.0f, 2.0f);
+        gap(1);
+        ImGui::PushFont(nullptr, theme::font_small);
+        draw_touch_contacts();
+        ImGui::PopFont();
     }
     ui::end_card();
 }

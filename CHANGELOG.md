@@ -5,6 +5,12 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.1.2] - 2026-10-12
+
+- Player tab: the list of touches currently down is the last thing in the
+  card. It sat above Speed, Loops, Lap and Offset, so those controls moved up
+  and down with every touch of a playing script.
+
 ## [3.1.1] - 2026-10-12
 
 - The messages for a row or directive the script format does not have say what
