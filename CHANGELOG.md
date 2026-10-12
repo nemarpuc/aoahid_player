@@ -5,6 +5,12 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.2.1] - 2026-10-12
+
+- The Script card's refresh button also reads the loaded script again (not
+  while something is playing), so a file can be edited and tried without
+  choosing it anew.
+
 ## [3.2.0] - 2026-10-12
 
 - Playlist: *Add a script* opens the same searchable picker as Script mode

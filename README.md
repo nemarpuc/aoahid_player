@@ -147,7 +147,10 @@ skipped.
   changed. The trash button deletes a file after an inline confirmation.
   Files outside `csv/` open by path from the bottom of the list, or by
   dropping them on the window. The list rescans whenever the window gets
-  focus.
+  focus. The refresh button on the card rescans it too and, unless something
+  is playing, reads the loaded script again, so a file edited in another
+  program can be tried without choosing it anew; playback goes back to the
+  start, and a file with a mistake leaves the last good one loaded.
 - Play/pause (also **Space**), stop (**Esc** or **Ctrl+S**), and back-to-start
   (**Home** or **Backspace**) buttons. Each key can be remapped with the
   *Set...* buttons in the folded *Keys* row under the transport; a remapped

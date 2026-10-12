@@ -97,13 +97,26 @@ void App::draw_script_card() {
     ui::begin_card("##script");
     caption_row("Script");
     const float button = ImGui::GetFrameHeight();
+    const bool playing = engine_.phase() == Phase::playing;
+    // Also reads the loaded file again, so a script can be edited and tried
+    // without choosing it anew; not under a run, which holds the old rows.
+    const bool reload = !playing && !script_path_.empty();
     ui::align_right(button);
     if (ui::icon_button("##rescan", ui::Icon::refresh, button, ui::Tone::quiet,
-                        "Rescan the csv folder"))
+                        reload ? "Rescan the csv folder and reload this script"
+                               : "Rescan the csv folder")) {
         refresh_scripts();
+        if (reload) {
+            const std::string path = script_path_;
+            const std::shared_ptr<const aoap::EventScript> before = script_;
+            load_script(path);
+            if (script_ != before)
+                log_.message(aoap::Severity::info,
+                             "Reloaded " + aoap::display_name(path) + ".csv.");
+        }
+    }
 
     // The loaded script; clicking it opens the picker below it.
-    const bool playing = engine_.phase() == Phase::playing;
     const float width = ImGui::GetContentRegionAvail().x;
     const float height = ImGui::GetFrameHeight() + px(12);
     const ImVec2 p0 = ImGui::GetCursorScreenPos();
