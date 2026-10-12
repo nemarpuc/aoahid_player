@@ -493,18 +493,18 @@ TEST_CASE("Every row type takes its wait_ms or leaves it out") {
     CHECK(error.find("no event rows") != std::string::npos);
 }
 
-TEST_CASE("Old-format files are refused with what to write instead") {
+TEST_CASE("Rows and directives outside the format are refused") {
     aoap::EventScript script;
     std::string error;
 
-    CHECK_FALSE(script.load(write_temp_csv("old_upper", "K,A,1,8\n"), error));
+    CHECK_FALSE(script.load(write_temp_csv("upper", "K,A,1,8\n"), error));
     CHECK(error.find(":1:") != std::string::npos);
-    CHECK(error.find("@lap 1") != std::string::npos);
+    CHECK(error.find("lowercase") != std::string::npos);
 
-    CHECK_FALSE(script.load(write_temp_csv("old_once", "@once\nk,A,1,8\n@end\n"), error));
-    CHECK(error.find("@lap 1") != std::string::npos);
+    CHECK_FALSE(script.load(write_temp_csv("once", "@once\nk,A,1,8\n@end\n"), error));
+    CHECK(error.find("unknown directive @once") != std::string::npos);
 
-    CHECK_FALSE(script.load(write_temp_csv("old_screen", "# screen 1080x2400\nt,0,1,5,5,0\n"),
+    CHECK_FALSE(script.load(write_temp_csv("screen_comment", "# screen 1080x2400\nt,0,1,5,5,0\n"),
                             error));
     CHECK(error.find("@screen") != std::string::npos);
     // An ordinary comment that merely starts with the word is still a comment.
@@ -512,10 +512,10 @@ TEST_CASE("Old-format files are refused with what to write instead") {
     CHECK(script.screen_width == 0);
 
     for (const char* version : {"1", "2", "4"}) {
-        CHECK_FALSE(script.load(write_temp_csv("old_format", std::string("@format ") + version +
-                                                                 "\nt,0,1,5,5,0\n"),
-                                error));
-        CHECK(error.find("@format 3") != std::string::npos);
+        CHECK_FALSE(script.load(
+            write_temp_csv("format", std::string("@format ") + version + "\nt,0,1,5,5,0\n"),
+            error));
+        CHECK(error.find("@format must be 3") != std::string::npos);
     }
 }
 

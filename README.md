@@ -698,18 +698,6 @@ c,PlayPause,0,0
 - Every problem in a file is reported with its file and line, up to 50 (then
   reading stops). A file with any problem is not played.
 
-### Migrating from format 1 and 2
-
-Version 2.0.0 reads format 3 only. A file made only of lowercase rows plays as
-before. The rest is refused with the line number and what to write instead:
-
-| before | now |
-|--------|-----|
-| an uppercase prefix (`K,A,1,8`) | the same row in lowercase inside `@lap 1` … `@end` |
-| `@once` / `@once keep-time` | `@lap 1` / `@lap 1 keep-time` |
-| `# screen 1080x2400` | `@screen 1080x2400` |
-| `@format 1`, `@format 2` | `@format 3`, or no `@format` line |
-
 ## Linux permissions (udev)
 
 The programs open the phone's USB device directly, so the user running them

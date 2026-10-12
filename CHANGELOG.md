@@ -5,6 +5,14 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.1.1] - 2026-10-12
+
+- The messages for a row or directive the script format does not have say what
+  the format is, without naming earlier formats: `@format must be 3`, `row
+  prefixes are lowercase`, `unknown directive @once`, and `the screen size is
+  a directive, not a comment; write @screen WxH`. The README section
+  "Migrating from format 1 and 2" is gone.
+
 ## [3.1.0] - 2026-10-11
 
 - **A HID can report a battery level.** Every HID on the Devices tab has a

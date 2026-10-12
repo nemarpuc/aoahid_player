@@ -587,7 +587,7 @@ bool EventScript::load(const std::string& path, std::string& error) {
         const size_t comment = view.find('#');
         if (comment != std::string_view::npos) {
             if (trim(view.substr(0, comment)).empty() && screen_comment(view.substr(comment + 1)))
-                fail(number, "\"# screen WxH\" was removed; write @screen WxH");
+                fail(number, "the screen size is a directive, not a comment; write @screen WxH");
             view = view.substr(0, comment);
         }
         view = trim(view);
@@ -644,15 +644,12 @@ bool EventScript::load(const std::string& path, std::string& error) {
                 else
                     open_segment(LapSelector{});
                 in_block = false;
-            } else if (word == "once") {
-                fail(number, "@once was removed; write @lap 1");
             } else if (word == "format") {
                 int64_t version = 0;
                 if (seen_row)
                     fail(number, "@format must come before the first row");
                 else if (!parse_bounded(argument, 3, 3, version))
-                    fail(number, "this version reads @format 3 only; see \"Migrating from "
-                                 "format 1 and 2\" in README.md");
+                    fail(number, "@format must be 3");
             } else if (word == "screen") {
                 int32_t w = 0;
                 int32_t h = 0;
@@ -690,8 +687,7 @@ bool EventScript::load(const std::string& path, std::string& error) {
 
         const char prefix = view.front();
         if (prefix >= 'A' && prefix <= 'Z') {
-            fail(number, "uppercase row prefixes were removed; put the row inside "
-                         "@lap 1 ... @end");
+            fail(number, "row prefixes are lowercase");
             continue;
         }
         if (prefix < 'a' || prefix > 'z') {
