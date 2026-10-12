@@ -5,6 +5,12 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.2.0] - 2026-10-12
+
+- Playlist: *Add a script* opens the same searchable picker as Script mode
+  (type to search, Up/Down, Enter adds), in place of a plain drop-down of
+  every file in the csv folder.
+
 ## [3.1.2] - 2026-10-12
 
 - Player tab: the list of touches currently down is the last thing in the

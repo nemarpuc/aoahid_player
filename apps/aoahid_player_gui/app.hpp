@@ -238,7 +238,8 @@ class App {
     void draw_control_api_card();
     void draw_player();
     void draw_script_card();
-    void draw_script_picker(float width);
+    // Choosing loads the script, or with `add_to_playlist` adds it to the playlist.
+    void draw_script_picker(float width, bool add_to_playlist = false);
     void draw_transport_card();
     void draw_live();
     void draw_live_surface(ImVec2 size);
@@ -664,7 +665,6 @@ class App {
     std::string playlist_name_input_;
     std::string playlist_error_;
     bool playlist_dirty_{};
-    int playlist_add_choice_{};
     // The running step the list last scrolled to, so it follows the run once
     // per step and leaves the user's own scrolling alone in between.
     size_t playlist_shown_step_{SIZE_MAX};

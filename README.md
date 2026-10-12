@@ -279,8 +279,10 @@ saved as `playlists/<name>.playlist` next to the program. The *Playlist* box
 shows the open one; click it for the list of saved playlists, which works
 like the script list (type to search, **Up/Down**, **Enter**, **Esc**, and a
 trash button with an inline confirmation). With room, the list sits on the
-left and the play bar on the right; in a narrow window they stack. `.csv`
-files dropped on the Playlist join the end of the list. The switch is locked
+left and the play bar on the right; in a narrow window they stack. *Add a
+script* under the list opens the same picker as Script mode (type to search,
+**Up/Down**, **Enter** adds the script); `.csv` files dropped on the Playlist
+join the end of the list. The switch is locked
 while something plays; **Ctrl+F** and *Open in player* switch back to
 *Script*.
 

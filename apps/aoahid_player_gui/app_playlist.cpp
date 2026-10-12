@@ -136,7 +136,6 @@ void App::draw_playlist_scripts_card() {
     const bool running = engine_.phase() == Phase::playing;
     const PlaylistProgress progress = engine_.playlist_progress();
     const float button = ImGui::GetFrameHeight();
-    const float spacing = ImGui::GetStyle().ItemSpacing.x;
     // The list takes what is left of the pane and scrolls inside itself, so
     // the file card and the play controls above it stay where they are.
     ui::begin_card("##playlist_steps", nullptr,
@@ -244,36 +243,57 @@ void App::draw_playlist_scripts_card() {
         playlist_dirty_ = true;
     }
 
-    // Add a script from the csv folder.
+    // Add a script: the same picker as Script mode's (see draw_script_card()).
     gap(2);
     thin_rule(0.0f, 4.0f);
-    ImGui::BeginDisabled(running || scripts_.empty());
-    const float add_width = px(76);
-    ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - add_width - spacing);
-    const char* preview = scripts_.empty() ? "No scripts in the csv folder"
-                                           : scripts_[static_cast<size_t>(std::clamp(
-                                                          playlist_add_choice_, 0,
-                                                          static_cast<int>(scripts_.size()) - 1))]
-                                                 .name.c_str();
-    if (ImGui::BeginCombo("##add_script", preview)) {
-        for (size_t index = 0; index < scripts_.size(); ++index) {
-            ImGui::PushID(static_cast<int>(index));
-            if (ImGui::Selectable(scripts_[index].name.c_str(),
-                                  playlist_add_choice_ == static_cast<int>(index)))
-                playlist_add_choice_ = static_cast<int>(index);
-            ImGui::PopID();
+    {
+        const float width = ImGui::GetContentRegionAvail().x;
+        const float height = ImGui::GetFrameHeight() + px(12);
+        const ImVec2 p0 = ImGui::GetCursorScreenPos();
+        const ImVec2 p1(p0.x + width, p0.y + height);
+        ImGui::BeginDisabled(running);
+        const bool clicked = ImGui::InvisibleButton("##add_script", ImVec2(width, height));
+        const bool hovered = ImGui::IsItemHovered();
+        ImGui::EndDisabled();
+        if (running && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+            ImGui::SetTooltip("Stop playback to change the playlist");
+        const bool picker_open = ImGui::IsPopupOpen("##picker");
+        if (clicked && !running) {
+            ImGui::OpenPopup("##picker");
+            focus_search_ = true;
+            pending_delete_.clear();
+            picker_cursor_ = 0;
+            script_filter_.clear();
+            picker_follow_ = true;
         }
-        ImGui::EndCombo();
+        ImDrawList* list = ImGui::GetWindowDrawList();
+        const float rounding = px(8);
+        ImGui::BeginDisabled(running);
+        list->AddRectFilled(p0, p1,
+                            ImGui::GetColorU32(hovered || picker_open ? theme::field_hover
+                                                                      : theme::field),
+                            rounding);
+        if (picker_open)
+            list->AddRect(p0, p1, ImGui::GetColorU32(theme::accent_line), rounding);
+        const float text_y = p0.y + (height - ImGui::GetTextLineHeight()) * 0.5f;
+        list->AddText(ImVec2(p0.x + px(14), text_y), ImGui::GetColorU32(theme::text_faint),
+                      scripts_.empty() ? "No scripts in the csv folder" : "Add a script");
+        char count[48];
+        std::snprintf(count, sizeof count, "%zu %s", scripts_.size(),
+                      scripts_.size() == 1 ? "script" : "scripts");
+        list->AddText(ImVec2(p1.x - px(40) - ImGui::CalcTextSize(count).x, text_y),
+                      ImGui::GetColorU32(theme::text_faint), count);
+        ui::draw_icon(list, ui::Icon::chevron_down, ImVec2(p1.x - px(20), p0.y + height * 0.5f),
+                      px(20), ImGui::GetColorU32(theme::text_dim));
+        ImGui::EndDisabled();
+        // Below the field as in Script mode, or above it when the list has
+        // pushed this row down and more room is left there.
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        const bool above = p0.y - viewport->Pos.y > viewport->Pos.y + viewport->Size.y - p1.y;
+        ImGui::SetNextWindowPos(above ? ImVec2(p0.x, p0.y - px(4)) : ImVec2(p0.x, p1.y + px(4)),
+                                ImGuiCond_Always, ImVec2(0.0f, above ? 1.0f : 0.0f));
+        draw_script_picker(width, true);
     }
-    ImGui::SameLine();
-    if (ui::button("Add", ImVec2(add_width, 0)) && !scripts_.empty()) {
-        const size_t choice = static_cast<size_t>(
-            std::clamp(playlist_add_choice_, 0, static_cast<int>(scripts_.size()) - 1));
-        playlist_.entries.push_back(
-            Playlist::Entry{script_reference(scripts_[choice].path), 1});
-        playlist_dirty_ = true;
-    }
-    ImGui::EndDisabled();
 
     // Stops the whole run after this long, whichever script is playing.
     thin_rule(2.0f, 4.0f);

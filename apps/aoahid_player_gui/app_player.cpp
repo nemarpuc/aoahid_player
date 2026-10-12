@@ -200,7 +200,7 @@ void App::draw_script_card() {
     ui::end_card();
 }
 
-void App::draw_script_picker(const float width) {
+void App::draw_script_picker(const float width, const bool add_to_playlist) {
     ImGui::SetNextWindowSize(ImVec2(width, 0));
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(px(8), px(8)));
     const bool open = ImGui::BeginPopup("##picker", ImGuiWindowFlags_NoMove);
@@ -289,7 +289,7 @@ void App::draw_script_picker(const float width) {
     const bool mouse_moved = delta.x != 0.0f || delta.y != 0.0f;
     for (size_t position = 0; position < shown.size(); ++position) {
         const ScriptFile& file = scripts_[static_cast<size_t>(shown[position])];
-        const bool loaded = file.path == script_path_;
+        const bool loaded = !add_to_playlist && file.path == script_path_;
         const bool deleting = pending_delete_ == file.path;
         ImGui::PushID(file.path.c_str());
         const ImVec2 r0 = ImGui::GetCursorScreenPos();
@@ -390,18 +390,27 @@ void App::draw_script_picker(const float width) {
     const float open_width = px(76);
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - open_width -
                             ImGui::GetStyle().ItemSpacing.x);
-    const bool path_entered =
-        ImGui::InputTextWithHint("##path", "Open another file by path (or drop it on the window)",
-                                 &path_input_, ImGuiInputTextFlags_EnterReturnsTrue);
+    const bool path_entered = ImGui::InputTextWithHint(
+        "##path",
+        add_to_playlist ? "Add another file by path (or drop it on the window)"
+                        : "Open another file by path (or drop it on the window)",
+        &path_input_, ImGuiInputTextFlags_EnterReturnsTrue);
     ImGui::SameLine();
-    if ((ui::button("Open", ImVec2(open_width, 0)) || path_entered) && !path_input_.empty())
+    if ((ui::button(add_to_playlist ? "Add" : "Open", ImVec2(open_width, 0)) || path_entered) &&
+        !path_input_.empty())
         choose = path_input_;
     ImGui::PushFont(nullptr, theme::font_small);
-    ImGui::TextDisabled("Up/Down to move, Enter to open, Esc to close");
+    ImGui::TextDisabled(add_to_playlist ? "Up/Down to move, Enter to add, Esc to close"
+                                        : "Up/Down to move, Enter to open, Esc to close");
     ImGui::PopFont();
 
     if (!choose.empty()) {
-        load_script(choose);
+        if (add_to_playlist) {
+            playlist_.entries.push_back(Playlist::Entry{script_reference(choose), 1});
+            playlist_dirty_ = true;
+        } else {
+            load_script(choose);
+        }
         ImGui::CloseCurrentPopup();
     }
     ImGui::EndPopup();
