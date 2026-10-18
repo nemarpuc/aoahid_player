@@ -12,6 +12,8 @@ namespace aoap {
 namespace {
 
 constexpr uint32_t discover_timeout_ms = 500U;
+// Each of the accessory requests 51, 52 and 53.
+constexpr uint32_t accessory_timeout_ms = 500U;
 // Android registers a HID device asynchronously after aoahid_node_open
 // returns, and a report sent before that is refused (STALL) or lost.
 // libaoahid's docs/API.md asks for a short gap such as 100 ms.
@@ -135,6 +137,7 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
         opt.strings.manufacturer = "aoahid_player";
         opt.strings.model = "aoahid_player";
         opt.strings.description = "aoahid_player accessory mode";
+        opt.control_timeout_ms = accessory_timeout_ms;
 
         const aoahid_result res = aoahid_accessory_start(context_.native_handle(), info, &opt);
         if (res == AOAHID_OK) {
