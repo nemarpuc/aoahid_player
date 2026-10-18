@@ -2,7 +2,7 @@
 
 aoahid_player is the top of a stack of three repositories. This page records
 what crosses each boundary, which values have to be kept in step by hand, and
-the order a change travels in. aoahid_share sits beside aoahid_player on the
+the order a change travels in. hid_share sits beside aoahid_player on the
 same two libraries and keeps its own copy of the proxy; it is not covered
 here.
 
