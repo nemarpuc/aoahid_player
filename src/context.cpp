@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 #include "aoahid_player/context.hpp"
+#include "aoahid_player/waits.hpp"
 
 #include <string_view>
 #include <utility>
@@ -109,13 +110,15 @@ void Context::destroy() noexcept {
         return;
     // Only a deadline-expired AOAHID_ERR_TIMEOUT retains ownership; every
     // other result consumes the Context and invalidates the pointer.
-    aoahid_result result = aoahid_context_destroy_blocking(handle_, destroy_timeout_ms);
+    aoahid_result result = aoahid_context_destroy_blocking(handle_, waits::control_ms,
+                                                           waits::drain_ms, destroy_timeout_ms);
     if (result == AOAHID_ERR_TIMEOUT) {
         const aoahid_error_detail* detail = aoahid_last_error();
         const bool retained = detail != nullptr && detail->field != nullptr &&
                               std::string_view(detail->field) == "context.destroy";
         if (retained)
-            result = aoahid_context_destroy_blocking(handle_, destroy_timeout_ms);
+            result = aoahid_context_destroy_blocking(handle_, waits::control_ms, waits::drain_ms,
+                                                     destroy_timeout_ms);
     }
     static_cast<void>(result);
     handle_ = nullptr;

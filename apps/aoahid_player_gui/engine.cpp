@@ -568,7 +568,7 @@ void Engine::pump_bridge() {
             // LIBUSB_ERROR_NOT_SUPPORTED is the interface's driver, which
             // stopping the adb server cannot change.
             if (aoap::adb_bridge_interface_unavailable(code) &&
-                aoahid_last_error()->libusb_status != -12) {
+                aoahid_last_error()->transport_status != -12) {
                 // Usually an adb server holding the ADB interface: stop it and
                 // retry once. Other bridges' adb connections go with it.
                 std::string error;

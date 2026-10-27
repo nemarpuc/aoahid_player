@@ -729,7 +729,7 @@ one phone instead, for systems without logind.
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/libaoahid) 1.0.0 or newer 1.x
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 2.0.0 or newer 2.x
   (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, and D-Bus for the file picker, for example on Debian/Ubuntu:
@@ -969,7 +969,7 @@ its own licence in `third-party/`:
   backing the control API's HTTP server
 - [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
   (zlib), linked into the GUI for the file picker
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 3.2.2
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 4.0.0
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored

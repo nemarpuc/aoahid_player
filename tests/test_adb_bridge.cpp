@@ -41,9 +41,9 @@ TEST_CASE("explain_adb_bridge_error names the cause") {
 
 TEST_CASE("the bridge does not start without an open device") {
     aoahid_adb_proxy_context* proxy = nullptr;
-    CHECK(aoahid_adb_proxy_start(nullptr, 6555, &proxy) == AOAHID_ADB_PROXY_ERR_ARGUMENT);
+    CHECK(aoahid_adb_proxy_start(nullptr, 6555, 1000U, &proxy) == AOAHID_ADB_PROXY_ERR_ARGUMENT);
     CHECK(proxy == nullptr);
-    aoahid_adb_proxy_stop(nullptr); // ignored
+    aoahid_adb_proxy_stop(nullptr, 1000U); // ignored
 
     aoap::Device device;
     CHECK(device.start_adb_bridge(6555) == AOAHID_ADB_PROXY_ERR_ARGUMENT);

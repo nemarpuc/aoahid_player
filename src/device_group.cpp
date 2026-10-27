@@ -2,6 +2,7 @@
 #include "aoahid_player/device_group.hpp"
 
 #include "aoahid_player/timing.hpp"
+#include "aoahid_player/waits.hpp"
 
 #include <aoahid.hpp>
 
@@ -276,7 +277,7 @@ bool DeviceGroup::flush() {
             aoahid_node* node = slot->device.node(static_cast<Profile>(profile));
             if (node == nullptr)
                 continue;
-            const aoahid_result result = aoahid_node_submit(node);
+            const aoahid_result result = aoahid_node_submit(node, waits::send_ms);
             if (result != AOAHID_OK) {
                 failure = result;
                 break;

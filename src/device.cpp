@@ -2,6 +2,7 @@
 #include "aoahid_player/device.hpp"
 
 #include "aoahid_player/context.hpp"
+#include "aoahid_player/waits.hpp"
 
 #include <aoahid_adb_proxy.h>
 
@@ -13,25 +14,19 @@ namespace aoap {
 namespace {
 
 // Every tuning value below is this application's policy, not a libaoahid
-// default. Zero-valued fields would select the fallbacks documented in
-// libaoahid's docs/API.md; they are stated explicitly so the descriptor and
-// transport budgets are visible in one place.
-constexpr uint32_t control_timeout_ms = 500U;
-constexpr uint32_t send_timeout_ms = 500U;
+// default; libaoahid has none, so each is stated explicitly and the descriptor
+// and transport budgets are visible in one place. The waits (waits.hpp) are
+// arguments of the calls that wait.
 constexpr uint32_t descriptor_policy_bytes = 4096U;
 constexpr uint32_t report_policy_bytes = 1024U;
 constexpr uint32_t pool_slots = 8U;
-constexpr uint32_t close_drain_timeout_ms = 1000U;
 
 aoahid_device_options make_device_options() noexcept {
     aoahid_device_options options{};
     options.struct_size = static_cast<uint32_t>(sizeof(options));
-    options.control_timeout_ms = control_timeout_ms;
-    options.send_timeout_ms = send_timeout_ms;
     options.descriptor_fragment_bytes = descriptor_policy_bytes;
     options.transfer_pool_slots = pool_slots;
     options.maximum_report_bytes = report_policy_bytes;
-    options.close_drain_timeout_ms = close_drain_timeout_ms;
     // The specs this player builds are fixed and already range-checked by the
     // profile factories, so the second wire-image scan is not run per report.
     options.validate_reports = 0U;
@@ -151,11 +146,11 @@ std::string explain_adb_bridge_error(const int code, const uint16_t port) {
             ". USB debugging may be off, or another program holds the interface";
 #ifdef _WIN32
         // LIBUSB_ERROR_NOT_SUPPORTED: libusb cannot use the interface's driver.
-        if (detail->libusb_status == -12)
+        if (detail->transport_status == -12)
             hint = ". The phone's adb interface needs a driver libusb can use, such as WinUSB "
                    "(see Troubleshooting in README.md)";
 #endif
-        const std::string usb_status = std::to_string(detail->libusb_status);
+        const std::string usb_status = std::to_string(detail->transport_status);
         return "the phone's ADB interface could not be opened: " + describe_error(result) +
                ", libusb status " + usb_status + hint;
     }
@@ -217,7 +212,7 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
 
     const aoahid_node_options options = make_node_options();
     aoahid_node* opened_node = nullptr;
-    const aoahid_result opened = aoahid_node_open(handle_, spec, &options, &opened_node);
+    const aoahid_result opened = aoahid_node_open(handle_, spec, &options, waits::control_ms, &opened_node);
     if (opened != AOAHID_OK)
         return opened;
 
@@ -230,7 +225,7 @@ aoahid_result Device::close_node(const Profile profile) noexcept {
     const size_t index = static_cast<size_t>(profile);
     if (nodes_[index] == nullptr)
         return AOAHID_OK;
-    const aoahid_result closed = aoahid_node_close(nodes_[index]);
+    const aoahid_result closed = aoahid_node_close(nodes_[index], waits::control_ms, waits::drain_ms);
     if (closed == AOAHID_OK) {
         nodes_[index] = nullptr;
         profile_mask_ &= ~profile_bit(profile);
@@ -241,7 +236,7 @@ aoahid_result Device::close_node(const Profile profile) noexcept {
 int Device::start_adb_bridge(const uint16_t port) noexcept {
     if (handle_ == nullptr || adb_bridge_ != nullptr)
         return AOAHID_ADB_PROXY_ERR_ARGUMENT;
-    const int result = aoahid_adb_proxy_start(handle_, port, &adb_bridge_);
+    const int result = aoahid_adb_proxy_start(handle_, port, waits::drain_ms, &adb_bridge_);
     if (result == AOAHID_ADB_PROXY_OK)
         adb_port_ = port;
     else
@@ -252,7 +247,7 @@ int Device::start_adb_bridge(const uint16_t port) noexcept {
 void Device::stop_adb_bridge() noexcept {
     // Joins the proxy threads and closes its Channel; neither may overlap
     // aoahid_device_close.
-    aoahid_adb_proxy_stop(adb_bridge_);
+    aoahid_adb_proxy_stop(adb_bridge_, waits::drain_ms);
     adb_bridge_ = nullptr;
     adb_port_ = 0U;
 }
@@ -262,7 +257,7 @@ void Device::close() noexcept {
     // The first aoahid_device_close consumes the Device and every child Node,
     // including on AOAHID_CLOSE_PENDING, so the Nodes are not closed here.
     if (handle_ != nullptr)
-        static_cast<void>(aoahid_device_close(handle_));
+        static_cast<void>(aoahid_device_close(handle_, waits::control_ms, waits::drain_ms));
     handle_ = nullptr;
     nodes_.fill(nullptr);
     profile_mask_ = 0U;

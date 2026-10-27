@@ -5,6 +5,15 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.3.1] - 2026-10-27
+
+- Builds against libaoahid 2.0.0 and aoahid_adb_proxy 4.0.0, which take every
+  wait as an argument of the call that waits. The player's waits (500 ms for a
+  control request and for a report, 1000 ms to drain a close) are the same as
+  before; they are now in `waits.hpp` and passed to each call instead of being
+  set in the Device options. Nothing changes for the user.
+- Not run against a phone.
+
 ## [3.3.0] - 2026-10-12
 
 - Playlist: *Loops* under the list sets how many times the whole list plays;
