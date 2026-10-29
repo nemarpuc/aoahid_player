@@ -5,8 +5,8 @@
 
 namespace aoap::waits {
 
-// libaoahid takes every wait as an argument of the call that waits and has no
-// default for it; these are this application's own values.
+// libaoahid takes every wait as an argument of the call that waits; these are
+// this application's values (libaoahid's AOAHID_*_TIMEOUT_MS are the same).
 // Each synchronous AOA control request (node open and close, device close).
 inline constexpr uint32_t control_ms = 500U;
 // The deadline of one report transfer.

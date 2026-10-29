@@ -5,6 +5,14 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+## [3.3.2] - 2026-10-29
+
+- Builds against libaoahid 2.0.0 as re-released on 2026-10-29. The Device starts from
+  `aoahid_device_options_init` (the same Linux HID limits as before) and the accessory request
+  passes its wait to `aoahid_accessory_start`. A Node whose close fails is now dropped, since
+  libaoahid consumes it with every result but `AOAHID_ERR_PARAM`, `AOAHID_ERR_UNSET_FIELD` and
+  `AOAHID_CLOSE_PENDING`. Not run against a phone.
+
 ## [3.3.1] - 2026-10-27
 
 - Builds against libaoahid 2.0.0 and aoahid_adb_proxy 4.0.0, which take every

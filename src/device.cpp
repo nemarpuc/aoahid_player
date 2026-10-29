@@ -13,36 +13,18 @@
 namespace aoap {
 namespace {
 
-// Every tuning value below is this application's policy, not a libaoahid
-// default; libaoahid has none, so each is stated explicitly and the descriptor
-// and transport budgets are visible in one place. The waits (waits.hpp) are
-// arguments of the calls that wait.
-constexpr uint32_t descriptor_policy_bytes = 4096U;
-constexpr uint32_t report_policy_bytes = 1024U;
+// The Device starts from libaoahid's initial values; only what this player
+// needs differently is set. The waits (waits.hpp) are arguments of the calls
+// that wait.
 constexpr uint32_t pool_slots = 8U;
 
 aoahid_device_options make_device_options() noexcept {
     aoahid_device_options options{};
-    options.struct_size = static_cast<uint32_t>(sizeof(options));
-    options.descriptor_fragment_bytes = descriptor_policy_bytes;
+    aoahid_device_options_init(&options); // the Linux HID limits of libaoahid's docs/LIMITS.md
     options.transfer_pool_slots = pool_slots;
-    options.maximum_report_bytes = report_policy_bytes;
     // The specs this player builds are fixed and already range-checked by the
     // profile factories, so the second wire-image scan is not run per report.
     options.validate_reports = 0U;
-    options.aoa_descriptor_wire_policy_bytes = descriptor_policy_bytes;
-    options.linux_descriptor_policy_bytes = descriptor_policy_bytes;
-    // These five are the Linux HID parser limits listed in libaoahid's
-    // docs/LIMITS.md.
-    options.linux_hid_fields_per_report_policy = 256U;
-    options.linux_hid_global_stack_depth_policy = 4U;
-    options.linux_hid_usages_policy = 12288U;
-    options.linux_hid_report_data_policy_bits = 65528U;
-    options.linux_hid_report_size_policy_bits = 256U;
-    options.target_ep0_data_policy_bytes = descriptor_policy_bytes;
-    options.host_control_buffer_policy_bytes = descriptor_policy_bytes;
-    options.interface_claim_policy = AOAHID_INTERFACE_CLAIM_NONE;
-    options.interface_number = -1;
     return options;
 }
 
@@ -226,7 +208,9 @@ aoahid_result Device::close_node(const Profile profile) noexcept {
     if (nodes_[index] == nullptr)
         return AOAHID_OK;
     const aoahid_result closed = aoahid_node_close(nodes_[index], waits::control_ms, waits::drain_ms);
-    if (closed == AOAHID_OK) {
+    // Every result but these consumed the Node, an error included.
+    if (closed != AOAHID_ERR_PARAM && closed != AOAHID_ERR_UNSET_FIELD &&
+        closed != AOAHID_CLOSE_PENDING) {
         nodes_[index] = nullptr;
         profile_mask_ &= ~profile_bit(profile);
     }
@@ -254,8 +238,8 @@ void Device::stop_adb_bridge() noexcept {
 
 void Device::close() noexcept {
     stop_adb_bridge();
-    // The first aoahid_device_close consumes the Device and every child Node,
-    // including on AOAHID_CLOSE_PENDING, so the Nodes are not closed here.
+    // aoahid_device_close consumes the Device and every child Node, so the
+    // Nodes are not closed here.
     if (handle_ != nullptr)
         static_cast<void>(aoahid_device_close(handle_, waits::control_ms, waits::drain_ms));
     handle_ = nullptr;

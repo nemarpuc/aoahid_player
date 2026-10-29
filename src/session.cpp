@@ -133,13 +133,13 @@ bool Session::accessory(const std::vector<size_t>& selection, std::string& error
         }
 
         aoahid_accessory_options opt{};
-        opt.struct_size = static_cast<uint32_t>(sizeof(opt));
+        aoahid_accessory_options_init(&opt);
         opt.strings.manufacturer = "aoahid_player";
         opt.strings.model = "aoahid_player";
         opt.strings.description = "aoahid_player accessory mode";
-        opt.control_timeout_ms = accessory_timeout_ms;
 
-        const aoahid_result res = aoahid_accessory_start(context_.native_handle(), info, &opt);
+        const aoahid_result res =
+            aoahid_accessory_start(context_.native_handle(), info, &opt, accessory_timeout_ms);
         if (res == AOAHID_OK) {
             note(Severity::info, "Requested accessory mode for " + device_label(info));
             success = true;
