@@ -5,6 +5,8 @@ were reconstructed from the commit history.
 
 ## [Unreleased]
 
+- Builds against libaoahid 0.1.0 and the vendored aoahid_adb_proxy 0.1.0 (their version lines restarted; the 2.x and 4.x releases are gone). The CI and release pins name libaoahid v0.1.0. Not run against a phone.
+
 ## [3.3.2] - 2026-10-29
 
 - Builds against libaoahid 2.0.0 as re-released on 2026-10-29. The Device starts from
