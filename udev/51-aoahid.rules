@@ -11,12 +11,14 @@
 #   sudo udevadm trigger
 # and replug the phone.
 #
-# This gives the user at the local seat access to USB devices through
-# systemd-logind's uaccess tag.
-SUBSYSTEM=="usb", TAG+="uaccess"
+# This is deliberately broad: it tags every USB device (not interfaces) for the
+# user at the local logind seat, because the phone's IDs are not known in
+# advance. Any program of that user can then open any USB device. If you do
+# not accept that, delete this line and use the per-vendor group rule below.
+SUBSYSTEM=="usb", ENV{DEVTYPE}=="usb_device", TAG+="uaccess"
 
 # Without logind, grant a group access to your own phone instead. Find its
-# vendor ID with `lsusb`, and avoid MODE="0666" or matching every device.
+# vendor ID with `lsusb`, and avoid MODE="0666".
 # For example:
 #   SUBSYSTEM=="usb", ATTR{idVendor}=="04e8", MODE="0660", GROUP="plugdev"
 
