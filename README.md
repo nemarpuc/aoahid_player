@@ -68,8 +68,8 @@ If the folder is read-only, changes last until the app closes. Each device's
 HIDs and their settings are kept in a section of their own, `[device <serial>]`
 (a phone that reports no serial is known by its USB address instead, so its
 settings are not found again once it is plugged in elsewhere, and two phones
-with the same serial share one section). A file written by 2.0.0 or earlier
-keeps its window settings; its profile settings are not read.
+with the same serial share one section). A file written by an
+earlier version of the program keeps its window settings; its profile settings are not read.
 
 On startup, before the first device scan, the app starts the adb server,
 reads every phone's touchscreen resolution with `adb shell wm size`, and
@@ -891,10 +891,8 @@ claimed, or started.), libusb status -12. USB debugging may be off, or another
 program holds the interface.
 ```
 
-That is the 0.18.2 message. From 0.18.3, a `-12` ends with "The phone's adb
-interface needs a driver libusb can use, such as WinUSB" instead of the USB
-debugging hint, and before 0.18.2 the message was only "the phone has no free
-ADB interface (USB debugging is off, or an adb server still holds it)".
+When the interface needs a driver libusb can use, the message ends with "The phone's adb
+interface needs a driver libusb can use, such as WinUSB" instead of the USB debugging hint.
 
 `-12` is libusb's `LIBUSB_ERROR_NOT_SUPPORTED`. On Windows, libusb can only
 claim an interface whose driver is WinUSB, libusbK or libusb0. HID still
@@ -973,7 +971,7 @@ its own licence in `third-party/`:
   backing the control API's HTTP server
 - [nativefiledialog-extended](https://github.com/btzy/nativefiledialog-extended)
   (zlib), linked into the GUI for the file picker
-- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 4.0.0
+- [aoahid_adb_proxy](https://github.com/nemarpuc/aoahid_adb_proxy) 0.1.0
   (MIT), vendored under `third_party/aoahid_adb_proxy/` for the ADB Bridge
 - the Roboto font (Apache-2.0), embedded in the GUI
 - [stb_image](https://github.com/nothings/stb) (MIT/public domain), vendored
