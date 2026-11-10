@@ -793,10 +793,10 @@ the shared-library archive for your platform from
 `CMAKE_PREFIX_PATH` at the extracted directory:
 
 ```sh
-curl -LO https://github.com/nemarpuc/libaoahid/releases/latest/download/libaoahid-<version>-linux-x86_64-ubuntu22.04-shared.tar.gz
-tar -xzf libaoahid-<version>-linux-x86_64-ubuntu22.04-shared.tar.gz
+curl -LO https://github.com/nemarpuc/libaoahid/releases/latest/download/libaoahid-<version>-linux-x86_64-ubuntu22.04.tar.gz
+tar -xzf libaoahid-<version>-linux-x86_64-ubuntu22.04.tar.gz
 cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$PWD/libaoahid-<version>-linux-x86_64-ubuntu22.04-shared"
+  -DCMAKE_PREFIX_PATH="$PWD/libaoahid-<version>-linux-x86_64-ubuntu22.04"
 ```
 
 **Option B — build libaoahid from source:**

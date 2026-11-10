@@ -17,7 +17,7 @@ concurrency:
 
 env:
   AOAHID_REPOSITORY: nemarpuc/libaoahid
-  AOAHID_TAG: v0.1.0
+  AOAHID_TAG: v0.2.0
 
 jobs:
   build:
@@ -28,21 +28,21 @@ jobs:
           - os: ubuntu-22.04
             preset: linux-release
             platform: linux
-            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04.tar.gz
           - os: ubuntu-22.04-arm
             preset: linux-release
             platform: linux
-            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
+            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04.tar.gz
           - os: windows-2022
             preset: windows-release
             platform: windows
-            aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+            aoahid_asset: libaoahid-*-windows-x86_64.zip
           # Cross-built on the x64 runner, so its programs are not run.
           - os: windows-2022
             preset: windows-arm64-release
             platform: windows
             cross: true
-            aoahid_asset: libaoahid-*-windows-arm64-shared.zip
+            aoahid_asset: libaoahid-*-windows-arm64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -79,7 +79,7 @@ jobs:
 
           cd dependencies
           if [ -f SHA256SUMS ]; then
-            grep -F "$(ls libaoahid-*-shared.*)" SHA256SUMS | sha256sum -c -
+            grep -F "$(ls ${{ matrix.aoahid_asset }})" SHA256SUMS | sha256sum -c -
           else
             echo "::error::SHA256SUMS is missing from the libaoahid release."
             exit 1

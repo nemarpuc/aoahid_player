@@ -28,7 +28,7 @@ env:
   # tagged aoahid-player build stays reproducible; "latest" would silently
   # change what the released binaries link against.
   AOAHID_REPOSITORY: nemarpuc/libaoahid
-  AOAHID_TAG: v0.1.0
+  AOAHID_TAG: v0.2.0
 
 jobs:
   build:
@@ -43,13 +43,13 @@ jobs:
             archive_ext: tar.gz
             platform: linux
             arch: x86_64
-            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04-shared.tar.gz
+            aoahid_asset: libaoahid-*-linux-x86_64-ubuntu22.04.tar.gz
           - os: ubuntu-22.04-arm
             preset: linux-release
             archive_ext: tar.gz
             platform: linux
             arch: aarch64
-            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04-shared.tar.gz
+            aoahid_asset: libaoahid-*-linux-aarch64-ubuntu22.04.tar.gz
           # Pinned, not windows-latest: CMakePresets.json fixes the generator
           # to "Visual Studio 17 2022", so the runner image must still ship it.
           - os: windows-2022
@@ -58,7 +58,7 @@ jobs:
             platform: windows
             arch: x86_64
             pe_machine: "8664"
-            aoahid_asset: libaoahid-*-windows-x86_64-shared.zip
+            aoahid_asset: libaoahid-*-windows-x86_64.zip
           # Cross-built on the x64 runner, so its programs are not run; the
           # machine type check in Package stands in for the smoke test.
           - os: windows-2022
@@ -68,7 +68,7 @@ jobs:
             arch: arm64
             pe_machine: aa64
             cross: true
-            aoahid_asset: libaoahid-*-windows-arm64-shared.zip
+            aoahid_asset: libaoahid-*-windows-arm64.zip
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -125,7 +125,7 @@ jobs:
           # The release publishes SHA256SUMS; verifying it is what makes the
           # downloaded runtime trustworthy.
           if [ -f SHA256SUMS ]; then
-            grep -F "$(ls libaoahid-*-shared.*)" SHA256SUMS | sha256sum -c -
+            grep -F "$(ls ${{ matrix.aoahid_asset }})" SHA256SUMS | sha256sum -c -
           else
             echo "::error::SHA256SUMS is missing from the libaoahid release."
             exit 1
