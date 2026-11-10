@@ -18,7 +18,7 @@ add_library(aoahid_player_core STATIC
   session.cpp
   timing.cpp
   # aoahid_adb_proxy v0.1.0 (MIT), vendored unmodified from
-  # github.com/nemarpuc/aoahid_adb_proxy at bff5aaa. It needs libaoahid 0.1.
+  # github.com/nemarpuc/aoahid_adb_proxy at bff5aaa. It needs libaoahid 0.2.
   "${PROJECT_SOURCE_DIR}/third_party/aoahid_adb_proxy/aoahid_adb_proxy.cpp"
 )
 add_library(aoahid_player::aoahid_player_core ALIAS aoahid_player_core)

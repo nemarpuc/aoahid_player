@@ -29,7 +29,7 @@ option(AOAHID_PLAYER_BUNDLE_RUNTIME
 # aoahid_device_options have the shape device.cpp and session.cpp follow, and
 # the AOA version is not checked at open, so Session::refresh lists only
 # devices whose discovered protocol_version is 2 or later.
-find_package(aoahid 0.1.0 CONFIG REQUIRED)
+find_package(aoahid 0.2.0 CONFIG REQUIRED)
 find_package(Threads REQUIRED)
 
 # Every executable lands in one folder next to csv/, in the build tree

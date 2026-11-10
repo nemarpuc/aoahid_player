@@ -733,7 +733,7 @@ one phone instead, for systems without logind.
 ### Requirements
 
 - CMake 3.21+ and a C++20 compiler (GCC or Clang on Linux, MSVC on Windows)
-- [libaoahid](https://github.com/nemarpuc/libaoahid) 0.1.x
+- [libaoahid](https://github.com/nemarpuc/libaoahid) 0.2.x
   (see below)
 - For the GUI on Linux, the X11 and Wayland development headers GLFW builds
   against, and D-Bus for the file picker, for example on Debian/Ubuntu:

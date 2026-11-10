@@ -2,6 +2,10 @@
 
 All notable changes to aoahid_player are recorded here.
 
+## [Unreleased]
+
+- Builds against libaoahid 0.2.0 (`find_package(aoahid 0.2.0)`; a 0.x minor change is not accepted by 0.1.0). The CI and release pins name the 0.2.0 archives.
+
 ## [0.1.0] - 2026-11-09
 
 The first release of this line. Before 1.0.0 a change of the minor number may change the CSV
