@@ -320,9 +320,13 @@ jobs:
           merge-multiple: true
       - name: List what will be published
         run: ls -l dist
+      - name: Checksums
+        run: cd dist && sha256sum aoahid-player-* > SHA256SUMS
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/aoahid-player-*
+          files: |
+            dist/aoahid-player-*
+            dist/SHA256SUMS
           generate_release_notes: true
           fail_on_unmatched_files: true

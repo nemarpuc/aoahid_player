@@ -1,0 +1,40 @@
+name: Bug report
+description: Report a reproducible playback, recording, GUI, control API, or ADB Bridge problem.
+title: "[bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: >-
+        Do not attach recordings or scripts that hold real typed input (passwords,
+        private messages), and do not paste ADB keys or device serial numbers.
+        Reproduce with synthetic input where you can.
+  - type: input
+    id: version
+    attributes:
+      label: aoahid_player version
+      description: The release version or commit SHA, and the program (`aoahid_player_gui`, `aoa_touch`, or `aoa_record`).
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Exact environment
+      description: Host OS and architecture, phone model and Android version, the USB driver on Windows (WinUSB, libusbK, or the maker's), and `adb version` if recording or the ADB Bridge is involved.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Minimal reproduction
+      description: The steps, the command line or the GUI tab, and the smallest CSV script that shows it.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected and observed behavior
+      description: Include the program's log output or error text.
+    validations:
+      required: true
