@@ -198,7 +198,7 @@ jobs:
 
           missing=0
           for required in "aoa_touch$exe" "aoa_record$exe" "aoahid_player_gui$exe" \
-                          README.md LICENSE csv/example.csv \
+                          README.md LICENSE csv/example.csv docs/GUI.md \
                           third-party/libaoahid/LICENSE third-party/libaoahid/NOTICE \
                           third-party/libaoahid/THIRD_PARTY_NOTICES.md \
                           third-party/libaoahid/third-party/libusb-copyright \

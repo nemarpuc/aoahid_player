@@ -56,6 +56,7 @@ endif()
 # --- runtime component: what the release archive contains ------------------
 install(DIRECTORY csv/ DESTINATION csv COMPONENT runtime)
 install(FILES README.md LICENSE DESTINATION . COMPONENT runtime)
+install(DIRECTORY docs/ DESTINATION docs COMPONENT runtime)
 install(FILES third_party/licenses/aoahid_adb_proxy-LICENSE.txt
   DESTINATION third-party COMPONENT runtime)
 aoahid_player_install_runtime()

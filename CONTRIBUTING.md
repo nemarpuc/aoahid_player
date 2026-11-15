@@ -25,7 +25,7 @@ ctest --test-dir build --output-on-failure -C Release
 ```
 
 On Linux, `make AOAHID_PREFIX=/path/to/libaoahid` and `make test` do the same.
-The README's [Building from source](README.md#building-from-source) lists the
+[docs/BUILDING.md](docs/BUILDING.md) lists the
 requirements (the GUI needs network access at configure time for its pinned dependencies,
 or `-DAOAHID_PLAYER_BUILD_GUI=OFF`). The tests need no phone.
 
