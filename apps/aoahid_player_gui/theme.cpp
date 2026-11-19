@@ -90,7 +90,7 @@ unsigned glass_tint = 0x161B22; // `surface` without its alpha
 float glass_transparency = 0.5f;
 bool dark_mode = true;
 bool glass_on = false;
-unsigned accent_seed = 0x388BFD;
+unsigned accent_seed = 0xA78BFA;
 // Each mode's own gloss and rim strengths, before set_shine() scales them.
 unsigned gloss_base = 20;
 unsigned rim_top_base = 80;
@@ -275,26 +275,26 @@ void set_mode(const bool dark) {
             scrollbar_hover = rgb(0xFFFFFF, 96);
             scrollbar_active = rgb(0xFFFFFF, 128);
         } else {
-            background = rgb(0x000000);
-            glass_tint = 0x161B22;
-            surface_hi = rgb(0x21262D);
-            well = rgb(0x0D1117);
-            well_hover = rgb(0x161B22);
-            field = rgb(0x21262D);
-            field_hover = rgb(0x30363D);
-            field_active = rgb(0x38414D);
-            popup_fill = rgb(0x1C2128);
+            background = rgb(0x14131A);
+            glass_tint = 0x1C1B24;
+            surface_hi = rgb(0x26252F);
+            well = rgb(0x0F0E14);
+            well_hover = rgb(0x1C1B24);
+            field = rgb(0x26252F);
+            field_hover = rgb(0x34323F);
+            field_active = rgb(0x403E4D);
+            popup_fill = rgb(0x22212B);
             sheen = rgb(0x000000, 0);
             gloss_base = 0;
             rim_top_base = 0;
             rim_bottom_base = 0;
-            border = rgb(0x30363D);
-            border_strong = rgb(0x484F58);
-            text = rgb(0xF0F6FC);
-            text_dim = rgb(0x9DA7B3);
-            text_faint = rgb(0x828994);
-            scrollbar_hover = rgb(0x484F58);
-            scrollbar_active = rgb(0x6E7681);
+            border = rgb(0x34323F);
+            border_strong = rgb(0x4A4858);
+            text = rgb(0xECEAF4);
+            text_dim = rgb(0xB8B5C6);
+            text_faint = rgb(0x9D9AAD);
+            scrollbar_hover = rgb(0x4A4858);
+            scrollbar_active = rgb(0x6A687A);
         }
     } else {
         dim_base = 0xFFFFFF;
@@ -332,26 +332,26 @@ void set_mode(const bool dark) {
             scrollbar_hover = rgb(0x2A2440, 110);
             scrollbar_active = rgb(0x2A2440, 140);
         } else {
-            background = rgb(0xF6F8FA);
+            background = rgb(0xF4F2F9);
             glass_tint = 0xFFFFFF;
-            surface_hi = rgb(0xF3F4F6);
-            well = rgb(0xF6F8FA);
-            well_hover = rgb(0xEAEEF2);
-            field = rgb(0xEAEEF2);
-            field_hover = rgb(0xDFE3E8);
-            field_active = rgb(0xD0D7DE);
+            surface_hi = rgb(0xF0EEF6);
+            well = rgb(0xF4F2F9);
+            well_hover = rgb(0xE9E6F2);
+            field = rgb(0xE9E6F2);
+            field_hover = rgb(0xDEDAEA);
+            field_active = rgb(0xCFCADF);
             popup_fill = rgb(0xFFFFFF);
             sheen = rgb(0x000000, 0);
             gloss_base = 0;
             rim_top_base = 0;
             rim_bottom_base = 0;
-            border = rgb(0xD0D7DE);
-            border_strong = rgb(0xAFB8C1);
-            text = rgb(0x1F2328);
-            text_dim = rgb(0x656D76);
-            text_faint = rgb(0x57606A);
-            scrollbar_hover = rgb(0xAFB8C1);
-            scrollbar_active = rgb(0x8C959F);
+            border = rgb(0xD9D5E6);
+            border_strong = rgb(0xB5B0C8);
+            text = rgb(0x1C1A26);
+            text_dim = rgb(0x5A5769);
+            text_faint = rgb(0x625F72);
+            scrollbar_hover = rgb(0xB5B0C8);
+            scrollbar_active = rgb(0x948FAA);
         }
     }
     set_glass(glass_transparency);

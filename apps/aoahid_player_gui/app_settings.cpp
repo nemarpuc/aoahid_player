@@ -96,9 +96,9 @@ std::string choose_image(const std::string& beside, std::string& error) {
     return path;
 }
 
-// The accent swatches: the default electric blue first.
-constexpr int accent_swatches[] = {0x388BFD, 0x2DD4BF, 0x34D399, 0xFBBF24,
-                                   0xFB923C, 0xFB7185, 0xA78BFA, 0xE6EDF3};
+// The accent swatches: the default lavender first.
+constexpr int accent_swatches[] = {0xA78BFA, 0x388BFD, 0x2DD4BF, 0x34D399, 0xFBBF24,
+                                   0xFB923C, 0xFB7185, 0xE6EDF3};
 
 // A round colour swatch; a ring marks the chosen one. True when clicked.
 bool swatch(const int color, const bool chosen) {

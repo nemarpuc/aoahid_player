@@ -453,7 +453,7 @@ class App {
     // Set by the Settings tab's theme switch, cleared by consume_theme_change().
     bool theme_dirty_{};
     // The Settings tab; see Settings for what each means.
-    int accent_{0x388BFD};
+    int accent_{0xA78BFA};
     bool glass_on_{};
     float glass_{0.5f};
     float gloss_{1.0f};

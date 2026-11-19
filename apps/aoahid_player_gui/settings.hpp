@@ -90,7 +90,7 @@ struct Settings {
     // Dark theme or light theme.
     bool dark_theme{true};
     // The accent colour every accent shade is made from (0xRRGGBB).
-    int accent{0x388BFD};
+    int accent{0xA78BFA};
     // Glass look on (translucent cards, gloss) or the solid look.
     bool glass_on{false};
     // With glass on, how much the cards let the background through, 0
