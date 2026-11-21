@@ -28,14 +28,24 @@ aoahid_device_options make_device_options() noexcept {
     return options;
 }
 
-aoahid_node_options make_node_options() noexcept {
-    aoahid_node_options options{};
-    options.struct_size = static_cast<uint32_t>(sizeof(options));
+// Each profile is a registration of its own, so the phone has one HID device
+// per profile and a profile can be added or removed on its own.
+aoahid_node_placement make_node_placement(const Profile profile) noexcept {
+    aoahid_node_placement placement{};
+    placement.struct_size = static_cast<uint32_t>(sizeof(placement));
+    placement.registration = static_cast<uint32_t>(profile) + 1U;
     // A Node has one report in flight, so one reserved slot removes pool
     // contention between the profiles sharing this Device.
-    options.has_reserved_slots = 1U;
-    options.reserved_slots = 1U;
-    return options;
+    placement.reserve_slot = 1U;
+    return placement;
+}
+
+aoahid_commit_timeouts make_commit_timeouts() noexcept {
+    aoahid_commit_timeouts timeouts{};
+    timeouts.struct_size = static_cast<uint32_t>(sizeof(timeouts));
+    timeouts.control_timeout_ms = waits::control_ms;
+    timeouts.drain_timeout_ms = waits::drain_ms;
+    return timeouts;
 }
 
 } // namespace
@@ -192,9 +202,10 @@ aoahid_result Device::open_node(const Profile profile, aoahid_spec* spec) noexce
     if (nodes_[index] != nullptr)
         return AOAHID_ERR_PARAM;
 
-    const aoahid_node_options options = make_node_options();
+    const aoahid_node_placement placement = make_node_placement(profile);
+    const aoahid_commit_timeouts timeouts = make_commit_timeouts();
     aoahid_node* opened_node = nullptr;
-    const aoahid_result opened = aoahid_node_open(handle_, spec, &options, waits::control_ms, &opened_node);
+    const aoahid_result opened = aoahid_node_open(handle_, spec, &placement, &timeouts, &opened_node);
     if (opened != AOAHID_OK)
         return opened;
 
@@ -207,7 +218,8 @@ aoahid_result Device::close_node(const Profile profile) noexcept {
     const size_t index = static_cast<size_t>(profile);
     if (nodes_[index] == nullptr)
         return AOAHID_OK;
-    const aoahid_result closed = aoahid_node_close(nodes_[index], waits::control_ms, waits::drain_ms);
+    const aoahid_commit_timeouts timeouts = make_commit_timeouts();
+    const aoahid_result closed = aoahid_node_close(nodes_[index], &timeouts);
     // Every result but these consumed the Node, an error included.
     if (closed != AOAHID_ERR_PARAM && closed != AOAHID_ERR_UNSET_FIELD &&
         closed != AOAHID_CLOSE_PENDING) {
